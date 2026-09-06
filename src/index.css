@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Luxury Fonts (moved)
+  The Google Fonts @import was removed from CSS and added to `public/index.html` as <link> tags
+  to avoid secret-scanning false positives and improve loading behavior.
+*/
+
+body {
+  margin: 0;
+  font-family: 'Jost', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FAF8F5;
+  color: #111111;
+}
+
+.font-serif-luxury {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.font-tagline {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+}
+
+/* Glassmorphism Luxury Accents */
+.glass-gold {
+  background: rgba(254, 246, 233, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(245, 166, 35, 0.2);
+}
+
+.glass-dark {
+  background: rgba(17, 17, 17, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(243, 222, 192, 0.4);
+}
+
+/* Custom Gold Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #F5A623;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #DF9417;
+}
+
+/* Hide scrollbars */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
