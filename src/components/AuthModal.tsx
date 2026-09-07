@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AuthUser } from '../types';
 
@@ -40,36 +41,172 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md">
-        <h3 className="font-bold mb-3">Account</h3>
-        <div className="flex gap-2 mb-3">
-          <button onClick={() => setMode('signin')} className={`px-3 py-2 rounded ${mode==='signin' ? 'bg-brand-black text-white' : 'bg-stone-100'}`}>Sign In</button>
-          <button onClick={() => setMode('signup')} className={`px-3 py-2 rounded ${mode==='signup' ? 'bg-brand-black text-white' : 'bg-stone-100'}`}>Sign Up</button>
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 sm:p-7 w-full max-w-md shadow-2xl border border-stone-200/80 animate-fadeIn">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-lg text-brand-black">
+              {mode === 'signin' ? 'Welcome Back' : 'Create an Account'}
+            </h3>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {mode === 'signin'
+                ? 'Sign in to access your orders and account'
+                : 'Join PherMono for authentic luxury cosmetics'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black transition-colors"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
         </div>
 
-        <div className="space-y-2">
-          {mode === 'signup' && <input placeholder="Full name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2 border rounded" />}
-          <input placeholder="Phone number" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full p-2 border rounded" />
-          <input placeholder="Password" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} className="w-full p-2 border rounded" />
-          {mode === 'signup' && <input placeholder="Address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-2 border rounded" />}
+        {/* Mode Toggle */}
+        <div className="flex gap-1.5 mb-5 p-1 bg-stone-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => { setMode('signin'); setError(null); }}
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+              mode === 'signin'
+                ? 'bg-brand-black text-white shadow-sm'
+                : 'text-stone-600 hover:text-brand-black'
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('signup'); setError(null); }}
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+              mode === 'signup'
+                ? 'bg-brand-black text-white shadow-sm'
+                : 'text-stone-600 hover:text-brand-black'
+            }`}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        {/* Form */}
+        <form
+          onSubmit={e => {
+            e.preventDefault();
+            if (mode === 'signin') handleSignIn();
+            else handleSignUp();
+          }}
+          className="space-y-3.5"
+        >
           {mode === 'signup' && (
-            <select value={form.governorate} onChange={e=>setForm({...form,governorate:e.target.value})} className="w-full p-2 border rounded">
-              <option value="">Select governorate</option>
-              {GOVERNORATES.map(g=> <option key={g} value={g}>{g}</option>)}
-            </select>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Full Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Sarah Connor"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+              />
+            </div>
           )}
-          {error && <div className="text-xs text-red-500">{error}</div>}
-        </div>
 
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="px-3 py-2">Cancel</button>
-          {mode === 'signin' ? (
-            <button onClick={handleSignIn} className="px-3 py-2 bg-black text-white rounded">Sign In</button>
-          ) : (
-            <button onClick={handleSignUp} className="px-3 py-2 bg-black text-white rounded">Create Account</button>
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Phone Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="tel"
+              placeholder={mode === 'signup' ? 'e.g. 01012345678' : 'Enter your registered phone number'}
+              value={form.phone}
+              onChange={e => setForm({ ...form, phone: e.target.value })}
+              className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Password <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              placeholder={mode === 'signup' ? 'Create a secure password' : 'Enter your password'}
+              value={form.password}
+              onChange={e => setForm({ ...form, password: e.target.value })}
+              className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+            />
+          </div>
+
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Street Address <span className="text-stone-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 15 Gardenia St, Apt 4B"
+                value={form.address}
+                onChange={e => setForm({ ...form, address: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+              />
+            </div>
           )}
-        </div>
+
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Governorate <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.governorate}
+                onChange={e => setForm({ ...form, governorate: e.target.value })}
+                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold text-brand-black transition-all"
+              >
+                <option value="">Select your governorate</option>
+                {GOVERNORATES.map(g => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-600 font-medium">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-semibold text-stone-600 hover:text-brand-black rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            {mode === 'signin' ? (
+              <button
+                type="submit"
+                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98"
+              >
+                Sign In
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98"
+              >
+                Create Account
+              </button>
+            )}
+          </div>
+        </form>
       </div>
     </div>
   );

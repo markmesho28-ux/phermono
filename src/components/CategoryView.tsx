@@ -30,7 +30,7 @@ export default function CategoryView({
   onWishlist,
   wishlist = [],
 }: CategoryViewProps) {
-  const { categories, priceRanges, actions, brands: ALL_BRANDS } = useData();
+  const { products: contextProducts, categories, priceRanges, actions, brands: ALL_BRANDS } = useData();
   const { user } = useAuth();
   const category = categories.find((c) => c.id === categoryId) ?? null;
 
@@ -56,7 +56,8 @@ export default function CategoryView({
     setShowAllBrands(false);
   }, [categoryId, initialBrand]);
 
-  const categoryProducts = useMemo(() => allProducts.filter((p) => p.category === categoryId), [allProducts, categoryId]);
+  const effectiveProducts = contextProducts && contextProducts.length > 0 ? contextProducts : allProducts;
+  const categoryProducts = useMemo(() => effectiveProducts.filter((p) => p.category === categoryId), [effectiveProducts, categoryId]);
 
   const availableBrands = useMemo(() => {
     if (!category) return [] as string[];
@@ -123,6 +124,7 @@ export default function CategoryView({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-28 md:pb-12 space-y-8 animate-fadeIn">
+      {/* Category Hero */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-black via-brand-charcoal to-brand-stone text-white p-8 sm:p-10 shadow-luxury border border-brand-gold/20">
         <div className="absolute top-0 right-0 w-80 h-80 bg-brand-gold/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-2xl">
@@ -136,14 +138,21 @@ export default function CategoryView({
         </div>
       </div>
 
+      {/* ── SUB-CATEGORIES BREAKDOWN ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Tag size={14} className="text-brand-gold" />
             <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Sub-Categories Breakdown</span>
-            {user && user.role === 'admin' && <button onClick={openAddSub} className="ml-2 text-brand-gold"><PlusCircle size={14} /></button>}
+            {user && user.role === 'admin' && (
+              <button type="button" onClick={openAddSub} className="ml-2 text-brand-gold cursor-pointer">
+                <PlusCircle size={14} />
+              </button>
+            )}
           </div>
-          <span className="text-xs text-stone-400 font-medium">{selectedSubcategory === "all" ? "All Sub-Categories" : category.subcategories.find(s=>s.id===selectedSubcategory)?.label}</span>
+          <span className="text-xs text-stone-400 font-medium">
+            {selectedSubcategory === "all" ? "All Sub-Categories" : category.subcategories.find(s=>s.id===selectedSubcategory)?.label}
+          </span>
         </div>
         <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
           {category.subcategories.map((sub) => {
@@ -151,14 +160,18 @@ export default function CategoryView({
             const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategory===sub.id).length;
             return (
               <div key={sub.id} className="relative">
-                <button onClick={()=>setSelectedSubcategory(sub.id)} className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 ${isActive?"bg-brand-black text-brand-gold border border-brand-gold/60":"bg-white text-stone-600 border border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}>
-                  <span>{sub.label}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive?"bg-brand-gold text-brand-black font-extrabold":"bg-stone-100 text-stone-500"}`}>{subCount}</span>
+                <button
+                  type="button"
+                  onClick={()=>setSelectedSubcategory(sub.id)}
+                  className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 ${isActive?"bg-brand-black text-brand-gold border border-brand-gold/60":"bg-white text-stone-600 border border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
+                >
+                  <span className="pointer-events-none">{sub.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isActive?"bg-brand-gold text-brand-black font-extrabold":"bg-stone-100 text-stone-500"}`}>{subCount}</span>
                 </button>
                 {user && user.role==='admin' && sub.id !== 'all' && (
                   <div className="absolute -right-2 top-0 flex flex-col gap-1">
-                    <button onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="p-1 bg-white rounded-full shadow"><Edit2 size={12} /></button>
-                    <button onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="p-1 bg-white rounded-full shadow text-red-500"><Trash2 size={12} /></button>
+                    <button type="button" onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="p-1 bg-white rounded-full shadow cursor-pointer"><Edit2 size={12} /></button>
+                    <button type="button" onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer"><Trash2 size={12} /></button>
                   </div>
                 )}
               </div>
@@ -167,69 +180,101 @@ export default function CategoryView({
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-brand-gold-border/50 shadow-luxury">
-        <div className="flex items-center justify-between mb-4">
+      {/* ── FILTER BY BRAND ── (identical structure/design to Sub-Categories Breakdown above) */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-brand-gold" />
-              <h2 className="text-xs font-bold tracking-widest text-brand-black uppercase flex items-center gap-2">
-                <span>Filter by Brand {selectedBrand !== "all" && <span className="text-brand-gold-dark font-extrabold">• ({selectedBrand})</span>}</span>
-                {user && user.role === 'admin' && (
-                  <button onClick={openAddBrand} className="text-brand-gold p-1 rounded hover:bg-brand-cream/50" aria-label="Add Brand"><PlusCircle size={14} /></button>
-                )}
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-            {selectedBrand !== "all" && (<button onClick={()=>setSelectedBrand('all')} className="text-xs font-bold text-stone-500 hover:text-red-500 transition-colors flex items-center gap-1"><X size={12} /> Reset Brand</button>)}
-            {availableBrands.length > 8 && (<button onClick={()=>setShowAllBrands(!showAllBrands)} className="text-xs font-bold text-brand-gold-dark hover:text-brand-black transition-colors flex items-center gap-1">{showAllBrands ? <>Show Less <ChevronUp size={13} /></> : <>View All ({availableBrands.length}) <ChevronDown size={13} /></>}</button>)}
+            <Tag size={14} className="text-brand-gold" />
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Filter by Brand</span>
+            {user && user.role === 'admin' && (
+              <button type="button" onClick={openAddBrand} className="ml-2 text-brand-gold cursor-pointer" aria-label="Add Brand">
+                <PlusCircle size={14} />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {selectedBrand !== "all" && (
+              <button type="button" onClick={()=>setSelectedBrand('all')} className="text-xs font-bold text-stone-500 hover:text-red-500 transition-colors flex items-center gap-1">
+                <X size={12} /> Reset Brand
+              </button>
+            )}
+            {availableBrands.length > 8 && (
+              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="text-xs font-bold text-brand-gold-dark hover:text-brand-black transition-colors flex items-center gap-1">
+                {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
+              </button>
+            )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-2.5">
-          <button onClick={()=>setSelectedBrand('all')} className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold border transition-all duration-200 active:scale-95 ${selectedBrand==='all'?'bg-brand-black text-brand-gold border-brand-black font-bold shadow-sm':'bg-brand-cream/60 text-stone-700 border-stone-200 hover:border-brand-gold/50 hover:bg-white'}`}>
-            <span>All Brands</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${selectedBrand==='all'?'bg-brand-gold text-brand-black font-bold':'bg-stone-200/80 text-stone-500'}`}>{selectedSubcategory==='all'?categoryProducts.length:categoryProducts.filter((p)=>p.subcategory===selectedSubcategory).length}</span>
+        <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
+          {/* All Brands pill */}
+          <button
+            type="button"
+            onClick={()=>setSelectedBrand('all')}
+            className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 ${selectedBrand==='all'?"bg-brand-black text-brand-gold border border-brand-gold/60":"bg-white text-stone-600 border border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
+          >
+            <span className="pointer-events-none">All Brands</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${selectedBrand==='all'?"bg-brand-gold text-brand-black font-extrabold":"bg-stone-100 text-stone-500"}`}>
+              {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategory===selectedSubcategory).length}
+            </span>
           </button>
-          { (showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
+          {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
             const isSelected = selectedBrand===brand;
             const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategory===selectedSubcategory)).length;
             return (
-              <button key={brand} onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)} className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold border transition-all duration-200 active:scale-95 ${isSelected?'bg-brand-gold text-brand-black border-brand-gold shadow-sm font-bold scale-102':'bg-brand-cream/60 text-stone-700 border-stone-200 hover:border-brand-gold/50 hover:bg-white'}`}>
-                <span>{brand}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected?'bg-brand-black text-brand-gold font-bold':'bg-stone-200/80 text-stone-500'}`}>{brandCount}</span>
+              <button
+                key={brand}
+                type="button"
+                onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)}
+                className={`shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 ${isSelected?"bg-brand-black text-brand-gold border border-brand-gold/60":"bg-white text-stone-600 border border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
+              >
+                <span className="pointer-events-none">{brand}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isSelected?"bg-brand-gold text-brand-black font-extrabold":"bg-stone-100 text-stone-500"}`}>{brandCount}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* ── SORT / FILTER BAR (sticky) ── */}
+      <div
+        style={{ top: 'var(--header-height, 124px)' }}
+        className="sticky z-20 bg-brand-cream/95 backdrop-blur-md py-2 -mx-4 sm:-mx-6 px-4 sm:px-6 border-b border-brand-gold-border/30 shadow-sm"
+      >
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-          { (selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') && (<button onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 text-xs font-semibold text-stone-400 hover:text-red-500"> <X size={13} /> Clear All Filters</button>) }
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-stone-400 font-medium hidden sm:inline">Showing <strong className="text-brand-black">{filteredProducts.length}</strong> items</span>
-          {user && user.role==='admin' && (
-            <button onClick={openAddProduct} className="flex items-center gap-2 px-3 py-2 bg-black text-white rounded hidden sm:inline"><PlusCircle size={14} /> Add Product</button>
-          )}
-          <div className="relative">
-            <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="appearance-none bg-white border border-stone-200 text-brand-black text-xs font-semibold rounded-full pl-4 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer shadow-sm">
-              <option value="price-asc">Price: Low to High (السعر من الأقل)</option>
-              <option value="price-desc">Price: High to Low (السعر من الأكبر)</option>
-              <option value="discount">Best Deals / Offers (أفضل العروض بناءً على نسبة الخصم)</option>
-            </select>
-            <ArrowUpDown size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+            {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') && (
+              <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer">
+                <X size={13} /> Clear All Filters
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-stone-400 font-medium hidden sm:inline">Showing <strong className="text-brand-black">{filteredProducts.length}</strong> items</span>
+            {user && user.role==='admin' && (
+              <button type="button" onClick={openAddProduct} className="flex items-center gap-2 px-3 py-2 bg-black text-white rounded text-xs cursor-pointer hidden sm:inline-flex">
+                <PlusCircle size={14} /> Add Product
+              </button>
+            )}
+            <div className="relative">
+              <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="appearance-none bg-white border border-stone-200 text-brand-black text-xs font-semibold rounded-full pl-4 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer shadow-sm">
+                <option value="price-asc">Price: Low to High (السعر من الأقل)</option>
+                <option value="price-desc">Price: High to Low (السعر من الأكبر)</option>
+                <option value="discount">Best Deals / Offers (أفضل العروض بناءً على نسبة الخصم)</option>
+              </select>
+              <ArrowUpDown size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+            </div>
           </div>
         </div>
       </div>
 
-      
-
+      {/* ── PRODUCT GRID ── */}
       {filteredProducts.length>0 ? (
         <>
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Products</h3>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {filteredProducts.map((product)=> (
+            {filteredProducts.map((product)=>(
               <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlist.some(w=>w.id===product.id)} onEdit={user&&user.role==='admin'?openEditProduct:undefined} onDelete={user&&user.role==='admin'?handleDeleteProduct:undefined} />
             ))}
           </div>
@@ -239,12 +284,60 @@ export default function CategoryView({
           <div className="w-16 h-16 rounded-full bg-brand-gold-light text-brand-gold-dark flex items-center justify-center mx-auto mb-4 border border-brand-gold/30"><Filter size={24} /></div>
           <h3 className="font-serif-luxury text-2xl font-bold text-brand-black mb-2">No Products Found</h3>
           <p className="text-sm text-stone-500 mb-6">There are no products matching this combination of sub-category and brand filters.</p>
-          <button onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="px-6 py-3 bg-brand-black text-brand-gold font-bold text-xs uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md">Reset All Filters</button>
+          <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="px-6 py-3 bg-brand-black text-brand-gold font-bold text-xs uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md cursor-pointer">Reset All Filters</button>
         </div>
       )}
 
-      <AdminModal open={modalOpen} title={modalMode==='addProduct'?'Add Product': modalMode==='editProduct'?'Edit Product': modalMode==='addSub'?'Add Subcategory': modalMode==='editSub'?'Edit Subcategory': modalMode==='addBrand'?'Add Brand':''} onClose={()=>setModalOpen(false)}>
-        <ModalContent mode={modalMode} category={category} editing={editing} onClose={()=>setModalOpen(false)} actions={actions} availableBrands={availableBrands} onBrandAdded={(name)=>{ if(name){ setSelectedBrand(name); setShowAllBrands(true); } }} />
+      <AdminModal
+        open={modalOpen}
+        title={
+          modalMode === 'addProduct'
+            ? 'Add Product'
+            : modalMode === 'editProduct'
+            ? 'Edit Product'
+            : modalMode === 'addSub'
+            ? 'Add Subcategory'
+            : modalMode === 'editSub'
+            ? 'Edit Subcategory'
+            : modalMode === 'addBrand'
+            ? 'Add Brand'
+            : ''
+        }
+        onClose={() => {
+          setModalOpen(false);
+          setModalMode(null);
+          setEditing(null);
+        }}
+      >
+        <ModalContent
+          mode={modalMode}
+          category={category}
+          editing={editing}
+          onClose={() => {
+            setModalOpen(false);
+            setModalMode(null);
+            setEditing(null);
+          }}
+          actions={actions}
+          availableBrands={availableBrands}
+          allBrands={ALL_BRANDS}
+          onProductSaved={() => {
+            // Reset filters so the new/edited product is visible immediately
+            setSelectedSubcategory("all");
+            setSelectedBrand("all");
+            setSelectedPriceRange("all");
+            setSelectedSkinType("all");
+            setModalOpen(false);
+            setModalMode(null);
+            setEditing(null);
+          }}
+          onBrandAdded={(name) => {
+            if (name) {
+              setSelectedBrand(name);
+              setShowAllBrands(true);
+            }
+          }}
+        />
       </AdminModal>
     </div>
   );
@@ -257,10 +350,22 @@ interface ModalContentProps {
   onClose: () => void;
   actions: DataActions;
   availableBrands: string[];
+  allBrands?: string[];
+  onProductSaved?: (product: Product) => void;
   onBrandAdded?: (name: string) => void;
 }
 
-function ModalContent({ mode, category, editing, onClose, actions, availableBrands, onBrandAdded }: ModalContentProps){
+function ModalContent({
+  mode,
+  category,
+  editing,
+  onClose,
+  actions,
+  availableBrands,
+  allBrands = [],
+  onProductSaved,
+  onBrandAdded,
+}: ModalContentProps) {
   type ProductFormState = {
     name: string;
     brand: string;
@@ -276,6 +381,24 @@ function ModalContent({ mode, category, editing, onClose, actions, availableBran
     id?: number;
   };
 
+  // Dedicated state for simple text forms (addSub, editSub, addBrand)
+  const [simpleLabel, setSimpleLabel] = useState('');
+  const [customBrandMode, setCustomBrandMode] = useState(false);
+
+  // Combine category brands, global brands, and available brands
+  const mergedBrands = useMemo(() => {
+    const set = new Set<string>();
+    (availableBrands || []).forEach((b) => b && set.add(b));
+    (category.brands || []).forEach((b) => b && set.add(b));
+    (allBrands || []).forEach((b) => b && set.add(b));
+    return Array.from(set);
+  }, [availableBrands, category.brands, allBrands]);
+
+  // Filter out the "all" pseudo-subcategory for assignment
+  const assignableSubcategories = useMemo(() => {
+    return (category.subcategories || []).filter((s) => s.id !== 'all');
+  }, [category.subcategories]);
+
   const [form, setForm] = useState<ProductFormState>(() => {
     if (mode === 'editProduct' && editing && 'id' in editing) {
       return {
@@ -284,24 +407,29 @@ function ModalContent({ mode, category, editing, onClose, actions, availableBran
         marketPrice: editing.marketPrice !== undefined ? String(editing.marketPrice) : '',
         sellingPrice: editing.sellingPrice !== undefined ? String(editing.sellingPrice) : '',
         image: editing.image || '',
+        description: editing.description || '',
       };
     }
     return {
       name: '',
-      brand: (availableBrands && availableBrands[0]) || '',
+      brand: mergedBrands[0] || '',
       category: category?.id || '',
-      subcategory: category?.subcategories?.[0]?.id || 'all',
+      subcategory: assignableSubcategories[0]?.id || category?.subcategories?.[0]?.id || 'general',
       adminCost: '',
       marketPrice: '',
       sellingPrice: '',
-      rating: 0,
-      reviews: 0,
+      rating: 5,
+      reviews: 1,
       image: '',
       description: '',
     };
   });
 
-  useEffect(()=>{
+  useEffect(() => {
+    setSimpleLabel(
+      mode === 'editSub' && editing && 'sub' in editing ? editing.sub.label || '' : ''
+    );
+
     if (mode === 'editProduct' && editing && 'id' in editing) {
       const mapped: ProductFormState = {
         ...editing,
@@ -309,50 +437,157 @@ function ModalContent({ mode, category, editing, onClose, actions, availableBran
         marketPrice: editing.marketPrice !== undefined ? String(editing.marketPrice) : '',
         sellingPrice: editing.sellingPrice !== undefined ? String(editing.sellingPrice) : '',
         image: editing.image || '',
+        description: editing.description || '',
       };
       setForm(mapped);
-    }
-    if (mode === 'addProduct') {
-      setForm((f) => ({
-        ...f,
+      setCustomBrandMode(Boolean(editing.brand && !mergedBrands.includes(editing.brand)));
+    } else if (mode === 'addProduct') {
+      const defaultSub = assignableSubcategories[0]?.id || 'general';
+      const defaultBrand = mergedBrands[0] || '';
+      setForm({
+        name: '',
         category: category?.id || '',
-        subcategory: category?.subcategories?.[0]?.id || 'all',
-        brand: (availableBrands && availableBrands[0]) || '',
+        subcategory: defaultSub,
+        brand: defaultBrand,
         adminCost: '',
         marketPrice: '',
         sellingPrice: '',
-      }));
+        description: '',
+        image: '',
+        rating: 5,
+        reviews: 1,
+      });
+      setCustomBrandMode(false);
     }
-    if (mode === 'addBrand' || mode === 'addSub') {
-      setForm((f) => ({ ...f, name: '' }));
-    }
-  }, [mode, editing, category, availableBrands]);
+  }, [mode, editing, category, mergedBrands, assignableSubcategories]);
 
-  const submit = ()=>{
+  // Compress image file to max 600px to avoid filling localStorage quota
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 600;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > maxDim) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          }
+        } else {
+          if (h > maxDim) {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          setForm((f) => ({ ...f, image: canvas.toDataURL('image/jpeg', 0.8) }));
+        } else {
+          setForm((f) => ({ ...f, image: String(event.target?.result || '') }));
+        }
+      };
+      img.src = String(event.target?.result || '');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const submit = () => {
     if (mode === 'addProduct') {
-      if (!form.brand || form.brand === '') {
-        alert('Please select a Brand before saving the product.');
+      const trimmedName = form.name.trim();
+      if (!trimmedName) {
+        alert('Please enter a Product Name before saving.');
         return;
       }
-      if (!form.subcategory || form.subcategory === '') {
-        alert('Please select a Sub-category before saving the product.');
+      const trimmedBrand = form.brand.trim();
+      if (!trimmedBrand) {
+        alert('Please select or specify a Brand before saving.');
         return;
       }
-      if (!form.marketPrice || String(form.marketPrice).trim() === '' || isNaN(Number(String(form.marketPrice).trim()))) {
-        alert('Please enter a valid General Price.');
-        return;
-      }
-      if (!form.sellingPrice || String(form.sellingPrice).trim() === '' || isNaN(Number(String(form.sellingPrice).trim()))) {
+      const chosenSub =
+        form.subcategory && form.subcategory !== 'all'
+          ? form.subcategory
+          : assignableSubcategories[0]?.id || 'general';
+
+      if (!form.sellingPrice || String(form.sellingPrice).trim() === '' || isNaN(Number(form.sellingPrice))) {
         alert('Please enter a valid Store Price.');
         return;
       }
-      const parsedAdmin = form.adminCost && String(form.adminCost).trim() !== '' ? parseFloat(String(form.adminCost).trim()) : undefined;
-      const parsedMarket = parseFloat(String(form.marketPrice).trim());
       const parsedSell = parseFloat(String(form.sellingPrice).trim());
+      const parsedMarket =
+        form.marketPrice && String(form.marketPrice).trim() !== '' && !isNaN(Number(form.marketPrice))
+          ? parseFloat(String(form.marketPrice).trim())
+          : parsedSell;
+      const parsedAdmin =
+        form.adminCost && String(form.adminCost).trim() !== '' && !isNaN(Number(form.adminCost))
+          ? parseFloat(String(form.adminCost).trim())
+          : undefined;
+
+      const fallbackImage =
+        form.image.trim() ||
+        'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80';
+
       const prod: Product = {
         id: Date.now(),
-        name: form.name.trim(),
-        brand: form.brand,
+        name: trimmedName,
+        brand: trimmedBrand,
+        category: category.id,
+        subcategory: chosenSub,
+        adminCost: parsedAdmin,
+        marketPrice: parsedMarket,
+        sellingPrice: parsedSell,
+        price: parsedSell,
+        originalPrice: parsedMarket,
+        rating: Number(form.rating) || 5,
+        reviews: Number(form.reviews) || 1,
+        image: fallbackImage,
+        description: form.description.trim(),
+      };
+
+      actions.addProduct(prod);
+      if (onProductSaved) {
+        onProductSaved(prod);
+      }
+      onClose();
+    } else if (mode === 'editProduct') {
+      if (!form.id) {
+        alert('Product is missing an ID and cannot be updated.');
+        return;
+      }
+      const trimmedName = form.name.trim();
+      if (!trimmedName) {
+        alert('Please enter a Product Name before saving.');
+        return;
+      }
+      const trimmedBrand = form.brand.trim();
+      if (!trimmedBrand) {
+        alert('Please select or specify a Brand before saving.');
+        return;
+      }
+      if (!form.sellingPrice || String(form.sellingPrice).trim() === '' || isNaN(Number(form.sellingPrice))) {
+        alert('Please enter a valid Store Price.');
+        return;
+      }
+      const parsedSell = parseFloat(String(form.sellingPrice).trim());
+      const parsedMarket =
+        form.marketPrice && String(form.marketPrice).trim() !== '' && !isNaN(Number(form.marketPrice))
+          ? parseFloat(String(form.marketPrice).trim())
+          : parsedSell;
+      const parsedAdmin =
+        form.adminCost && String(form.adminCost).trim() !== '' && !isNaN(Number(form.adminCost))
+          ? parseFloat(String(form.adminCost).trim())
+          : undefined;
+
+      const updated: Partial<Product> = {
+        name: trimmedName,
+        brand: trimmedBrand,
         category: category.id,
         subcategory: form.subcategory,
         adminCost: parsedAdmin,
@@ -360,106 +595,242 @@ function ModalContent({ mode, category, editing, onClose, actions, availableBran
         sellingPrice: parsedSell,
         price: parsedSell,
         originalPrice: parsedMarket,
-        rating: Number(form.rating) || 0,
-        reviews: Number(form.reviews) || 0,
-        image: form.image || '',
-        description: form.description,
+        image: form.image.trim() || undefined,
+        description: form.description.trim(),
       };
-      actions.addProduct(prod);
-    } else if (mode === 'editProduct') {
-      if (!form.id) {
-        alert('Product is missing an id and cannot be updated.');
-        return;
-      }
-      if (!form.marketPrice || String(form.marketPrice).trim() === '' || isNaN(Number(String(form.marketPrice).trim()))) {
-        alert('Please enter a valid General Price.');
-        return;
-      }
-      if (!form.sellingPrice || String(form.sellingPrice).trim() === '' || isNaN(Number(String(form.sellingPrice).trim()))) {
-        alert('Please enter a valid Store Price.');
-        return;
-      }
-      const market = parseFloat(String(form.marketPrice).trim());
-      const sell = parseFloat(String(form.sellingPrice).trim());
-      const adminCost = form.adminCost && String(form.adminCost).trim() !== '' ? parseFloat(String(form.adminCost).trim()) : undefined;
-      const updated: Partial<Product> = {
-        name: form.name.trim(),
-        brand: form.brand,
-        category: category.id,
-        subcategory: form.subcategory,
-        adminCost,
-        marketPrice: market,
-        sellingPrice: sell,
-        price: sell,
-        originalPrice: market,
-        rating: Number(form.rating) || 0,
-        reviews: Number(form.reviews) || 0,
-        image: form.image || '',
-        description: form.description,
-      };
+
       actions.updateProduct(form.id, updated);
-    } else if (mode === 'addSub') {
-      const id = form.name.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
-      if (form.name && form.name.trim()) actions.addSubcategory(category.id, { id, label: form.name.trim() });
-    } else if (mode === 'editSub') {
-      if (!editing || !("sub" in editing)) return;
-      actions.updateSubcategory(category.id, editing.sub.id, { label: form.name });
-    } else if (mode === 'addBrand') {
-      const name = (form.name || '').trim();
-      if (name) {
-        const exists = (availableBrands || []).some((b) => String(b).toLowerCase() === name.toLowerCase());
-        if (exists) {
-          alert('Brand already exists in this category.');
-          return;
-        }
-        actions.addBrand(name, category.id);
-        if (typeof onBrandAdded === 'function') onBrandAdded(name);
+      if (onProductSaved) {
+        onProductSaved({ ...form, ...updated } as Product);
       }
+      onClose();
+    } else if (mode === 'addSub') {
+      const trimmed = simpleLabel.trim();
+      if (!trimmed) return;
+      const id = trimmed.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+      actions.addSubcategory(category.id, { id, label: trimmed });
+      onClose();
+    } else if (mode === 'editSub') {
+      if (!editing || !('sub' in editing)) return;
+      actions.updateSubcategory(category.id, editing.sub.id, { label: simpleLabel.trim() });
+      onClose();
+    } else if (mode === 'addBrand') {
+      const name = simpleLabel.trim();
+      if (!name) return;
+      const exists = (availableBrands || []).some((b) => String(b).toLowerCase() === name.toLowerCase());
+      if (exists) {
+        alert('Brand already exists in this category.');
+        return;
+      }
+      actions.addBrand(name, category.id);
+      if (typeof onBrandAdded === 'function') onBrandAdded(name);
+      onClose();
     }
-    onClose();
   };
 
   return (
-    <div className="space-y-3">
-      {(mode==='addProduct'||mode==='editProduct') && (
-        <div className="grid grid-cols-2 gap-2">
-          <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Name" className="p-2 border rounded" />
-          <select value={form.brand} onChange={e=>setForm({...form,brand:e.target.value})} className="p-2 border rounded" required>
-            {(availableBrands && availableBrands.length ? availableBrands : []).map(b => <option key={b} value={b}>{b}</option>)}
-            {!availableBrands?.length && <option value="">No Brands</option>}
-          </select>
-          <select value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})} className="p-2 border rounded" required>
-            {category.subcategories.map(s=> <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-          <div className="space-y-2">
-            <input value={form.adminCost} type="text" inputMode="decimal" onChange={e=>setForm({...form,adminCost:e.target.value})} placeholder="Our Price" className="p-2 border rounded" />
-            <input value={form.marketPrice} type="text" inputMode="decimal" onChange={e=>setForm({...form,marketPrice:e.target.value})} placeholder="General Price" className="p-2 border rounded" />
-            <input value={form.sellingPrice} type="text" inputMode="decimal" onChange={e=>setForm({...form,sellingPrice:e.target.value})} placeholder="Store Price" className="p-2 border rounded" />
+    <div className="space-y-4 text-brand-black">
+      {(mode === 'addProduct' || mode === 'editProduct') && (
+        <div className="space-y-3">
+          {/* Product Name */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Product Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Cerave Hydrating Facial Cleanser"
+              className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+            />
           </div>
-          <div className="col-span-2 space-y-2">
-            <input type="file" accept="image/*" onChange={(e)=>{
-              const file = e.target.files && e.target.files[0];
-              if(!file) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                const result = typeof reader.result === 'string' ? reader.result : '';
-                setForm(f => ({ ...f, image: result }));
-              };
-              reader.readAsDataURL(file);
-            }} className="p-2 border rounded w-full" />
+
+          {/* Brand & Subcategory row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Brand Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-stone-700">
+                  Brand <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomBrandMode(!customBrandMode)}
+                  className="text-[11px] text-brand-gold-dark hover:underline cursor-pointer"
+                >
+                  {customBrandMode ? 'Choose existing' : '+ Custom brand'}
+                </button>
+              </div>
+              {customBrandMode || mergedBrands.length === 0 ? (
+                <input
+                  type="text"
+                  placeholder="Enter brand name"
+                  value={form.brand}
+                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                  className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+                />
+              ) : (
+                <select
+                  value={form.brand}
+                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                  className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+                >
+                  <option value="">Select Brand</option>
+                  {mergedBrands.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Subcategory Selection */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Sub-Category <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.subcategory}
+                onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
+                className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+              >
+                {assignableSubcategories.length > 0 ? (
+                  assignableSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="general">General</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          {/* Pricing Grid */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                Our Cost <span className="text-stone-400 font-normal">(opt)</span>
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.adminCost}
+                onChange={(e) => setForm({ ...form, adminCost: e.target.value })}
+                placeholder="e.g. 150"
+                className="w-full p-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-600 mb-1">General Price</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.marketPrice}
+                onChange={(e) => setForm({ ...form, marketPrice: e.target.value })}
+                placeholder="e.g. 280"
+                className="w-full p-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                Store Price <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.sellingPrice}
+                onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
+                placeholder="e.g. 220"
+                className="w-full p-2 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold font-bold text-brand-black"
+              />
+            </div>
+          </div>
+
+          {/* Image Upload & URL */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Product Image</label>
+            <div className="space-y-2">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageFileChange}
+                className="w-full text-xs text-stone-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-black file:text-white hover:file:bg-brand-charcoal file:cursor-pointer p-1.5 border border-stone-200 rounded-xl bg-stone-50"
+              />
+              <input
+                type="text"
+                placeholder="Or paste image URL (https://...)"
+                value={form.image.startsWith('data:') ? '' : form.image}
+                onChange={(e) => setForm({ ...form, image: e.target.value })}
+                className="w-full p-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400"
+              />
+            </div>
             {form.image && (
-              <div className="w-36 h-36 rounded overflow-hidden border"><img src={form.image} alt="preview" className="w-full h-full object-cover"/></div>
+              <div className="mt-2 flex items-center gap-3">
+                <div className="w-16 h-16 rounded-xl overflow-hidden border border-stone-200 bg-white shrink-0">
+                  <img src={form.image} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, image: '' })}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Remove Image
+                </button>
+              </div>
             )}
           </div>
-          <textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Description" className="p-2 border rounded col-span-2" />
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">Description</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Product details, active ingredients, usage instructions..."
+              className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 resize-none"
+            />
+          </div>
         </div>
       )}
-      {(mode==='addSub'||mode==='editSub'||mode==='addBrand') && (
+
+      {/* addSub / editSub / addBrand — simple text forms */}
+      {(mode === 'addSub' || mode === 'editSub' || mode === 'addBrand') && (
         <div>
-          <input value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} placeholder={mode==='addBrand'?'Brand name':'Subcategory label'} className="w-full p-2 border rounded" />
+          <label className="block text-xs font-semibold text-stone-700 mb-1">
+            {mode === 'addBrand' ? 'Brand Name' : 'Subcategory Label'}
+          </label>
+          <input
+            value={simpleLabel}
+            onChange={(e) => setSimpleLabel(e.target.value)}
+            placeholder={mode === 'addBrand' ? 'e.g. CeraVe' : 'e.g. Face Cleansers'}
+            className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+            autoFocus
+          />
         </div>
       )}
-      <div className="flex justify-end gap-2"><button onClick={onClose}>Cancel</button><button onClick={submit} className="px-3 py-2 bg-black text-white rounded">Save</button></div>
+
+      {/* Action Buttons */}
+      <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-100">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-semibold text-stone-600 hover:text-brand-black rounded-xl transition-colors cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          className="px-5 py-2 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 cursor-pointer"
+        >
+          {mode === 'addProduct' ? 'Save Product' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }

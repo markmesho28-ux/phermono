@@ -17,38 +17,53 @@ function seededProducts(): Product[] {
   } as Product));
 }
 
-export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [brands, setBrands] = useState<string[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [priceRanges, setPriceRanges] = useState<PriceRange[]>(SEED_PRICE_RANGES);
-  const [orders, setOrders] = useState<Order[]>([]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          categories?: Category[];
-          brands?: string[];
-          products?: Product[];
-          priceRanges?: PriceRange[];
+function getInitialData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        const loadedProducts = Array.isArray(parsed.products) && parsed.products.length > 0 ? parsed.products : seededProducts();
+        const loadedCategories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : seededCategories;
+        const loadedBrands = Array.isArray(parsed.brands) && parsed.brands.length > 0 ? parsed.brands : seededBrands;
+        const loadedRanges = Array.isArray(parsed.priceRanges) && parsed.priceRanges.length > 0 ? parsed.priceRanges : seededPriceRanges;
+        const loadedOrders = Array.isArray(parsed.orders) ? parsed.orders : [];
+        return {
+          categories: loadedCategories,
+          brands: loadedBrands,
+          products: loadedProducts,
+          priceRanges: loadedRanges,
+          orders: loadedOrders,
         };
-        setCategories(parsed.categories ?? seededCategories);
-        setBrands(parsed.brands ?? seededBrands);
-        setProducts(parsed.products ?? seededProducts());
-        setPriceRanges(parsed.priceRanges ?? seededPriceRanges);
-        return;
       }
-    } catch (e) {}
-    setCategories(seededCategories);
-    setBrands(seededBrands);
-    setProducts(seededProducts());
-  }, []);
+    }
+  } catch (e) {}
+  return {
+    categories: seededCategories,
+    brands: seededBrands,
+    products: seededProducts(),
+    priceRanges: seededPriceRanges,
+    orders: [],
+  };
+}
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const [initial] = useState(() => getInitialData());
+  const [categories, setCategories] = useState<Category[]>(initial.categories);
+  const [brands, setBrands] = useState<string[]>(initial.brands);
+  const [products, setProducts] = useState<Product[]>(initial.products);
+  const [priceRanges] = useState<PriceRange[]>(initial.priceRanges);
+  const [orders, setOrders] = useState<Order[]>(initial.orders);
 
   useEffect(() => {
-    const payload = { categories, brands, products, priceRanges, orders };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch (e) {}
+    if (categories.length > 0 || products.length > 0) {
+      const payload = { categories, brands, products, priceRanges, orders };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
+    }
   }, [categories, brands, products, priceRanges, orders]);
 
   // Categories
@@ -96,7 +111,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Products
-  const addProduct = (prod: Product) => { const id = Date.now(); setProducts(prev => [...prev, { ...prod, id }]); return id; };
+  const addProduct = (prod: Product) => {
+    const id = Date.now();
+    const newProd: Product = { ...prod, id };
+    setProducts(prev => [newProd, ...prev]);
+    if (prod.brand && prod.category) {
+      addBrand(prod.brand, prod.category);
+    }
+    return id;
+  };
   const updateProduct = (id: number, updates: Partial<Product>) => setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
   const deleteProduct = (id: number) => setProducts(prev => prev.filter(p => p.id !== id));
   const toggleHero = (id: number) => setProducts(prev => prev.map(p => p.id === id ? { ...p, hero: !p.hero } : p));

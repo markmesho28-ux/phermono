@@ -19,38 +19,46 @@ const defaultMessages: ChatMessage[] = [
   {
     id: 1,
     sender: "bot",
-    text: "Hi! I can help you find the best products for your skin, hair, and beauty routine.",
-    time: "Now",
+    text: "أهلاً بيك في PherMono يا فندم! أنا معاك عشان أساعدك تختار أحسن حاجات مناسبة لروتينك.",
+    time: "الآن",
   },
   {
     id: 2,
     sender: "bot",
-    text: "Tell me what you need or what problem you’re trying to solve, and I’ll recommend the most relevant items from our catalog.",
-    time: "Now",
+    text: "قولي بتدور على إيه أو إيه اللي محتاجه النهارده، وهقولك على ترشيحات تظبط معاك بالأسعار فوراً.",
+    time: "الآن",
   },
 ];
 
 const GROQ_MODEL = "openai/gpt-oss-20b";
 
-// Load Groq API keys from environment variables to avoid committing secrets.
-// Support either a single key `VITE_GROQ_API_KEY` or a comma-separated list `VITE_GROQ_API_KEYS`.
-const GROQ_API_KEYS: string[] = (() => {
-  try {
-    const envList = (import.meta.env.VITE_GROQ_API_KEYS ?? "") as string;
-    const single = (import.meta.env.VITE_GROQ_API_KEY ?? "") as string;
-    const fromList = envList.split(",").map((s) => s.trim()).filter(Boolean);
-    const keys = fromList.slice();
-    if (single && !keys.includes(single)) keys.unshift(single);
-    return keys;
-  } catch {
-    return [];
-  }
-})();
+const resolveGroqApiKeys = (): string[] => {
+  const env = process.env as Record<string, string | undefined>;
+  const candidates: Array<string | undefined> = [
+    env.REACT_APP_GROQ_API_KEY,
+    env.REACT_APP_GROQ_API_KEYS,
+  ];
+
+  const keys = candidates
+    .flatMap((value) => {
+      if (!value) return [];
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    })
+    .filter((key, index, arr) => arr.indexOf(key) === index);
+
+  return keys;
+};
+
+const GROQ_API_KEYS: string[] = resolveGroqApiKeys();
 const MAX_DAILY_MESSAGES_PER_USER = 20;
 const GUEST_CHAT_USAGE_TABLE = "guest_chat_usage";
 const USER_CHAT_USAGE_TABLE = "user_chat_usage";
-const LOCAL_GUEST_LIMIT_KEY = "phermono_guest_daily_limit_v1";
-const LOCAL_USER_LIMIT_KEY = "phermono_user_daily_limit_v1";
+// Bump version suffix whenever the counting semantics change to clear stale stored data.
+const LOCAL_GUEST_LIMIT_KEY = "phermono_guest_daily_limit_v2";
+const LOCAL_USER_LIMIT_KEY = "phermono_user_daily_limit_v2";
 
 let groqKeyIndex = 0;
 
@@ -160,13 +168,18 @@ const getGuestUsageFromSupabase = async (fingerprint: string) => {
   }
 
   const messageCount = Number(data?.message_count ?? 0);
+  // Keep localStorage in sync with Supabase so increments use the right base
+  writeLocalGuestUsage(fingerprint, messageCount);
   return getUsageLimitStatus(messageCount);
 };
 
 const incrementGuestUsage = async (fingerprint: string) => {
   if (supabase) {
     const date = getDayStamp();
-    const nextCount = readLocalGuestUsage(fingerprint) + 1;
+    // Use localStorage as the base — it was just synced from Supabase by getGuestUsageFromSupabase,
+    // so it reflects the accurate user-only message count for today.
+    const currentCount = readLocalGuestUsage(fingerprint);
+    const nextCount = currentCount + 1;
 
     const { error } = await supabase.from(GUEST_CHAT_USAGE_TABLE).upsert(
       {
@@ -237,13 +250,18 @@ const getUserUsageFromSupabase = async (userId: string) => {
   }
 
   const messageCount = Number(data?.message_count ?? 0);
+  // Keep localStorage in sync with Supabase so increments use the right base
+  writeLocalUserUsage(userId, messageCount);
   return getUsageLimitStatus(messageCount);
 };
 
 const incrementUserUsage = async (userId: string) => {
   if (supabase) {
     const date = getDayStamp();
-    const nextCount = readLocalUserUsage(userId) + 1;
+    // Use localStorage as the base — it was just synced from Supabase by getUserUsageFromSupabase,
+    // so it reflects the accurate user-only message count for today.
+    const currentCount = readLocalUserUsage(userId);
+    const nextCount = currentCount + 1;
 
     const { error } = await supabase.from(USER_CHAT_USAGE_TABLE).upsert(
       {
@@ -275,26 +293,133 @@ const buildCatalogContext = (products: Product[] = []) => {
 
   return products
     .slice(0, 200)
-    .map((product) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      category: product.category,
-      subcategory: product.subcategory,
-      skinType: product.skinType ?? "All",
-      price: product.price,
-      originalPrice: product.originalPrice ?? product.marketPrice ?? null,
-      rating: product.rating,
-      description: product.description,
-      tag: product.tag ?? null,
-    }))
-    .map((item) => JSON.stringify(item))
-    .join("\n");
+    .map((p) => {
+      const price = p.price != null ? `${p.price} EGP` : "price not set";
+      const original =
+        p.originalPrice != null || p.marketPrice != null
+          ? ` (was ${p.originalPrice ?? p.marketPrice} EGP)`
+          : "";
+      const skinType = p.skinType ? `skin type: ${p.skinType}` : "";
+      const tag = p.tag ? `tag: ${p.tag}` : "";
+      const rating = p.rating != null ? `rating: ${p.rating}` : "";
+      const meta = [skinType, tag, rating].filter(Boolean).join(", ");
+
+      return [
+        `PRODUCT: ${p.name}`,
+        `  brand: ${p.brand}`,
+        `  category: ${p.category}`,
+        `  subcategory: ${p.subcategory ?? ""}`,
+        `  price: ${price}${original}`,
+        meta ? `  attributes: ${meta}` : "",
+        p.description ? `  description: ${p.description}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
 };
 
-const formatBotText = (text: string): string => {
-  if (!text) return "I’m not sure yet, but I can help narrow it down based on your routine and preferences.";
-  return text.replace(/\n+/g, " ").trim();
+export const buildDynamicFallback = (query = "", isArabic = true): string => {
+  const q = query.toLowerCase();
+  const isHair =
+    /شعر|كيرلي|شامبو|بلسم|سيروم شعر|حمام كريم|جل|جيل|تساقط|هيش|قشرة|فروة|hair|shampoo|conditioner|curl|gel|styling|scalp|frizz/.test(
+      q
+    );
+  const isSkin =
+    /بشر|وجه|حبوب|غسول|مرطب|واقي شمس|صن بلوك|تجاعيد|نضارة|مسام|skin|face|cleanser|moisturizer|acne|sunscreen|spf|pores/.test(
+      q
+    );
+
+  if (isHair) {
+    return isArabic
+      ? "أنا معاك يا فندم! قولي بتدور على إيه لشعرك أو نوع شعرك إيه، وهقترحلك أحسن المنتجات المناسبة من الكتالوج فوراً."
+      : "I'm right here to help! Tell me about your hair type or what you need for your hair, and I'll find the best picks from our catalog.";
+  }
+
+  if (isSkin) {
+    return isArabic
+      ? "أنا معاك يا فندم! قولي إيه اللي حابب تركز عليه في بشرتك أو نوع بشرتك إيه، وهقترحلك أحسن المنتجات من الكتالوج فوراً."
+      : "I'm right here to help! Tell me about your skin type or concern, and I'll find the best picks from our catalog.";
+  }
+
+  return isArabic
+    ? "أنا معاك يا فندم! قولي بتدور على منتج إيه بالظبط أو إيه اللي محتاجه، وهقولك على أحسن ترشيحات من الكتالوج فوراً."
+    : "I'm right here to help! Tell me what product you're looking for or how I can help, and I'll find the best matches from our catalog right away.";
+};
+
+export const formatBotText = (text: string, fallbackText?: string): string => {
+  if (!text) {
+    return (
+      fallbackText ||
+      "أنا معاك يا فندم! قولي بتدور على منتج إيه بالظبط أو إيه اللي محتاجه، وهقولك على أحسن ترشيحات من الكتالوج فوراً."
+    );
+  }
+
+  let cleaned = text;
+  const hasArabic = /[\u0600-\u06FF]/.test(cleaned);
+  const separator = hasArabic ? " ، " : ", ";
+
+  // Strip or convert raw markdown tables
+  if (cleaned.includes("|")) {
+    const lines = cleaned.split("\n");
+    const formattedLines: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Skip separator rows like |---|---| or |:---:|
+      if (/^\|?[\s-:]+\|[\s-:]+(\|[\s-:]+)*\|?$/.test(trimmed)) {
+        continue;
+      }
+      if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+        const cells = trimmed
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim())
+          .filter(Boolean);
+        if (cells.length > 0) {
+          formattedLines.push(cells.join(separator));
+          continue;
+        }
+      }
+      formattedLines.push(line);
+    }
+    cleaned = formattedLines.join("\n");
+  }
+
+  // Remove all markdown bold/italic/strikethrough markers (***, **, *, __, _, ~~)
+  cleaned = cleaned.replace(/[*_~]{1,3}/g, "");
+
+  // Remove markdown headers (#, ##, ###, etc.) and blockquotes (>)
+  cleaned = cleaned.replace(/^[ \t]*[#>]+[ \t]*/gm, "");
+
+  // Strip bullet points, dashes, plus signs, and numbered lists at line start
+  cleaned = cleaned
+    .split("\n")
+    .map((line) => {
+      let l = line.trim();
+      // Strip leading bullets, dashes, pluses, tildes
+      l = l.replace(/^[•*+–—\-\s]+/, "");
+      // Strip leading numbered list prefixes like "1." or "1)"
+      l = l.replace(/^\d+[.)]\s*/, "");
+      return l;
+    })
+    .join("\n");
+
+  // Remove leftover raw table pipe symbols
+  cleaned = cleaned.replace(/\|/g, " ");
+
+  // Replace isolated dash separators like " - " with appropriate comma
+  cleaned = cleaned.replace(/[ \t]+-[ \t]+/g, separator);
+
+  // Normalize multiple empty lines to max double newline
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
+
+  return (
+    cleaned ||
+    fallbackText ||
+    (hasArabic
+      ? "أنا معاك يا فندم! قولي بتدور على منتج إيه بالظبط أو إيه اللي محتاجه، وهقولك على أحسن ترشيحات من الكتالوج فوراً."
+      : "I'm right here to help! Tell me what product you're looking for, and I'll find the best matches from our catalog right away.")
+  );
 };
 
 export default function ChatWidget({ products = [] }: ChatWidgetProps) {
@@ -305,6 +430,7 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [guestFingerprint, setGuestFingerprint] = useState<string>("");
+  const [isArabicMode, setIsArabicMode] = useState(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -334,6 +460,9 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
+    const isArabic = /[\u0600-\u06FF]/.test(trimmed);
+    setIsArabicMode(isArabic);
+
     const userMessage: ChatMessage = {
       id: Date.now(),
       sender: "user",
@@ -352,9 +481,11 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
         setGuestFingerprint(fingerprint);
 
         const status = await getGuestUsageFromSupabase(fingerprint);
-        if (!status.allowed || status.messageCount + 1 > MAX_DAILY_MESSAGES_PER_USER) {
-          const limitMessage =
-            "You’ve reached the daily guest limit of 20 chat messages. Sign in to continue asking about products.";
+        // Block only when the user has fully exhausted their daily quota of user-sent messages
+        if (status.messageCount >= MAX_DAILY_MESSAGES_PER_USER) {
+          const limitMessage = isArabic
+            ? "وصلت للحد الأقصى المجاني (20 رسالة في اليوم).. سجل دخولك عشان تقدر تكمل كلام معانا براحتك يا فندم!"
+            : "You have reached the free guest limit of 20 messages per day. Please sign in to continue chatting with us!";
           setErrorMessage(limitMessage);
           setMessages((prev) => [
             ...prev,
@@ -370,9 +501,11 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
       } else {
         const userId = String(user.phone || user.name || "guest-user");
         const status = await getUserUsageFromSupabase(userId);
-        if (!status.allowed || status.messageCount + 1 > MAX_DAILY_MESSAGES_PER_USER) {
-          const limitMessage =
-            "You’ve reached your daily limit of 20 chat messages. Please sign in again tomorrow or continue browsing the catalog.";
+        // Block only when the user has fully exhausted their daily quota of user-sent messages
+        if (status.messageCount >= MAX_DAILY_MESSAGES_PER_USER) {
+          const limitMessage = isArabic
+            ? "وصلت للحد الأقصى اليومي (20 رسالة).. تقدر تتصفح وتطلب دلوقتي ونكمل كلامنا بكرة يا غالي!"
+            : "You have reached your daily limit of 20 messages. Feel free to browse and place orders, and we can continue chatting tomorrow!";
           setErrorMessage(limitMessage);
           setMessages((prev) => [
             ...prev,
@@ -388,24 +521,110 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
       }
 
       const catalog = buildCatalogContext(products);
+      const systemPrompt = `You are "PhM Concierge" — the personal AI shopping assistant for PherMono, a premium Egyptian cosmetics, skincare, and haircare store. Your single mission: help every customer find the right product for their exact need, feel genuinely cared for, and leave the chat satisfied.
+
+════════════════════════════════
+SAFETY RULE — ALWAYS ON (applies to every single reply, no exceptions)
+════════════════════════════════
+ZERO MARKDOWN. Your output must read like a real human chat message, not a document:
+No bold asterisks ** anywhere. No italic asterisks * anywhere. No dash list items. No bullet points of any kind. No numbered lists. No markdown tables. No headers (#). No horizontal rules (---).
+Write in smooth, flowing conversational paragraphs. If you must separate two ideas, use a new line and a natural connector like "وكمان..." or "Also..." Never output raw labels like "العلامة التجارية:" or "السعر:" or "Brand:" or "Price:" — weave them naturally into the sentence.
+
+════════════════════════════════
+RULE 1 — BILINGUAL AUTO-DETECTION (strict)
+════════════════════════════════
+Read every user message and detect its language before replying.
+
+If the user writes in Arabic or Egyptian dialect:
+Reply entirely in warm, natural Egyptian Arabic slang. Use phrases that feel like a trusted friend: "يا فندم", "بص يا سيدي", "منورنا", "عندنا حاجة تحفة", "هتظبط معاك", "تحت أمرك", "طبعاً يا غالي", "والله ده اختيار ذوق". Never use formal فصحى or robotic phrasing.
+
+If the user writes in English:
+Reply entirely in natural, warm, confident English — like a knowledgeable beauty concierge in a high-end boutique. Never sound robotic or scripted.
+
+Never mix languages mid-reply. Never switch unless the user switches first.
+
+════════════════════════════════
+RULE 2 — GREETINGS & SMALL TALK (non-pushy)
+════════════════════════════════
+If the user sends only a greeting or casual small talk with no product or beauty question attached — examples: "Hi", "Hello", "hey", "السلام عليكم", "أهلاً", "هاي", "ازيك", "how are you", "wassup", "مرحبا" — respond ONLY with a warm welcome and ask how you can help today. Do not mention any product, brand, concern, or routine. Keep it purely human and welcoming.
+
+Arabic example: "أهلاً وسهلاً يا فندم! منورنا في PherMono. قولي بتدور على إيه النهارده وأنا هنا أساعدك!"
+English example: "Hey there! Welcome to PherMono — I'm your personal beauty concierge. What can I help you find today?"
+
+════════════════════════════════
+RULE 3 — STRICT SEMANTIC MATCHING (most critical rule)
+════════════════════════════════
+Before recommending ANY product, you must silently evaluate every product in the catalog against the user's actual intent. A product may ONLY be recommended if ALL of the following match:
+
+CATEGORY MATCH: The product's category and subcategory must align with what the user asked for.
+Examples of strict enforcement:
+If the user asks for a shampoo, conditioner, hair mask, or any haircare — ONLY recommend products whose category is haircare. NEVER recommend skincare for a haircare request.
+If the user asks for a face wash, moisturizer, serum, sunscreen, or any skincare — ONLY recommend skincare products. NEVER recommend haircare.
+If the user mentions a specific product category (e.g., "lip balm", "eye cream", "body lotion") — ONLY match that exact subcategory.
+
+ATTRIBUTE MATCH: The product's attributes must not contradict the user's stated needs.
+If the user says "for oily skin" — do not recommend products tagged or described for "dry skin" or "sensitive skin".
+If the user says "for curly hair" — do not recommend products for "straight hair" or "colored hair" unless they explicitly ask.
+If the user says "for women" — do not recommend men's grooming products, and vice versa.
+If the user says "fragrance-free" or "alcohol-free" — do not recommend products that contain those ingredients per their description.
+
+HONESTY WHEN NO MATCH EXISTS:
+If no product in the catalog matches the user's specific request, you must be honest and say so naturally without hallucinating or making up products.
+Arabic honest response example: "مافيش منتج مطابق لطلبك بالضبط حالياً، بس ممكن أوريك أقرب حاجة موجودة..."
+English honest response example: "We don't have an exact match for your request right now, but I can show you the closest alternative we have..."
+Then suggest the closest available alternative from the catalog, or offer to help find a suitable option.
+
+════════════════════════════════
+RULE 4 — NATURAL CONVERSATIONAL DELIVERY (no robotic templates)
+════════════════════════════════
+When recommending a product, weave its name, brand, benefit, and price into a natural flowing sentence. Never output raw labeled fields.
+
+WRONG (robotic, forbidden):
+"المنتج: غسول سيراVe
+العلامة التجارية: CeraVe
+السعر: 320 جنيه"
+
+RIGHT (natural, human):
+"عندنا غسول CeraVe الرغوي اللي بيعمل حل ممتاز للبشرة الدهنية وبيتباع بـ 320 جنيه، وده واحد من أكتر المنتجات اللي بيتطلب عليها — بتستخدمه صباحاً ومساءً وهتحس بفرق في أول أسبوع."
+
+Recommend at most 2 products per reply. Each recommendation should be one or two warm, natural sentences that naturally include the product name, brand, price, and a brief honest reason it fits the user's need.
+
+════════════════════════════════
+STORE PRODUCT CATALOG
+════════════════════════════════
+${catalog}`;
+
       const requestBody = {
         model: GROQ_MODEL,
         messages: [
           {
             role: "system",
-            content: `You are a premium beauty and skincare shopping assistant for a modern e-commerce storefront. Use ONLY the catalog below when recommending products. If a customer describes a skin concern, product need, or shopping goal, analyze it and suggest the exact relevant products from the catalog. Recommend specific products by name and brand, explain why they fit, and keep recommendations concise and helpful. Do not invent products that are not in the catalog. Catalog: ${catalog}`,
+            content: systemPrompt,
           },
           { role: "user", content: trimmed },
         ],
-        temperature: 0.6,
-        top_p: 0.9,
-        max_tokens: 300,
+        temperature: 0.5,
+        top_p: 0.8,
+        max_tokens: 1000,
       };
+
+      if (GROQ_API_KEYS.length === 0) {
+        throw new Error(
+          "Groq API is not configured. Add REACT_APP_GROQ_API_KEY or REACT_APP_GROQ_API_KEYS to your .env file before using the chat assistant."
+        );
+      }
 
       let lastError: Error | null = null;
 
       for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt += 1) {
         const apiKey = getNextGroqKey();
+
+        if (!apiKey) {
+          lastError = new Error(
+            "No valid Groq API key is available in the current environment. Please add REACT_APP_GROQ_API_KEY or REACT_APP_GROQ_API_KEYS."
+          );
+          continue;
+        }
 
         try {
           const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -430,12 +649,13 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
 
           const data = await response.json();
           const rawText = data?.choices?.[0]?.message?.content ?? "";
-          const reply = rawText || "I found a few matching ideas. Tell me your skin type or concern and I’ll narrow it down further.";
+          const dynamicFallback = buildDynamicFallback(trimmed, isArabic);
+          const reply = rawText || dynamicFallback;
 
           const botMessage: ChatMessage = {
             id: Date.now() + 1,
             sender: "bot",
-            text: formatBotText(reply),
+            text: formatBotText(reply, dynamicFallback),
             time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
           };
 
@@ -464,7 +684,9 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
         throw lastError;
       }
 
-      throw new Error("Groq API key rotation failed.");
+      throw new Error(
+        "Groq API key rotation failed. No usable Groq keys are available. Please check REACT_APP_GROQ_API_KEY or REACT_APP_GROQ_API_KEYS in your environment."
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Something went wrong while generating a recommendation.";
@@ -474,7 +696,9 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
       const fallback: ChatMessage = {
         id: Date.now() + 1,
         sender: "bot",
-        text: "I’m having trouble reaching the AI assistant right now. Please try again in a moment, or describe your concern and I can still help you narrow down the best products from our catalog.",
+        text: isArabic
+          ? "معلش حصلت مشكلة بسيطة في الاتصال دلوقتي.. جرب تسألني تاني كده أو قولي محتاج إيه وأنا هساعدك على طول!"
+          : "Sorry, I ran into a brief connection issue. Please try asking again or let me know what you're looking for, and I'll help right away!",
         time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       };
 
@@ -492,8 +716,8 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
   };
 
   return (
-    <div className="fixed bottom-6 left-6 z-50">
-      <div className={`transition-all duration-300 ${isOpen ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"}`}>
+    <div className="fixed bottom-6 left-6 z-40 pointer-events-none">
+      <div className={`pointer-events-none transition-all duration-300 ${isOpen ? "pointer-events-auto opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"}`}>
         <div className="mb-4 w-[22rem] overflow-hidden rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:w-[24rem]">
           <header className="flex items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-4 py-3 text-white">
             <div className="flex items-center gap-3">
@@ -502,7 +726,7 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
               </div>
               <div>
                 <p className="text-sm font-semibold">PhM Concierge</p>
-                <p className="text-[10px] uppercase tracking-[0.22em] text-stone-300">AI shopping assistant</p>
+                <p className="text-[10px] tracking-wider text-stone-300">مساعد التسوق الذكي</p>
               </div>
             </div>
 
@@ -524,13 +748,14 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
                   className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
+                    dir="auto"
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
                       message.sender === "user"
                         ? "bg-brand-black text-white"
                         : "border border-stone-200 bg-white text-stone-700"
                     }`}
                   >
-                    <p>{message.text}</p>
+                    <p className="whitespace-pre-line break-words">{message.text}</p>
                     <span
                       className={`mt-1 block text-[10px] ${
                         message.sender === "user" ? "text-stone-300" : "text-stone-400"
@@ -547,7 +772,7 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
                   <div className="rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600 shadow-sm">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 animate-pulse rounded-full bg-brand-gold" />
-                      <span>Thinking...</span>
+                      <span>{isArabicMode ? "بيفكر في أحسن ترشيح..." : "Finding the best recommendations..."}</span>
                     </div>
                   </div>
                 </div>
@@ -569,7 +794,8 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about products..."
+                placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
+                dir="auto"
                 className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
                 aria-label="Type your message"
                 disabled={isLoading}
@@ -592,7 +818,7 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         aria-label={isOpen ? "Close chat" : "Open chat"}
-        className="group relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30"
+        className="group relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto"
       >
         <span className="absolute inset-0 rounded-full animate-pulse bg-brand-gold/30" />
         <span className="absolute inset-1 rounded-full border border-brand-black/10 bg-white/10" />

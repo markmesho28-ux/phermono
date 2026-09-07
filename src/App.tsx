@@ -426,22 +426,6 @@ export default function App(){
     handleCheckoutConfirm(order);
   }, [actions, handleCheckoutConfirm]);
 
-  // Attach click wiring to header's wishlist button (header not modified here)
-  React.useEffect(() => {
-    const sel = 'button[aria-label="Wishlist"]';
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const btn = target?.closest?.(sel);
-      if (btn) {
-        e.preventDefault();
-        // Navigate to dedicated favorites page
-        setActiveCategory('favorites');
-      }
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, []);
-
   // Update account/avatar button styling for high contrast for both logged-in and guest states.
   React.useEffect(() => {
     const applyAvatarStyle = () => {
@@ -497,8 +481,6 @@ export default function App(){
         .bg-brand-black .text-stone-300 { display: none !important; }
         /* Hide category hero subtitle */
         .relative.overflow-hidden .relative.z-10 .text-stone-300 { display: none !important; }
-        /* Clear search placeholder */
-        input::placeholder { color: transparent !important; }
         /* Style header wishlist button to match bag */
         button[aria-label="Wishlist"] { background: #000 !important; color: #fff !important; padding: 0.6rem 0.9rem !important; border-radius: 9999px !important; display: inline-flex !important; align-items: center; gap: .6rem; box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
         button[aria-label="Wishlist"] svg { color: #f59e0b !important; }
@@ -514,6 +496,7 @@ export default function App(){
         onCartOpen={() => { if(user) setCartOpen(true); else { setAuthIntent('openCart'); setAuthOpen(true); } }}
         onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { setAuthIntent('openTracking'); setAuthOpen(true); } }}
         onProfileOpen={() => { if(user) setActiveCategory('profile'); else { setAuthIntent('openProfile'); setAuthOpen(true); } }}
+        onWishlistOpen={() => setActiveCategory('favorites')}
         searchQuery={searchQuery}
         onSearchChange={(q)=>{ setSearchQuery(q); if(q && activeCategory==='home'){ setActiveCategory('skincare'); setSelectedBrand(null); } }}
         onHomeClick={() => { setActiveCategory('home'); setSelectedBrand(null); setSearchQuery(''); }}

@@ -36,7 +36,13 @@ export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
   };
 
   return (
-    <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/90 backdrop-blur-md border-r border-brand-gold-border/40 min-h-[calc(100vh-5rem)] sticky top-28 overflow-y-auto px-4 py-6">
+    <aside
+      style={{
+        top: 'var(--header-height, 124px)',
+        height: 'calc(100vh - var(--header-height, 124px))',
+      }}
+      className="hidden md:flex flex-col w-64 shrink-0 bg-white/90 backdrop-blur-md border-r border-brand-gold-border/40 sticky overflow-y-auto px-4 py-6"
+    >
       {/* Home Navigation */}
       <button
         type="button"

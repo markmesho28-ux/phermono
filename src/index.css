@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --header-height: 124px;
+}
+
 /* Luxury Fonts (moved)
   The Google Fonts @import was removed from CSS and added to `public/index.html` as <link> tags
   to avoid secret-scanning false positives and improve loading behavior.
