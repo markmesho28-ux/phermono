@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { getShippingCost } from '../utils/shipping';
 import AdminModal from './AdminModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import type { CartItem, OrderInput } from '../types';
 
-const GOVERNORATES = [
-  'Cairo','Giza','Alexandria','Dakahlia','Red Sea','Beheira','Fayoum','Gharbia','Ismailia','Kafr El Sheikh','Matruh','Minya','Monufia','New Valley','North Sinai','Port Said','Qalyubia','Qena','Sharqia','Sohag','South Sinai','Aswan','Asyut'
-];
+const GOVERNORATES = ['أسوان','أسيوط'];
 
 interface CheckoutModalProps {
   open: boolean;
@@ -40,8 +39,9 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
 
   const submit = ()=>{
     if(!validate()) return;
-    const total = subtotal + (subtotal >= 50 ? 0 : 4.99);
-    const order: OrderInput = { name: form.name.trim(), phone: form.phone.trim(), governorate: form.governorate, address: form.address.trim(), items: cartItems.map(i=>({ id: i.id, name: i.name, qty: i.qty, price: i.price })), total, status: 'pending' };
+    const shipping = (getShippingCost && typeof getShippingCost === 'function') ? getShippingCost(form.governorate) : 50;
+    const total = +(subtotal + shipping).toFixed(2);
+    const order: OrderInput = { name: form.name.trim(), phone: form.phone.trim(), governorate: form.governorate, address: form.address.trim(), items: cartItems.map(i=>({ id: i.id, name: i.name, qty: i.qty, price: i.price })), total, shipping, status: 'pending' };
     actions.addOrder(order);
     if(onConfirm) onConfirm(order);
     onClose();
@@ -73,7 +73,16 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
           <textarea value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-2 border rounded" />
           {errors.address && <div className="text-xs text-red-500">{errors.address}</div>}
         </div>
-        <div className="flex justify-end gap-2"><button onClick={onClose}>Cancel</button><button onClick={submit} className="px-3 py-2 bg-black text-white rounded">Place Order</button></div>
+        {/* Order Summary */}
+        <div className="bg-stone-50 p-3 rounded">
+          <div className="flex justify-between text-sm text-stone-600"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>${getShippingCost(form.governorate).toFixed(2)}</span></div>
+          <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>${(subtotal + getShippingCost(form.governorate)).toFixed(2)}</span></div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 rounded touch-target">Cancel</button>
+          <button onClick={submit} className="px-3 py-2 bg-black text-white rounded touch-target">Place Order</button>
+        </div>
       </div>
     </AdminModal>
   );

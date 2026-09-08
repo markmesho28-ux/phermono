@@ -10,9 +10,11 @@ const ICONS = { Sparkles, Wind, Palette, Droplets, Star };
 interface SidebarProps {
   activeCategory: string;
   onSelect: (id: string) => void;
+  mobileOpen?: boolean;
+  onClose?: () => void;
 }
 
-export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
+export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, onClose }: SidebarProps) {
   const { user } = useAuth();
   const { categories: CATEGORIES, actions } = useData();
   const [modalOpen, setModalOpen] = useState(false);
@@ -35,28 +37,23 @@ export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
     setModalOpen(true);
   };
 
-  return (
-    <aside
-      style={{
-        top: 'var(--header-height, 124px)',
-        height: 'calc(100vh - var(--header-height, 124px))',
-      }}
-      className="hidden md:flex flex-col w-64 shrink-0 bg-white/90 backdrop-blur-md border-r border-brand-gold-border/40 sticky overflow-y-auto px-4 py-6"
-    >
+  const SidebarBody = () => (
+    <>
       {/* Home Navigation */}
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); onSelect("home"); }}
-        className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer ${
-          activeCategory === "home" ? "bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
+        onClick={(e) => { e.preventDefault(); onSelect("home"); if(onClose) onClose(); }}
+        className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto ${
+          String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
         }`}
+        data-active={String(activeCategory) === "home"}
       >
         <div className="flex items-center justify-between w-full pointer-events-none">
           <div className="flex items-center gap-3 pointer-events-none">
-            <Home size={18} className={`pointer-events-none ${activeCategory === "home" ? "text-brand-gold" : "text-stone-400"}`} />
+            <Home size={18} className={`pointer-events-none ${String(activeCategory) === "home" ? "text-brand-gold" : "text-stone-400"}`} />
             <span className="pointer-events-none">Home Overview</span>
           </div>
-          {activeCategory === "home" && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
+          {String(activeCategory) === "home" && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
         </div>
       </button>
 
@@ -64,27 +61,36 @@ export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
 
       {/* Orders Management (Admin) */}
       {user && user.role === 'admin' && (
-        <button
-          type="button"
-          onClick={(e) => { e.preventDefault(); onSelect('orders'); }}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-2xl bg-white text-sm font-semibold hover:bg-brand-cream/60 cursor-pointer pointer-events-auto shadow-sm border border-stone-100"
-        >
-          <span className="pointer-events-none">Orders Management</span>
-        </button>
+        <div className="mb-4 px-2">
+          <button 
+            type="button"
+            onClick={(e) => { e.preventDefault(); onSelect('orders'); if(onClose) onClose(); }} 
+            className={`sidebar-nav-item w-full flex items-center gap-2 px-3 py-2 rounded-2xl text-sm font-semibold cursor-pointer pointer-events-auto shadow-sm border ${
+              String(activeCategory) === 'orders' ? 'active bg-brand-black text-white border-brand-gold/40' : 'bg-white text-stone-700 hover:bg-brand-cream/60 border-stone-100'
+            }`}
+            data-active={String(activeCategory) === 'orders'}
+          >
+            <div className="w-full text-left pointer-events-none">
+              <span className="pointer-events-none">Orders Management</span>
+            </div>
+          </button>
+        </div>
       )}
 
       {/* Departments Label */}
-      <div className="flex items-center justify-between px-3 mb-3 pointer-events-none">
+      <div className="flex items-center justify-between px-3 mb-3">
         <div className="flex items-center gap-3 pointer-events-none">
           <span className="text-[10px] font-bold tracking-widest text-brand-darkgray uppercase pointer-events-none">Departments</span>
           {user && user.role === 'admin' && (
-            <button
+            <button 
               type="button"
-              onClick={openAddModal}
+              onClick={openAddModal} 
               className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center"
               title="Add Category"
             >
-              <PlusCircle size={18} className="pointer-events-none" />
+              <div className="pointer-events-none flex items-center justify-center">
+                <PlusCircle size={18} className="pointer-events-none" />
+              </div>
             </button>
           )}
         </div>
@@ -95,50 +101,58 @@ export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
       <nav className="space-y-1.5">
         {CATEGORIES.map((cat) => {
           const Icon = ICONS[cat.icon as keyof typeof ICONS] || Sparkles;
-          const isActive = activeCategory === cat.id;
+          const isActive = String(activeCategory) === String(cat.id);
 
           return (
-            <div key={cat.id} className="relative">
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); onSelect(cat.id); }}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer ${
-                  isActive ? "bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
-                }`}
-              >
-                <div className="flex items-center gap-3.5 pointer-events-none">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${isActive ? "bg-brand-gold text-brand-black shadow-sm" : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
-                    <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="pointer-events-none" />
-                  </div>
-                  <span className="pointer-events-none">{cat.label}</span>
+            <button
+              key={cat.id}
+              type="button"
+              onClick={(e) => { e.preventDefault(); onSelect(cat.id); if(onClose) onClose(); }}
+              className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto ${
+                isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
+              }`}
+              data-active={isActive}
+            >
+              {/* Left Side (Icon + Text) - Non Interactive */}
+              <div className="flex items-center gap-3.5 pointer-events-none">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${isActive ? "bg-brand-gold text-brand-black shadow-sm" : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
+                  <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="pointer-events-none" />
                 </div>
+                <span className="pointer-events-none">{cat.label}</span>
+              </div>
 
-                <div className="flex items-center gap-2 pointer-events-none">
+              {/* Right Side (Actions + Arrow) */}
+              <div className="flex items-center gap-2 pointer-events-none">
+                {user && user.role === 'admin' && (
+                  <div className="flex gap-1 mr-1 pointer-events-auto">
+                    <button 
+                      type="button"
+                      onClick={(e) => openEditModal(e, cat)} 
+                      className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
+                      title="Edit"
+                    >
+                      <div className="pointer-events-none flex items-center justify-center">
+                        <Edit2 size={13} className="pointer-events-none" />
+                      </div>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }} 
+                      className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
+                      title="Delete"
+                    >
+                      <div className="pointer-events-none flex items-center justify-center">
+                        <Trash2 size={13} className="pointer-events-none" />
+                      </div>
+                    </button>
+                  </div>
+                )}
+                {/* Arrow - Non Interactive */}
+                <div className="pointer-events-none">
                   <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "text-brand-gold translate-x-0.5 opacity-100" : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"}`} />
                 </div>
-              </button>
-
-              {user && user.role === 'admin' && (
-                <div className="absolute inset-y-0 right-3 flex items-center gap-1 pointer-events-none">
-                  <button
-                    type="button"
-                    onClick={(e) => openEditModal(e, cat)}
-                    className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
-                    title="Edit"
-                  >
-                    <Edit2 size={13} className="pointer-events-none" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }}
-                    className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
-                    title="Delete"
-                  >
-                    <Trash2 size={13} className="pointer-events-none" />
-                  </button>
-                </div>
-              )}
-            </div>
+              </div>
+            </button>
           );
         })}
       </nav>
@@ -146,7 +160,30 @@ export default function Sidebar({ activeCategory, onSelect }: SidebarProps) {
       <AdminModal open={modalOpen} title={mode==='add' ? 'Add Category' : 'Edit Category'} onClose={()=>setModalOpen(false)}>
         <CategoryForm initial={editingCat} onClose={()=>setModalOpen(false)} mode={mode} />
       </AdminModal>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile drawer overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => onClose && onClose()} />
+          <aside style={{ top: 'var(--header-height)' }} className="absolute left-0 bottom-0 w-64 bg-white/95 backdrop-blur-md border-r border-brand-gold-border/40 overflow-y-auto px-4 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-lg font-bold">Menu</div>
+              <button onClick={() => onClose && onClose()} className="p-2 rounded-full">Close</button>
+            </div>
+            <SidebarBody />
+          </aside>
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/90 backdrop-blur-md border-r border-brand-gold-border/40 min-h-[calc(100vh-5rem)] sticky top-28 overflow-y-auto px-4 py-6">
+        <SidebarBody />
+      </aside>
+    </>
   );
 }
 

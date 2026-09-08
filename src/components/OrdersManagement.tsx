@@ -15,7 +15,15 @@ export default function OrdersManagement(){
         <div className="text-sm text-stone-500">No orders yet.</div>
       ) : (
         <div className="space-y-4">
-          {orders.slice().reverse().map(order=> (
+          {orders
+            .slice()
+            .sort((a, b) => {
+              const ta = a.createdAt ? new Date(a.createdAt).getTime() : a.id || 0;
+              const tb = b.createdAt ? new Date(b.createdAt).getTime() : b.id || 0;
+              // descending: newest first
+              return tb - ta;
+            })
+            .map(order=> (
             <div key={order.id} className="border rounded-lg p-4 bg-white shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <div>

@@ -15,29 +15,35 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
   const [form, setForm] = useState({ name: '', phone: '', address: '', password: '', governorate: '' });
   const [error, setError] = useState<string | null>(null);
 
-  const GOVERNORATES = [
-    'Cairo','Giza','Alexandria','Dakahlia','Red Sea','Beheira','Fayoum','Gharbia','Ismailia','Kafr El Sheikh','Matruh','Minya','Monufia','New Valley','North Sinai','Port Said','Qalyubia','Qena','Sharqia','Sohag','South Sinai','Aswan','Asyut'
-  ];
+  const GOVERNORATES = ['أسوان','أسيوط'];
 
   if (!open) return null;
 
   const handleSignIn = async () => {
     setError(null);
     if (!form.phone || !form.password) return setError('Phone and password are required');
-    const res = login({ phone: form.phone, password: form.password });
-    if (res.error) return setError(res.error);
-    if (onSuccess) onSuccess(res.user);
-    onClose();
+    try {
+      const res = await login({ phone: form.phone, password: form.password });
+      if (res.error) return setError(res.error);
+      if (onSuccess) onSuccess(res.user);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    }
   };
 
   const handleSignUp = async () => {
     setError(null);
     if (!form.phone || !form.password || !form.name) return setError('Name, phone and password are required');
     if (!form.governorate) return setError('Please select your governorate');
-    const res = signup({ name: form.name, phone: form.phone, address: form.address, governorate: form.governorate, password: form.password });
-    if (res.error) return setError(res.error);
-    if (onSuccess) onSuccess(res.user);
-    onClose();
+    try {
+      const res = await signup({ name: form.name, phone: form.phone, address: form.address, governorate: form.governorate, password: form.password });
+      if (res.error) return setError(res.error);
+      if (onSuccess) onSuccess(res.user);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    }
   };
 
   return (
@@ -112,6 +118,14 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
               />
+            </div>
+          )}
+
+          {mode === 'signup' && (
+            <div>
+              <p className="text-xs text-stone-500 mb-1">
+                {/* Email is not collected from the user; a service email is generated from phone. */}
+              </p>
             </div>
           )}
 

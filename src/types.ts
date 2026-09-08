@@ -57,6 +57,7 @@ export interface Order {
   address: string;
   items: OrderItem[];
   total: number;
+  shipping?: number;
   status: string;
   createdAt: number | string;
 }
@@ -134,8 +135,8 @@ export interface DataContextValue {
 export interface AuthContextValue {
   user: AuthUser | null;
   users: AuthUserWithPassword[];
-  signup: (params: SignupParams) => { error?: string; user?: AuthUser };
-  login: (params: LoginParams) => { error?: string; user?: AuthUser };
+  signup: (params: SignupParams) => Promise<{ error?: string; user?: AuthUser }>;
+  login: (params: LoginParams) => Promise<{ error?: string; user?: AuthUser }>;
   logout: () => void;
   updateProfile: (updates: ProfileUpdate) => { error?: string; user?: AuthUser };
   changePassword: (params: { currentPassword: string; newPassword: string }) => { error?: string; ok?: boolean };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import supabase from "../lib/supabase";
 import { MessageCircleMore, SendHorizonal, Sparkles, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import type { Product } from "../types";
@@ -13,6 +13,7 @@ interface ChatMessage {
 
 interface ChatWidgetProps {
   products?: Product[];
+  mode?: "floating" | "page";
 }
 
 const defaultMessages: ChatMessage[] = [
@@ -70,6 +71,11 @@ const getNextGroqKey = () => {
 };
 
 const getDayStamp = () => new Date().toISOString().slice(0, 10);
+
+const isValidUUID = (v?: string) => {
+  if (!v || typeof v !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+};
 
 export function getGuestLimitStatus(messageCount: number, limit = MAX_DAILY_MESSAGES_PER_USER) {
   const count = Math.max(0, Number(messageCount) || 0);
@@ -142,12 +148,7 @@ const getGuestFingerprint = async (): Promise<string> => {
   return `guest-${hash.toString(16)}`;
 };
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const supabase =
-  supabaseUrl && supabaseAnonKey && !supabaseUrl.includes("YOUR_SUPABASE")
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+// `supabase` client is imported from `src/lib/supabase.ts`.
 
 const getGuestUsageFromSupabase = async (fingerprint: string) => {
   if (!supabase) {
@@ -232,6 +233,12 @@ const writeLocalUserUsage = (userId: string, count: number) => {
 };
 
 const getUserUsageFromSupabase = async (userId: string) => {
+  // Protect against passing non-UUID user identifiers to DBs that may expect UUIDs.
+  if (!isValidUUID(userId)) {
+    // Fallback to local usage tracking for non-UUID ids
+    return getUsageLimitStatus(readLocalUserUsage(userId));
+  }
+
   if (!supabase) {
     return getUsageLimitStatus(readLocalUserUsage(userId));
   }
@@ -256,71 +263,102 @@ const getUserUsageFromSupabase = async (userId: string) => {
 };
 
 const incrementUserUsage = async (userId: string) => {
-  if (supabase) {
-    const date = getDayStamp();
-    // Use localStorage as the base — it was just synced from Supabase by getUserUsageFromSupabase,
-    // so it reflects the accurate user-only message count for today.
-    const currentCount = readLocalUserUsage(userId);
-    const nextCount = currentCount + 1;
-
-    const { error } = await supabase.from(USER_CHAT_USAGE_TABLE).upsert(
-      {
-        user_id: userId,
-        date,
-        message_count: nextCount,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,date" }
-    );
-
-    if (error) {
-      console.warn("User chat usage update failed:", error.message);
-    }
-
+  // If we don't have a valid UUID, avoid calling the user table and fall back to local/guest tracking.
+  if (!isValidUUID(userId)) {
+    const nextCount = readLocalUserUsage(userId) + 1;
     writeLocalUserUsage(userId, nextCount);
     return getUsageLimitStatus(nextCount);
   }
 
-  const nextCount = readLocalUserUsage(userId) + 1;
+  const date = getDayStamp();
+  const currentCount = readLocalUserUsage(userId);
+  const nextCount = currentCount + 1;
+
+  if (!supabase) {
+    writeLocalUserUsage(userId, nextCount);
+    return getUsageLimitStatus(nextCount);
+  }
+
+  try {
+    // Prefer an update first. If no rows were affected, insert a new row.
+    const { data: updated, error: updateErr } = await supabase
+      .from(USER_CHAT_USAGE_TABLE)
+      .update({ message_count: nextCount, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('date', date)
+      .select();
+
+    if (!updateErr && Array.isArray(updated) && updated.length > 0) {
+      writeLocalUserUsage(userId, nextCount);
+      return getUsageLimitStatus(nextCount);
+    }
+
+    // Insert as fallback
+    const { error: insertErr } = await supabase.from(USER_CHAT_USAGE_TABLE).insert([
+      { user_id: userId, date, message_count: nextCount, updated_at: new Date().toISOString() },
+    ]);
+
+    if (insertErr) {
+      console.warn('User chat usage insert failed:', insertErr.message || insertErr);
+    }
+  } catch (e: any) {
+    console.warn('User chat usage write error:', e?.message || e);
+  }
+
   writeLocalUserUsage(userId, nextCount);
   return getUsageLimitStatus(nextCount);
 };
 
-const buildCatalogContext = (products: Product[] = []) => {
+export const buildCatalogContext = (products: Product[] = []) => {
   if (!products.length) {
     return "No product catalog available yet.";
   }
 
+  // Limit catalog context size to reduce token usage
   return products
-    .slice(0, 200)
-    .map((p) => {
+    .slice(0, 30)
+    .map((p, idx) => {
+      const isHair =
+        p.category === "haircare" ||
+        /hair|shampoo|conditioner|curl|scalp|frizz|شعر|كيرلي/i.test(
+          `${p.category} ${p.subcategory ?? ""} ${p.name} ${p.description ?? ""}`
+        );
+
       const price = p.price != null ? `${p.price} EGP` : "price not set";
       const original =
         p.originalPrice != null || p.marketPrice != null
-          ? ` (was ${p.originalPrice ?? p.marketPrice} EGP)`
+          ? ` (original: ${p.originalPrice ?? p.marketPrice} EGP)`
           : "";
-      const skinType = p.skinType ? `skin type: ${p.skinType}` : "";
-      const tag = p.tag ? `tag: ${p.tag}` : "";
-      const rating = p.rating != null ? `rating: ${p.rating}` : "";
-      const meta = [skinType, tag, rating].filter(Boolean).join(", ");
 
-      return [
-        `PRODUCT: ${p.name}`,
-        `  brand: ${p.brand}`,
-        `  category: ${p.category}`,
-        `  subcategory: ${p.subcategory ?? ""}`,
-        `  price: ${price}${original}`,
-        meta ? `  attributes: ${meta}` : "",
-        p.description ? `  description: ${p.description}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const suitabilityLabel = isHair ? "HAIR_AND_SCALP_TYPE" : "SKIN_TYPE_SUITABILITY";
+      const suitabilityValue = p.skinType ? p.skinType : "Refer to official description";
+
+      const lines = [
+        `[ITEM #${idx + 1}]`,
+        `RAW_PRODUCT_NAME: ${p.name}`,
+        `BRAND: ${p.brand}`,
+        `CATEGORY: ${p.category}`,
+        `SUBCATEGORY: ${p.subcategory || "general"}`,
+        `PRICE: ${price}${original}`,
+        `${suitabilityLabel}: ${suitabilityValue}`,
+        p.tag ? `TAG: ${p.tag}` : "",
+        p.rating ? `RATING: ${p.rating} / 5` : "",
+        `OFFICIAL_DATABASE_DESCRIPTION: ${p.description ? p.description.trim() : "Available in store inventory. Use your expert beauty intelligence to describe its benefits and formula."}`,
+      ].filter(Boolean);
+
+      return lines.join("\n");
     })
-    .join("\n\n");
+    .join("\n\n---\n\n");
 };
 
 export const buildDynamicFallback = (query = "", isArabic = true): string => {
   const q = query.toLowerCase();
+  const isComparison =
+    /قارن|مقارنة|الفرق بين|أحسن من|أفضل من|compare|comparison|difference|vs|versus/.test(q);
+  const isOrder =
+    /طلب|اوردر|أوردر|شحن|توصيل|تتبع|سياسة|استرجاع|دفع|order|shipping|track|delivery|return|refund|policy/.test(q);
+  const isRoutine =
+    /روتين|خطوات|ترتيب|صباحي|مسائي|طريقة استخدام|routine|regimen|steps|am routine|pm routine/.test(q);
   const isHair =
     /شعر|كيرلي|شامبو|بلسم|سيروم شعر|حمام كريم|جل|جيل|تساقط|هيش|قشرة|فروة|hair|shampoo|conditioner|curl|gel|styling|scalp|frizz/.test(
       q
@@ -329,6 +367,24 @@ export const buildDynamicFallback = (query = "", isArabic = true): string => {
     /بشر|وجه|حبوب|غسول|مرطب|واقي شمس|صن بلوك|تجاعيد|نضارة|مسام|skin|face|cleanser|moisturizer|acne|sunscreen|spf|pores/.test(
       q
     );
+
+  if (isComparison) {
+    return isArabic
+      ? "أنا معاك يا فندم! حددلي المنتجات اللي حابب تقارن بينها وهشرحلك الفرق في المكونات والأسعار والنتيجة بالتفصيل من الكتالوج عندنا."
+      : "I'm right here to help! Tell me which products you'd like to compare, and I'll break down the key differences, ingredients, and prices for you.";
+  }
+
+  if (isOrder) {
+    return isArabic
+      ? "أنا معاك يا فندم! الشحن عندنا بيغطي كل المحافظات والدفع متاح عند الاستلام أو أونلاين، وتقدر تتابع تفاصيل طلباتك من صفحة حسابك في أي وقت."
+      : "I'm right here to help! We deliver across all Egyptian governorates with cash on delivery or online payment, and you can track your orders from your account.";
+  }
+
+  if (isRoutine) {
+    return isArabic
+      ? "أنا معاك يا فندم! قولي إيه النتيجة اللي حابب توصلها في روتينك وهنسقلك الخطوات المناسبة بالمنتجات المتاحة بالترتيب."
+      : "I'm right here to help! Tell me your target routine goals, and I'll lay out the ideal step-by-step products from our catalog.";
+  }
 
   if (isHair) {
     return isArabic
@@ -422,18 +478,21 @@ export const formatBotText = (text: string, fallbackText?: string): string => {
   );
 };
 
-export default function ChatWidget({ products = [] }: ChatWidgetProps) {
+export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetProps) {
   const { user } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
-  const [input, setInput] = useState("");
+  const isPageMode = mode === "page";
+  const [isOpen, setIsOpen] = useState(isPageMode);
+  const [isArabicMode, setIsArabicMode] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>(defaultMessages);
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [guestFingerprint, setGuestFingerprint] = useState<string>("");
-  const [isArabicMode, setIsArabicMode] = useState(true);
+  const [guestFingerprint, setGuestFingerprint] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!isPageMode) return;
+
     let active = true;
 
     const generateFingerprint = async () => {
@@ -448,18 +507,24 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isPageMode]);
 
   useEffect(() => {
+    if (!isPageMode) return;
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isOpen, isLoading]);
+  }, [messages, isLoading, isPageMode]);
+
+  if (!isPageMode) {
+    return null;
+  }
 
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
+    // Detect language of this message to respond in matching language
     const isArabic = /[\u0600-\u06FF]/.test(trimmed);
     setIsArabicMode(isArabic);
 
@@ -521,91 +586,29 @@ export default function ChatWidget({ products = [] }: ChatWidgetProps) {
       }
 
       const catalog = buildCatalogContext(products);
-      const systemPrompt = `You are "PhM Concierge" — the personal AI shopping assistant for PherMono, a premium Egyptian cosmetics, skincare, and haircare store. Your single mission: help every customer find the right product for their exact need, feel genuinely cared for, and leave the chat satisfied.
+      const systemPrompt = `You are PhM Concierge — a helpful, friendly shopping assistant for PherMono. Keep replies concise, human, and in the user's detected language (Egyptian Arabic if Arabic detected; otherwise English). Always:
 
-════════════════════════════════
-SAFETY RULE — ALWAYS ON (applies to every single reply, no exceptions)
-════════════════════════════════
-ZERO MARKDOWN. Your output must read like a real human chat message, not a document:
-No bold asterisks ** anywhere. No italic asterisks * anywhere. No dash list items. No bullet points of any kind. No numbered lists. No markdown tables. No headers (#). No horizontal rules (---).
-Write in smooth, flowing conversational paragraphs. If you must separate two ideas, use a new line and a natural connector like "وكمان..." or "Also..." Never output raw labels like "العلامة التجارية:" or "السعر:" or "Brand:" or "Price:" — weave them naturally into the sentence.
+    - Use only products from the provided STORE PRODUCT CATALOG.
+    - Keep recommendations short (max 2 products) and avoid long lists.
+    - Do NOT emit markdown, tables, bullets, or numbered lists; respond as natural chat text.
+    - Be truthful about inventory; if a requested product is not available, offer the closest alternative.
 
-════════════════════════════════
-RULE 1 — BILINGUAL AUTO-DETECTION (strict)
-════════════════════════════════
-Read every user message and detect its language before replying.
+    Tone: warm, polite, and conversational (Egyptian Arabic slang when user message is Arabic).
 
-If the user writes in Arabic or Egyptian dialect:
-Reply entirely in warm, natural Egyptian Arabic slang. Use phrases that feel like a trusted friend: "يا فندم", "بص يا سيدي", "منورنا", "عندنا حاجة تحفة", "هتظبط معاك", "تحت أمرك", "طبعاً يا غالي", "والله ده اختيار ذوق". Never use formal فصحى or robotic phrasing.
+    STORE PRODUCT CATALOG:
+    ${catalog}`;
 
-If the user writes in English:
-Reply entirely in natural, warm, confident English — like a knowledgeable beauty concierge in a high-end boutique. Never sound robotic or scripted.
-
-Never mix languages mid-reply. Never switch unless the user switches first.
-
-════════════════════════════════
-RULE 2 — GREETINGS & SMALL TALK (non-pushy)
-════════════════════════════════
-If the user sends only a greeting or casual small talk with no product or beauty question attached — examples: "Hi", "Hello", "hey", "السلام عليكم", "أهلاً", "هاي", "ازيك", "how are you", "wassup", "مرحبا" — respond ONLY with a warm welcome and ask how you can help today. Do not mention any product, brand, concern, or routine. Keep it purely human and welcoming.
-
-Arabic example: "أهلاً وسهلاً يا فندم! منورنا في PherMono. قولي بتدور على إيه النهارده وأنا هنا أساعدك!"
-English example: "Hey there! Welcome to PherMono — I'm your personal beauty concierge. What can I help you find today?"
-
-════════════════════════════════
-RULE 3 — STRICT SEMANTIC MATCHING (most critical rule)
-════════════════════════════════
-Before recommending ANY product, you must silently evaluate every product in the catalog against the user's actual intent. A product may ONLY be recommended if ALL of the following match:
-
-CATEGORY MATCH: The product's category and subcategory must align with what the user asked for.
-Examples of strict enforcement:
-If the user asks for a shampoo, conditioner, hair mask, or any haircare — ONLY recommend products whose category is haircare. NEVER recommend skincare for a haircare request.
-If the user asks for a face wash, moisturizer, serum, sunscreen, or any skincare — ONLY recommend skincare products. NEVER recommend haircare.
-If the user mentions a specific product category (e.g., "lip balm", "eye cream", "body lotion") — ONLY match that exact subcategory.
-
-ATTRIBUTE MATCH: The product's attributes must not contradict the user's stated needs.
-If the user says "for oily skin" — do not recommend products tagged or described for "dry skin" or "sensitive skin".
-If the user says "for curly hair" — do not recommend products for "straight hair" or "colored hair" unless they explicitly ask.
-If the user says "for women" — do not recommend men's grooming products, and vice versa.
-If the user says "fragrance-free" or "alcohol-free" — do not recommend products that contain those ingredients per their description.
-
-HONESTY WHEN NO MATCH EXISTS:
-If no product in the catalog matches the user's specific request, you must be honest and say so naturally without hallucinating or making up products.
-Arabic honest response example: "مافيش منتج مطابق لطلبك بالضبط حالياً، بس ممكن أوريك أقرب حاجة موجودة..."
-English honest response example: "We don't have an exact match for your request right now, but I can show you the closest alternative we have..."
-Then suggest the closest available alternative from the catalog, or offer to help find a suitable option.
-
-════════════════════════════════
-RULE 4 — NATURAL CONVERSATIONAL DELIVERY (no robotic templates)
-════════════════════════════════
-When recommending a product, weave its name, brand, benefit, and price into a natural flowing sentence. Never output raw labeled fields.
-
-WRONG (robotic, forbidden):
-"المنتج: غسول سيراVe
-العلامة التجارية: CeraVe
-السعر: 320 جنيه"
-
-RIGHT (natural, human):
-"عندنا غسول CeraVe الرغوي اللي بيعمل حل ممتاز للبشرة الدهنية وبيتباع بـ 320 جنيه، وده واحد من أكتر المنتجات اللي بيتطلب عليها — بتستخدمه صباحاً ومساءً وهتحس بفرق في أول أسبوع."
-
-Recommend at most 2 products per reply. Each recommendation should be one or two warm, natural sentences that naturally include the product name, brand, price, and a brief honest reason it fits the user's need.
-
-════════════════════════════════
-STORE PRODUCT CATALOG
-════════════════════════════════
-${catalog}`;
-
+      // Limit conversation context to the last 3 messages to reduce token usage
+      const recent = (messages || []).slice(-3).map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
       const requestBody = {
         model: GROQ_MODEL,
         messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          { role: "user", content: trimmed },
+          { role: 'system', content: systemPrompt },
+          ...recent,
         ],
         temperature: 0.5,
         top_p: 0.8,
-        max_tokens: 1000,
+        max_tokens: 800,
       };
 
       if (GROQ_API_KEYS.length === 0) {
@@ -715,32 +718,23 @@ ${catalog}`;
     }
   };
 
-  return (
-    <div className="fixed bottom-6 left-6 z-40 pointer-events-none">
-      <div className={`pointer-events-none transition-all duration-300 ${isOpen ? "pointer-events-auto opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"}`}>
-        <div className="mb-4 w-[22rem] overflow-hidden rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:w-[24rem]">
-          <header className="flex items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-4 py-3 text-white">
+  if (mode === "page") {
+    return (
+      <div className="w-full bg-brand-cream px-4 py-6 pb-20">
+        <div className="mx-auto w-full max-w-3xl rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl overflow-hidden flex flex-col" style={{ minHeight: "calc(100dvh - 160px)" }}>
+          <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-4 py-3 text-white">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gold/20 text-brand-gold ring-1 ring-brand-gold/40">
-                <Sparkles size={16} />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-gold/20 text-brand-gold ring-1 ring-brand-gold/40">
+                <Sparkles size={18} />
               </div>
               <div>
-                <p className="text-sm font-semibold">PhM Concierge</p>
+                <p className="text-base font-semibold">PhM Concierge</p>
                 <p className="text-[10px] tracking-wider text-stone-300">مساعد التسوق الذكي</p>
               </div>
             </div>
-
-            <button
-              type="button"
-              aria-label="Close chat"
-              onClick={() => setIsOpen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-stone-200 transition hover:bg-white/20 hover:text-white"
-            >
-              <X size={16} />
-            </button>
           </header>
 
-          <div ref={scrollRef} className="h-72 overflow-y-auto bg-stone-50 px-3 py-4 sm:h-80">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto bg-stone-50 px-4 py-5">
             <div className="space-y-3">
               {messages.map((message) => (
                 <div
@@ -756,11 +750,7 @@ ${catalog}`;
                     }`}
                   >
                     <p className="whitespace-pre-line break-words">{message.text}</p>
-                    <span
-                      className={`mt-1 block text-[10px] ${
-                        message.sender === "user" ? "text-stone-300" : "text-stone-400"
-                      }`}
-                    >
+                    <span className={`mt-1 block text-[10px] ${message.sender === "user" ? "text-stone-300" : "text-stone-400"}`}>
                       {message.time}
                     </span>
                   </div>
@@ -813,12 +803,118 @@ ${catalog}`;
           </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div data-chat-widget className="fixed bottom-6 left-6 z-[90] pointer-events-none max-md:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] max-md:left-3 max-md:right-auto">
+      <div data-chat-panel-wrapper className={`pointer-events-none transition-all duration-300 ${isOpen ? "pointer-events-auto opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"}`}>
+        <div
+          data-chat-panel
+          className="mb-4 w-[22rem] max-md:fixed max-md:top-[calc(0.75rem+env(safe-area-inset-top))] max-md:right-3 max-md:left-auto max-md:w-[min(270px,calc(100vw-24px))] max-md:max-w-[calc(100vw-24px)] max-md:max-h-[calc(100dvh-104px)] max-md:overflow-hidden overflow-hidden rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:w-[24rem] max-md:rounded-[22px] max-md:flex max-md:flex-col"
+          style={{ maxHeight: "calc(100dvh - 104px)" }}
+        >
+          <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-3 py-2.5 text-white max-md:px-3 max-md:py-2.5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-gold/20 text-brand-gold ring-1 ring-brand-gold/40">
+                <Sparkles size={16} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">PhM Concierge</p>
+                <p className="text-[10px] tracking-wider text-stone-300">مساعد التسوق الذكي</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close chat"
+              onClick={() => setIsOpen(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-stone-200 transition hover:bg-white/20 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          </header>
+
+          <div ref={scrollRef} className="h-72 overflow-y-auto bg-stone-50 px-3 py-4 sm:h-80 max-md:flex-1 max-md:min-h-0 max-md:h-auto max-md:max-h-[calc(100dvh-200px)] max-md:p-2 max-md:py-2">
+            <div className="space-y-3 max-md:space-y-2">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    dir="auto"
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm max-md:text-[11px] max-md:py-1.5 max-md:px-2.5 ${
+                      message.sender === "user"
+                        ? "bg-brand-black text-white"
+                        : "border border-stone-200 bg-white text-stone-700"
+                    }`}
+                  >
+                    <p className="whitespace-pre-line break-words">{message.text}</p>
+                    <span
+                      className={`mt-1 block text-[10px] max-md:text-[9px] ${
+                        message.sender === "user" ? "text-stone-300" : "text-stone-400"
+                      }`}
+                    >
+                      {message.time}
+                    </span>
+                  </div>
+                </div>
+              ))}
+
+              {isLoading && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600 shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-brand-gold" />
+                      <span>{isArabicMode ? "بيفكر في أحسن ترشيح..." : "Finding the best recommendations..."}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {errorMessage && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shadow-sm">
+                    {errorMessage}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-stone-200 bg-white p-3 max-md:p-2.5 max-md:shrink-0">
+            <div className="flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-2 py-2 shadow-inner max-md:px-1.5 max-md:py-1.5 max-md:min-h-[44px]">
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
+                dir="auto"
+                className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
+                aria-label="Type your message"
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={!input.trim() || isLoading}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-gold text-brand-black shadow-sm transition hover:bg-brand-gold-hover disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Send message"
+              >
+                <SendHorizonal size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <button
         type="button"
+        data-chat-toggle
         onClick={() => setIsOpen((prev) => !prev)}
         aria-label={isOpen ? "Close chat" : "Open chat"}
-        className="group relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto"
+        className="group relative z-[110] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto max-md:h-14 max-md:w-14"
       >
         <span className="absolute inset-0 rounded-full animate-pulse bg-brand-gold/30" />
         <span className="absolute inset-1 rounded-full border border-brand-black/10 bg-white/10" />
