@@ -68,15 +68,15 @@ export default function Header({
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        className="header-auth-btn px-2.5 py-1 rounded-full bg-stone-100 text-[#e0e0e0] font-semibold hover:bg-stone-200 transition-colors flex items-center gap-1 text-[11px] touch-target"
+                        className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors flex items-center gap-1 text-[11px] touch-target"
                         onClick={() => onAuthOpen && onAuthOpen(true)}
                       >
-                        <User size={13} style={{ color: '#e0e0e0' }} /> {user.name ? user.name.trim().split(/\s+/)[0] : ''}
+                        <User size={13} style={{ color: '#111827' }} /> {user.name ? user.name.trim().split(/\s+/)[0] : ''}
                       </button>
                       <button
                         type="button"
                         onClick={logout}
-                        className="header-auth-btn px-2.5 py-1 rounded-full text-[11px] text-[#e0e0e0] hover:text-white hover:bg-white/10 transition-colors touch-target"
+                        className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black text-[11px] font-semibold hover:bg-amber-500 transition-colors touch-target"
                       >
                         Sign out
                       </button>
@@ -85,7 +85,7 @@ export default function Header({
                     <button
                       type="button"
                       onClick={() => onAuthOpen && onAuthOpen(true)}
-                      className="header-auth-btn px-2.5 py-1 rounded-full bg-stone-100 text-[#e0e0e0] font-semibold hover:bg-stone-200 transition-colors text-[11px] touch-target max-md:bg-brand-black max-md:text-white max-md:border max-md:border-brand-gold max-md:shadow-sm max-md:font-bold"
+                      className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors text-[11px] touch-target max-md:bg-amber-400 max-md:text-brand-black max-md:border max-md:border-amber-500 max-md:shadow-sm max-md:font-bold"
                     >
                       Sign in
                     </button>
@@ -146,7 +146,7 @@ export default function Header({
               <div className="w-full md:flex-1 md:max-w-lg mt-2 md:mt-0 order-3 md:order-2">
                 <div className="relative group">
                   <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
-                  <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" />
+                  <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" />
                   {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400"><X size={15} /></button>}
                 </div>
               </div>

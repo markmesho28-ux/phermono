@@ -1,51 +1,25 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import supabase from '../lib/supabase';
-import { CATEGORIES as SEED_CATEGORIES, BRANDS as SEED_BRANDS, PRODUCTS as SEED_PRODUCTS, PRICE_RANGES as SEED_PRICE_RANGES } from '../data/products';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
 
 const DataContext = createContext<DataContextValue | null>(null);
 const STORAGE_KEY = 'phermono_data_v1';
-const seededCategories: Category[] = SEED_CATEGORIES as Category[];
-const seededBrands: string[] = SEED_BRANDS as string[];
-const seededPriceRanges: PriceRange[] = SEED_PRICE_RANGES as PriceRange[];
-
-function seededProducts(): Product[] {
-  return SEED_PRODUCTS.map((p) => ({
-    ...p,
-    skinType: p.skinType ?? undefined,
-    tag: p.tag ?? undefined,
-    hero: !!(p.tag && String(p.tag).toLowerCase().includes('best seller')),
-  } as Product));
-}
+const EMPTY_DATA = {
+  categories: [] as Category[],
+  brands: [] as string[],
+  products: [] as Product[],
+  priceRanges: [] as PriceRange[],
+  orders: [] as Order[],
+};
 
 function getInitialData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed) {
-        const loadedProducts = Array.isArray(parsed.products) && parsed.products.length > 0 ? parsed.products : seededProducts();
-        const loadedCategories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : seededCategories;
-        const loadedBrands = Array.isArray(parsed.brands) && parsed.brands.length > 0 ? parsed.brands : seededBrands;
-        const loadedRanges = Array.isArray(parsed.priceRanges) && parsed.priceRanges.length > 0 ? parsed.priceRanges : seededPriceRanges;
-        const loadedOrders = Array.isArray(parsed.orders) ? parsed.orders : [];
-        return {
-          categories: loadedCategories,
-          brands: loadedBrands,
-          products: loadedProducts,
-          priceRanges: loadedRanges,
-          orders: loadedOrders,
-        };
-      }
-    }
-  } catch (e) {}
-  return {
-    categories: seededCategories,
-    brands: seededBrands,
-    products: seededProducts(),
-    priceRanges: seededPriceRanges,
-    orders: [],
-  };
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    // ignore storage access issues; the app should boot empty in that case as well
+  }
+
+  return { ...EMPTY_DATA };
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
@@ -57,13 +31,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = useState<Order[]>(initial.orders);
 
   useEffect(() => {
-    if (categories.length > 0 || products.length > 0) {
-      const payload = { categories, brands, products, priceRanges, orders };
+    if (categories.length === 0 && products.length === 0 && brands.length === 0) {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        localStorage.removeItem(STORAGE_KEY);
       } catch (e) {
-        console.warn('LocalStorage save error:', e);
+        console.warn('LocalStorage cleanup error:', e);
       }
+      return;
+    }
+
+    const payload = { categories, brands, products, priceRanges, orders };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
     }
   }, [categories, brands, products, priceRanges, orders]);
 
@@ -122,6 +103,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (exists) return prev;
       return [...prev, clean];
     });
+    // Also attach brand to the category's `brands` list so views that prefer
+    // `category.brands` (like CategoryView) immediately reflect the change.
+    if (categoryId) {
+      setCategories(prev => prev.map(c => {
+        if (c.id !== categoryId) return c;
+        const existing = Array.isArray(c.brands) ? c.brands : [];
+        const existsInCategory = existing.some(b => String(b).toLowerCase() === clean.toLowerCase());
+        if (existsInCategory) return c;
+        return { ...c, brands: [...existing, clean] };
+      }));
+    }
 
     try {
       if (supabase) {
@@ -256,6 +248,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const clean = String(newName || '').trim();
     if (!clean) return;
     setBrands(prev => prev.map(b => b === oldName ? clean : b));
+    setCategories(prev => prev.map(c => {
+      const existing = Array.isArray(c.brands) ? c.brands : [];
+      return {
+        ...c,
+        brands: existing.map(b => b === oldName ? clean : b),
+      };
+    }));
     setProducts(prev => prev.map(p => p.brand === oldName ? { ...p, brand: clean } : p));
     try {
       if (supabase) {
@@ -274,6 +273,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const deleteBrand = (name: string) => {
     setBrands(prev => prev.filter(b => b !== name));
+    setCategories(prev => prev.map(c => {
+      const existing = Array.isArray(c.brands) ? c.brands : [];
+      return { ...c, brands: existing.filter(b => b !== name) };
+    }));
     setProducts(prev => prev.map(p => p.brand === name ? { ...p, brand: '' } : p));
     try {
       if (supabase) {

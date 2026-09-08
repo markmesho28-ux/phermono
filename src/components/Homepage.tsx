@@ -17,6 +17,7 @@ export default function Homepage({
   onQuickView,
   onWishlist,
   wishlist,
+  onCategorySelect,
 }: HomepageProps) {
   const { products } = useData();
 

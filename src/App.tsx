@@ -259,6 +259,8 @@ export default function App(){
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [wishlist, setWishlist] = useState<Product[]>([]);
   const [toast, setToast] = useState<ToastProps>({ message: '', visible: false });
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   // wishlist is rendered as a dedicated page via `activeCategory === 'favorites'`
 
   const { products, actions } = useData();
@@ -478,7 +480,12 @@ export default function App(){
         </div>
       )}
 
-      <BottomNav activeCategory={activeCategory} onSelect={handleCategorySelect} />
+      <BottomNav
+        activeCategory={activeCategory}
+        onSelect={handleCategorySelect}
+        isAdmin={!!(user && user.role === 'admin')}
+        onAddCategory={() => setIsAddCategoryModalOpen(true)}
+      />
 
       <CartDrawer
         isOpen={cartOpen}
@@ -502,6 +509,48 @@ export default function App(){
       {/* Profile and Wishlist are now dedicated full-page views handled by `activeCategory` */}
 
       <AuthModal open={authOpen} onClose={()=>{ setAuthOpen(false); setAuthIntent(null); }} onSuccess={(u)=>{ setAuthOpen(false); if(authIntent === 'openCart'){ setCartOpen(true); } else if(authIntent === 'checkout'){ setCartOpen(true); setCartCheckoutMode(true); } else if(authIntent === 'openTracking'){ setActiveCategory('tracking'); } else if(authIntent === 'openProfile'){ setActiveCategory('profile'); } setAuthIntent(null); }} />
+
+      {/* Add Category Modal */}
+      {isAddCategoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">إضافة فئة جديدة</h3>
+            <label className="text-sm text-gray-600 mb-2 block">اسم الفئة</label>
+            <input
+              autoFocus
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              className="w-full px-3 py-2 mb-4 rounded-lg bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-gold/20"
+              placeholder="مثال: المكياج"
+            />
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => { setIsAddCategoryModalOpen(false); setNewCategoryName(''); }}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const label = String(newCategoryName || '').trim();
+                  if (!label) return;
+                  const id = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `cat-${Date.now()}`;
+                  actions.addCategory({ id, label, icon: 'Sparkles', color: '', accent: '', subcategories: [{ id: 'all', label: 'All' }], brands: [] });
+                  setIsAddCategoryModalOpen(false);
+                  setNewCategoryName('');
+                  showToast('Category added');
+                }}
+                className="px-4 py-2 rounded-lg bg-brand-gold text-black font-semibold hover:brightness-95"
+              >
+                إضافة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Toast message={toast.message} visible={toast.visible} />
     </div>

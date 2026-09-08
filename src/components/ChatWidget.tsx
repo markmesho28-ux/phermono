@@ -309,6 +309,18 @@ const incrementUserUsage = async (userId: string) => {
   return getUsageLimitStatus(nextCount);
 };
 
+export const buildGroqMessages = (
+  history: Array<{ sender: "user" | "bot"; text: string }> = [],
+  latestMessage?: { sender: "user" | "bot"; text: string } | null
+) => {
+  const messages = latestMessage ? [...history, latestMessage] : [...history];
+
+  return messages.slice(-6).map((message) => ({
+    role: message.sender === "user" ? "user" : "assistant",
+    content: message.text,
+  }));
+};
+
 export const buildCatalogContext = (products: Product[] = []) => {
   if (!products.length) {
     return "No product catalog available yet.";
@@ -598,8 +610,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
     STORE PRODUCT CATALOG:
     ${catalog}`;
 
-      // Limit conversation context to the last 3 messages to reduce token usage
-      const recent = (messages || []).slice(-3).map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
+      const recent = buildGroqMessages(messages, userMessage);
       const requestBody = {
         model: GROQ_MODEL,
         messages: [
@@ -786,7 +797,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
                 onKeyDown={handleKeyDown}
                 placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
                 dir="auto"
-                className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
+                className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm max-md:text-base text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
                 aria-label="Type your message"
                 disabled={isLoading}
               />
@@ -891,7 +902,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
                 onKeyDown={handleKeyDown}
                 placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
                 dir="auto"
-                className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
+                className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm max-md:text-base text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
                 aria-label="Type your message"
                 disabled={isLoading}
               />

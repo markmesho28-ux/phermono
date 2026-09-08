@@ -17,8 +17,8 @@ interface CategoryViewProps {
   wishlist?: Product[];
 }
 
-type ModalMode = 'addProduct' | 'editProduct' | 'addSub' | 'editSub' | 'addBrand' | null;
-type EditingState = Product | { categoryId: string; sub: CategorySubcategory } | null;
+type ModalMode = 'addProduct' | 'editProduct' | 'addSub' | 'editSub' | 'addBrand' | 'editBrand' | null;
+type EditingState = Product | { categoryId: string; sub: CategorySubcategory } | { categoryId: string; brand: string } | null;
 
 export default function CategoryView({
   categoryId,
@@ -121,6 +121,7 @@ export default function CategoryView({
 
   // Brand add
   const openAddBrand = () => { setModalMode('addBrand'); setEditing(null); setModalOpen(true); };
+  const openEditBrand = (brand: string) => { setEditing({ categoryId: categoryId, brand }); setModalMode('editBrand'); setModalOpen(true); };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-28 md:pb-12 space-y-8 animate-fadeIn">
@@ -221,16 +222,23 @@ export default function CategoryView({
             const isSelected = selectedBrand===brand;
             const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategory===selectedSubcategory)).length;
             return (
-              <button
-                key={brand}
-                type="button"
-                onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)}
-                className={`category-filter-tab shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 touch-target border ${isSelected ? "bg-brand-black text-white border-brand-black shadow-luxury" : "bg-white text-brand-black border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
-                data-active={isSelected}
-              >
-                <span className="pointer-events-none">{brand}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isSelected?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>{brandCount}</span>
-              </button>
+              <div key={brand} className="relative">
+                <button
+                  type="button"
+                  onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)}
+                  className={`category-filter-tab shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 touch-target border ${isSelected ? "bg-brand-black text-white border-brand-black shadow-luxury" : "bg-white text-brand-black border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
+                  data-active={isSelected}
+                >
+                  <span className="pointer-events-none">{brand}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isSelected?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>{brandCount}</span>
+                </button>
+                {user && user.role==='admin' && (
+                  <div className="absolute -right-2 top-0 flex flex-col gap-1">
+                    <button type="button" onClick={()=>openEditBrand(brand)} className="p-1 bg-white rounded-full shadow cursor-pointer"><Edit2 size={12} /></button>
+                    <button type="button" onClick={()=>actions.deleteBrand(brand)} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer"><Trash2 size={12} /></button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -314,8 +322,8 @@ export default function CategoryView({
             : modalMode === 'editSub'
             ? 'Edit Subcategory'
             : modalMode === 'addBrand'
-            ? 'Add Brand'
-            : ''
+            ? 'Add Brand'            : modalMode === 'editBrand'
+            ? 'Edit Brand'            : ''
         }
         onClose={() => {
           setModalOpen(false);
@@ -441,7 +449,8 @@ function ModalContent({
 
   useEffect(() => {
     setSimpleLabel(
-      mode === 'editSub' && editing && 'sub' in editing ? editing.sub.label || '' : ''
+      mode === 'editSub' && editing && 'sub' in editing ? editing.sub.label || '' :
+      mode === 'editBrand' && editing && 'brand' in editing ? editing.brand || '' : ''
     );
 
     if (mode === 'editProduct' && editing && 'id' in editing) {
@@ -639,6 +648,21 @@ function ModalContent({
       actions.addBrand(name, category.id);
       if (typeof onBrandAdded === 'function') onBrandAdded(name);
       onClose();
+    } else if (mode === 'editBrand') {
+      if (!editing || !('brand' in editing)) return;
+      const name = simpleLabel.trim();
+      if (!name) return;
+      if (String(editing.brand).toLowerCase() === name.toLowerCase()) {
+        onClose();
+        return;
+      }
+      const exists = (availableBrands || []).some((b) => String(b).toLowerCase() === name.toLowerCase() && b !== editing.brand);
+      if (exists) {
+        alert('Brand already exists in this category.');
+        return;
+      }
+      actions.updateBrand(editing.brand, name);
+      onClose();
     }
   };
 
@@ -806,15 +830,15 @@ function ModalContent({
       )}
 
       {/* addSub / editSub / addBrand — simple text forms */}
-      {(mode === 'addSub' || mode === 'editSub' || mode === 'addBrand') && (
+      {(mode === 'addSub' || mode === 'editSub' || mode === 'addBrand' || mode === 'editBrand') && (
         <div>
           <label className="block text-xs font-semibold text-stone-700 mb-1">
-            {mode === 'addBrand' ? 'Brand Name' : 'Subcategory Label'}
+            {mode === 'addBrand' || mode === 'editBrand' ? 'Brand Name' : 'Subcategory Label'}
           </label>
           <input
             value={simpleLabel}
             onChange={(e) => setSimpleLabel(e.target.value)}
-            placeholder={mode === 'addBrand' ? 'e.g. CeraVe' : 'e.g. Face Cleansers'}
+            placeholder={mode === 'addBrand' || mode === 'editBrand' ? 'e.g. CeraVe' : 'e.g. Face Cleansers'}
             className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
             autoFocus
           />
