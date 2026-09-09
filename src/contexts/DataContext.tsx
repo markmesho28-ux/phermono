@@ -89,6 +89,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Sync initial data from Supabase when available. This runs once after mount.
   const [, setLoading] = useState(true);
   const [, setRemoteError] = useState<string | null>(null);
+  const [schemaInfo, setSchemaInfo] = useState<{
+    brandsHaveCategory: boolean;
+    productsHasCategoryId: boolean;
+    productsHasCategory: boolean;
+    productsHasSubcategoryId: boolean;
+    productsHasSubcategory: boolean;
+    productsHasBrandId: boolean;
+    productsHasBrand: boolean;
+  }>({
+    brandsHaveCategory: false,
+    productsHasCategoryId: false,
+    productsHasCategory: false,
+    productsHasSubcategoryId: false,
+    productsHasSubcategory: false,
+    productsHasBrandId: false,
+    productsHasBrand: false,
+  });
   useEffect(() => {
     let mounted = true;
     const fetchRemote = async () => {
@@ -112,25 +129,67 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
 
         const normalizedSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData.map(mapSubcategoryRow) : [];
-        const nextCategories = Array.isArray(categoriesData)
-          ? categoriesData.map((row) => mapCategoryRow(row, normalizedSubcategories, brandsData || []))
-          : [];
+        const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
+        const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
+
+        // Build quick lookup maps for categories to normalize references (slug -> id)
+        const categoriesById: Record<string, any> = {};
+        const categoriesBySlug: Record<string, any> = {};
+        categoriesArray.forEach((row: any) => {
+          const id = row?.id ?? row?.slug ?? String(row?.name || 'category');
+          categoriesById[id] = row;
+          if (row?.slug) categoriesBySlug[String(row.slug)] = row;
+        });
 
         const nextBrands = Array.isArray(brandsData)
           ? Array.from(new Set((brandsData as any[]).map((brand) => String(brand?.name ?? '')).filter(Boolean)))
           : [];
 
+        // Robust column probing: attempt small selects for specific suspected columns.
+        // PostgREST returns a 400 error when a column does not exist, which we use to detect schema.
+        const probe = async (col: string) => {
+          try {
+            const res = await supabase.from('products').select(col).limit(1);
+            return !(res && res.error && res.error.code === '42703');
+          } catch (e) {
+            return false;
+          }
+        };
+
+        const productsHasCategoryId = await probe('category_id');
+        const productsHasCategory = await probe('category');
+        const productsHasSubcategoryId = await probe('subcategory_id');
+        const productsHasSubcategory = await probe('subcategory');
+        const productsHasBrandId = await probe('brand_id');
+        const productsHasBrand = await probe('brand');
+
+        setSchemaInfo(prev => ({ ...prev, productsHasCategoryId, productsHasCategory, productsHasSubcategoryId, productsHasSubcategory, productsHasBrandId, productsHasBrand }));
+
         if (Array.isArray(productsData) && productsData.length > 0) {
-          // Normalize product rows from DB into the app's Product shape.
+          // Normalize product rows from DB into the app's Product shape and
+          // ensure category/subcategory reference uses canonical category id when possible.
           const normalized = (productsData as any[]).map((r) => {
+            // resolve category: prefer category_id, else category (might be slug)
+            let categoryVal: any = r.category_id ?? r.category ?? null;
+            if (categoryVal && typeof categoryVal === 'string') {
+              if (!categoriesById[categoryVal] && categoriesBySlug[categoryVal]) {
+                categoryVal = categoriesBySlug[categoryVal].id ?? categoriesBySlug[categoryVal].slug;
+              }
+            }
+
+            // resolve subcategory: prefer subcategory_id, else try to map slug/name -> id within fetched subcategories
+            let subVal: any = r.subcategory_id ?? r.subcategory ?? null;
+            if (subVal && typeof subVal === 'string' && Array.isArray(subcategoriesData)) {
+              const found = (subcategoriesData as any[]).find((s: any) => s.id === subVal || String(s.slug) === String(subVal) || String(s.name) === String(subVal));
+              if (found) subVal = found.id;
+            }
+
             return {
               id: r.id ?? Date.now(),
               name: r.name ?? r.label ?? '',
               brand: r.brand ?? r.brand_name ?? '',
-              // products table may use category_id; map it to `category` which the UI expects
-              category: r.category_id ?? r.category ?? null,
-              // subcategory may be stored as `subcategory` or `subcategory_id`
-              subcategory: r.subcategory ?? r.subcategory_id ?? null,
+              category: categoryVal ?? null,
+              subcategory: subVal ?? null,
               originalPrice: r.original_price ?? r.market_price ?? null,
               sellingPrice: r.selling_price ?? r.price ?? null,
               marketPrice: r.market_price ?? null,
@@ -147,14 +206,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           });
           setProducts(normalized as any);
         }
-        if (nextCategories.length > 0) {
-          setCategories(nextCategories);
-        }
-        if (nextBrands.length > 0) {
-          setBrands(nextBrands);
-        }
+        // Supabase is the source of truth — replace local lists
+        setCategories(nextCategories);
+        setBrands(nextBrands);
         // Determine whether brands are scoped to categories (brands have category_id) or global
-        const brandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && b.hasOwnProperty('category_id'));
+        const brandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
+        setSchemaInfo(prev => ({ ...prev, brandsHaveCategory }));
         // Replace categories' brand lists depending on schema: if brands are scoped, filter by category_id; else treat brands as global
         if (brandsHaveCategory) {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => b.category_id === cat.id).map(b => String(b.name)) } as any)));
@@ -229,7 +286,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const updateCategory = (id: string, updates: Partial<Category>) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-  const deleteCategory = (id: string) => { setCategories(prev => prev.filter(c => c.id !== id)); setProducts(prev => prev.filter(p => p.category !== id)); };
+  const deleteCategory = async (id: string) => { await deleteCategoryRemote(id); };
+
+  // Ensure deletes wait for Supabase confirmation before updating local state
+  const deleteCategoryRemote = async (id: string) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase category delete failed:', error);
+        alert('Failed to delete category: ' + (error.message || String(error)));
+        return;
+      }
+      // remove local only after successful delete
+      setCategories(prev => prev.filter(c => c.id !== id));
+      setProducts(prev => prev.filter(p => p.category !== id));
+    } catch (e: any) {
+      console.warn('Supabase category delete error:', e?.message || e);
+      alert('Failed to delete category: ' + (e?.message || String(e)));
+    }
+  };
 
   // Subcategories
   const addSubcategory = async (categoryId: string, sub: CategorySubcategory) => {
@@ -237,31 +313,106 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!label || !supabase) return;
 
     try {
+      // Gather and log authentication/session information for strict tracing
+      const sessionRes = await supabase.auth.getSession();
       const { data: authData, error: authErr } = await supabase.auth.getUser();
+      console.debug('addSubcategory: supabase.auth.getSession()', sessionRes?.data ?? sessionRes);
+      console.debug('addSubcategory: supabase.auth.getUser()', { data: authData, error: authErr });
       if (authErr || !authData?.user) {
         alert('Admin sign-in required to create subcategories.');
         return;
       }
       const supaUser = (authData as any).user;
       const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+      console.debug('addSubcategory: profile lookup', { profile, pfErr });
       if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
         alert('Admin sign-in required to create subcategories.');
         return;
       }
 
-      const payload: any = { category_id: categoryId, name: label, slug: slugify(label), description: '', metadata: {} };
-      const { data, error } = await supabase.from('subcategories').insert([payload]).select().single();
-      if (error) {
-        console.warn('Supabase subcategory insert failed:', error.message || error);
-        alert('Failed to create subcategory: ' + (error.message || String(error)));
+      // Normalize slug and check for existing subcategory within the category scope
+      const slug = slugify(label);
+      // Check existing subcategory within the category scope and log the query
+      console.debug('addSubcategory: checking existing subcategory for', { categoryId, slug });
+      const { data: existing, error: existingErr } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
+      if (existingErr) {
+        // fall through to attempt insert, but log
+        console.warn('addSubcategory: Error checking existing subcategory:', existingErr);
+      }
+      if (existing) {
+        // ensure local state includes this subcategory
+        const inbound = { id: existing.id ?? sub.id, label: existing.name ?? label };
+        setCategories(prev => prev.map(c => {
+          if (c.id !== categoryId) return c;
+          const arr = Array.isArray(c.subcategories) ? c.subcategories : [];
+          const existsLocally = arr.some(s => String(s.id) === String(inbound.id));
+          return { ...c, subcategories: existsLocally ? arr : [...arr, inbound] } as any;
+        }));
+        return existing as any;
+      }
+
+      // Not found — insert. Perform insert then explicitly verify returned row actually exists server-side.
+      const payload: any = { category_id: categoryId, name: label, slug, description: '', metadata: {} };
+      console.debug('addSubcategory: insert payload', payload);
+      const insertRes = await supabase.from('subcategories').insert([payload]).select().single();
+      // Log full response for debugging visibility
+      console.debug('addSubcategory: Subcategory insert response:', { data: insertRes.data, error: insertRes.error });
+
+      if (insertRes.error) {
+        console.warn('Supabase subcategory insert failed:', insertRes.error.message || insertRes.error);
+        // handle duplicate race: try to read existing
+        if ((insertRes.error as any)?.code === '23505' || String(insertRes.error?.message || '').toLowerCase().includes('duplicate')) {
+          const { data: fallback } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
+          if (fallback) {
+            const inbound = { id: fallback.id ?? sub.id, label: fallback.name ?? label };
+            setCategories(prev => prev.map(c => {
+              if (c.id !== categoryId) return c;
+              const arr = Array.isArray(c.subcategories) ? c.subcategories : [];
+              const existsLocally = arr.some(s => String(s.id) === String(inbound.id));
+              return { ...c, subcategories: existsLocally ? arr : [...arr, inbound] } as any;
+            }));
+            return fallback as any;
+          }
+        }
+        // Surface the real error to the user/developer
+        alert('Failed to create subcategory: ' + (insertRes.error.message || String(insertRes.error)));
         return;
       }
 
-      const inbound = { id: data?.id ?? sub.id, label: data?.name ?? label };
+      const created = insertRes.data as any;
+      // Defensive: ensure created row has an id and correct category_id/slug
+      if (!created || !created.id) {
+        // Try to verify by fetching by slug+category
+        const { data: verifyBySlug, error: verifyErr } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
+        console.debug('addSubcategory: Verify subcategory by slug response:', { data: verifyBySlug, error: verifyErr });
+        if (verifyErr || !verifyBySlug) {
+          alert('Subcategory insert did not return a valid row and verification failed. Check server logs or RLS policies.');
+          return;
+        }
+        // Use verified fallback
+        const inbound = { id: verifyBySlug.id, label: verifyBySlug.name ?? label };
+        setCategories(prev => prev.map(c => {
+          if (c.id !== categoryId) return c;
+          return { ...c, subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound] } as any;
+        }));
+        return verifyBySlug as any;
+      }
+
+      // Final verification: refetch the inserted row by id to ensure persistence
+      const { data: verify, error: verifyErr } = await supabase.from('subcategories').select('*').eq('id', created.id).limit(1).maybeSingle();
+      console.debug('addSubcategory: Verify subcategory by id response:', { data: verify, error: verifyErr });
+      if (verifyErr || !verify) {
+        // If verification fails, surface error and do not update local state
+        alert('Failed to verify newly created subcategory in the database. Insert may not have persisted.');
+        return;
+      }
+
+      const inbound = { id: verify.id ?? sub.id, label: verify.name ?? label };
       setCategories(prev => prev.map(c => {
         if (c.id !== categoryId) return c;
         return { ...c, subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound] } as any;
       }));
+      return verify as any;
     } catch (e: any) {
       console.warn('Supabase subcategory write error:', e?.message || e);
       alert('Failed to create subcategory: ' + (e?.message || String(e)));
@@ -271,7 +422,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (c.id !== categoryId) return c;
     return { ...c, subcategories: c.subcategories.map(s => s.id === subId ? { ...s, ...updates } : s) };
   }));
-  const deleteSubcategory = (categoryId: string, subId: string) => { setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subId) } : c )); setProducts(prev => prev.filter(p => !(p.category === categoryId && p.subcategory === subId))); };
+
+  // Delete a subcategory only after Supabase confirms deletion
+  const deleteSubcategory = async (categoryId: string, subId: string) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from('subcategories').delete().eq('id', subId);
+      if (error) {
+        console.warn('Supabase subcategory delete failed:', error);
+        alert('Failed to delete subcategory: ' + (error.message || String(error)));
+        return;
+      }
+      setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subId) } : c ));
+      setProducts(prev => prev.filter(p => !(p.category === categoryId && p.subcategory === subId)));
+    } catch (e: any) {
+      console.warn('Supabase subcategory delete error:', e?.message || e);
+      alert('Failed to delete subcategory: ' + (e?.message || String(e)));
+    }
+  };
 
   // Brands
   const addBrand = async (name: string, categoryId?: string) => {
@@ -290,16 +458,55 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         alert('Admin sign-in required to create brands.');
         return;
       }
+      // Use normalized slug for lookups
+      const slug = slugify(clean);
+      const hasCategoryId = !!schemaInfo.brandsHaveCategory;
 
-      const { data: sampleData } = await supabase.from('brands').select('*').limit(1);
-      const hasCategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'category_id');
+      // Check for existing brand (avoid duplicates). If brands are scoped by category, check within that category.
+      let existingQuery = supabase.from('brands').select('*').eq('slug', slug).limit(1);
+      if (hasCategoryId && categoryId) existingQuery = existingQuery.eq('category_id', categoryId);
+      const { data: existing } = await existingQuery;
+      if (Array.isArray(existing) && existing.length > 0 && existing[0]) {
+        const row = existing[0] as any;
+        const brandName = row.name ?? clean;
+        // Ensure local state includes this brand
+        setBrands(prev => {
+          const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+          if (exists) return prev;
+          return [...prev, brandName];
+        });
+        if (hasCategoryId && categoryId) {
+          setCategories(prev => prev.map(c => {
+            if (c.id !== categoryId) return c;
+            const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+            const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+            if (existsInCategory) return c;
+            return { ...c, brands: [...existingBrands, brandName] };
+          }));
+        } else {
+          setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
+        }
+        return existing[0] as any;
+      }
 
-      const payload: any = { name: clean, slug: slugify(clean), description: '', metadata: {} };
+      // Not found — insert
+      const payload: any = { name: clean, slug, description: '', metadata: {} };
       if (hasCategoryId && categoryId) payload.category_id = categoryId;
+      // set a sensible id equal to slug when DB expects an id (text PK). If DB assigns id automatically, this will be ignored.
+      payload.id = slug;
 
       const { data, error } = await supabase.from('brands').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase brand insert failed:', error.message || error);
+        if ((error as any)?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate')) {
+          // Conflict: brand already exists (race). Try to fetch the existing row deterministically.
+          const { data: fallback } = await supabase.from('brands').select('*').eq('slug', slug).limit(1).maybeSingle();
+          if (fallback) {
+            const brandName = (fallback as any).name ?? clean;
+            setBrands(prev => (prev.some(b => b.toLowerCase() === brandName.toLowerCase()) ? prev : [...prev, brandName]));
+            return fallback as any;
+          }
+        }
         alert('Failed to create brand: ' + (error.message || String(error)));
         return;
       }
@@ -314,14 +521,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (hasCategoryId && categoryId) {
         setCategories(prev => prev.map(c => {
           if (c.id !== categoryId) return c;
-          const existing = Array.isArray(c.brands) ? c.brands : [];
-          const existsInCategory = existing.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+          const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+          const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
           if (existsInCategory) return c;
-          return { ...c, brands: [...existing, brandName] };
+          return { ...c, brands: [...existingBrands, brandName] };
         }));
       } else {
         setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
       }
+
+      return data as any;
     } catch (e: any) {
       console.warn('Supabase brand write error:', e?.message || e);
       alert('Failed to create brand: ' + (e?.message || String(e)));
@@ -331,9 +540,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const mapProductUpdatesToRow = (updates: Partial<Product>) => {
     const row: Record<string, any> = {};
     if (updates.name !== undefined) row.name = updates.name;
-    if (updates.brand !== undefined) row.brand = updates.brand;
-    if (updates.category !== undefined) row.category_id = updates.category;
-    if (updates.subcategory !== undefined) row.subcategory_id = updates.subcategory;
+    if (updates.brand !== undefined) {
+      if (schemaInfo.productsHasBrandId) row.brand_id = updates.brand;
+      else if (schemaInfo.productsHasBrand) row.brand = updates.brand;
+      else row.brand = updates.brand;
+    }
+    if (updates.category !== undefined) {
+      if (schemaInfo.productsHasCategoryId) row.category_id = updates.category;
+      else if (schemaInfo.productsHasCategory) row.category = updates.category;
+      else row.category_id = updates.category;
+    }
+    if (updates.subcategory !== undefined) {
+      if (schemaInfo.productsHasSubcategoryId) row.subcategory_id = updates.subcategory;
+      else if (schemaInfo.productsHasSubcategory) row.subcategory = updates.subcategory;
+      else row.subcategory_id = updates.subcategory;
+    }
     if ((updates as any).originalPrice !== undefined) row.original_price = (updates as any).originalPrice;
     if ((updates as any).sellingPrice !== undefined) row.selling_price = (updates as any).sellingPrice;
     if ((updates as any).marketPrice !== undefined) row.market_price = (updates as any).marketPrice;
@@ -350,56 +571,94 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return row;
   };
 
-  const addProduct = async (prod: Product) => {
-    const id = Date.now();
-    const newProd: Product = { ...prod, id };
-    setProducts(prev => [newProd, ...prev]);
-    if (prod.brand && prod.category) {
-      void addBrand(prod.brand, prod.category);
-    }
-
-    if (!supabase) return id;
+  const addProduct = async (prod: Product): Promise<number> => {
+    const tempId = Date.now();
+    if (!supabase) return tempId;
 
     try {
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr || !authData?.user) {
         alert('Admin sign-in required to create products.');
-        return id;
+        return tempId;
       }
       const supaUser = (authData as any).user;
       const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
       if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
         alert('Admin sign-in required to create products.');
-        return id;
+        return tempId;
       }
 
-      const { data: sampleData } = await supabase.from('products').select('*').limit(1);
-      const hasCategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'category_id');
-      const hasSubcategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'subcategory_id');
-
+      // Prepare payload based on discovered schema (do not probe per-call)
       const payload: any = {};
-      payload.name = newProd.name;
-      payload.brand = newProd.brand;
-      if (hasCategoryId) payload.category_id = newProd.category; else payload.category = newProd.category;
-      if (hasSubcategoryId) payload.subcategory_id = newProd.subcategory; else payload.subcategory = newProd.subcategory;
-      payload.price = (newProd as any).price ?? null;
-      payload.image = newProd.image ?? null;
-      payload.description = newProd.description ?? null;
+      payload.name = prod.name;
+
+      // Handle brand: if DB expects brand_id, ensure brand exists in brands table and use its id
+      if (schemaInfo.productsHasBrandId) {
+        let brandId: any = null;
+        if (prod.brand) {
+          // Ensure brand exists, creating it when necessary (addBrand avoids duplicates)
+          const created = await addBrand(prod.brand, prod.category || undefined);
+          // created may be a brand row
+          if (created && (created as any).id) brandId = (created as any).id;
+          else {
+            // Try to find brand by slug/name
+            const slug = slugify(prod.brand || '');
+            const { data: found } = await supabase.from('brands').select('id').eq('slug', slug).limit(1).maybeSingle();
+            if (found && (found as any).id) brandId = (found as any).id;
+          }
+        }
+        if (brandId) payload.brand_id = brandId;
+      } else if (schemaInfo.productsHasBrand) {
+        payload.brand = prod.brand ?? null;
+      }
+
+      // Category mapping
+      if (schemaInfo.productsHasCategoryId) payload.category_id = prod.category ?? null;
+      else if (schemaInfo.productsHasCategory) payload.category = prod.category ?? null;
+
+      // Subcategory mapping
+      if (schemaInfo.productsHasSubcategoryId) payload.subcategory_id = prod.subcategory ?? null;
+      else if (schemaInfo.productsHasSubcategory) payload.subcategory = prod.subcategory ?? null;
+
+      payload.price = (prod as any).price ?? null;
+      payload.image = prod.image ?? null;
+      payload.description = prod.description ?? null;
 
       const { data, error } = await supabase.from('products').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase product insert failed:', error.message || error);
         alert('Failed to create product: ' + (error.message || String(error)));
-        return id;
+        return tempId;
       }
 
-      const inserted: Product = { ...newProd, id: data?.id ?? newProd.id };
-      setProducts(prev => [...prev.filter(item => item.id !== inserted.id), inserted]);
+      // Map returned row into app Product shape
+      const returned = data as any;
+      const inserted: Product = {
+        id: returned.id ?? Date.now(),
+        name: returned.name ?? '',
+        brand: (schemaInfo.productsHasBrandId ? (returned.brand_id ?? returned.brand) : returned.brand) ?? prod.brand ?? '',
+        category: (schemaInfo.productsHasCategoryId ? (returned.category_id ?? returned.category) : returned.category) ?? prod.category ?? null,
+        subcategory: (schemaInfo.productsHasSubcategoryId ? (returned.subcategory_id ?? returned.subcategory) : returned.subcategory) ?? prod.subcategory ?? null,
+        originalPrice: returned.original_price ?? returned.market_price ?? null,
+        sellingPrice: returned.selling_price ?? returned.price ?? null,
+        marketPrice: returned.market_price ?? null,
+        adminCost: returned.admin_cost ?? null,
+        price: returned.price ?? null,
+        rating: returned.rating ?? 0,
+        reviews: returned.reviews ?? 0,
+        skinType: returned.skin_type ?? null,
+        tag: returned.tag ?? null,
+        hero: returned.hero ?? false,
+        image: returned.image ?? null,
+        description: returned.description ?? null,
+      } as any;
+
+      setProducts(prev => [inserted, ...prev.filter(p => p.id !== inserted.id)]);
       return inserted.id;
     } catch (e: any) {
       console.warn('Supabase product write error:', e?.message || e);
       alert('Failed to create product: ' + (e?.message || String(e)));
-      return id;
+      return tempId;
     }
   };
   const updateProduct = (id: number, updates: Partial<Product>) => {
@@ -419,17 +678,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     })();
   };
-  const deleteProduct = (id: number) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
-    void (async () => {
-      try {
-        if (!supabase) return;
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        if (error) console.warn('Supabase product delete failed:', error.message || error);
-      } catch (e: any) {
-        console.warn('Supabase product delete error:', e?.message || e);
+  const deleteProduct = async (id: number) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase product delete failed:', error.message || error);
+        alert('Failed to delete product: ' + (error.message || String(error)));
+        return;
       }
-    })();
+      setProducts(prev => prev.filter(p => p.id !== id));
+    } catch (e: any) {
+      console.warn('Supabase product delete error:', e?.message || e);
+      alert('Failed to delete product: ' + (e?.message || String(e)));
+    }
   };
   const toggleHero = (id: number) => setProducts(prev => prev.map(p => p.id === id ? { ...p, hero: !p.hero } : p));
 
@@ -460,25 +722,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteBrand = (name: string) => {
-    setBrands(prev => prev.filter(b => b !== name));
-    setCategories(prev => prev.map(c => {
-      const existing = Array.isArray(c.brands) ? c.brands : [];
-      return { ...c, brands: existing.filter(b => b !== name) };
-    }));
-    setProducts(prev => prev.map(p => p.brand === name ? { ...p, brand: '' } : p));
+  const deleteBrand = async (name: string) => {
+    if (!supabase) return;
     try {
-      if (supabase) {
-        (async () => {
-          try {
-            await supabase.from('brands').delete().eq('name', name);
-          } catch (e: any) {
-            console.warn('Supabase brand delete failed:', e?.message || e);
-          }
-        })();
+      const { error } = await supabase.from('brands').delete().eq('name', name);
+      if (error) {
+        console.warn('Supabase brand delete failed:', error);
+        alert('Failed to delete brand: ' + (error.message || String(error)));
+        return;
       }
-    } catch (e) {
-      console.warn('Supabase brand delete error', e);
+      setBrands(prev => prev.filter(b => b !== name));
+      setCategories(prev => prev.map(c => {
+        const existing = Array.isArray(c.brands) ? c.brands : [];
+        return { ...c, brands: existing.filter(b => b !== name) };
+      }));
+      setProducts(prev => prev.map(p => p.brand === name ? { ...p, brand: '' } : p));
+    } catch (e: any) {
+      console.warn('Supabase brand delete error', e?.message || e);
+      alert('Failed to delete brand: ' + (e?.message || String(e)));
     }
   };
   

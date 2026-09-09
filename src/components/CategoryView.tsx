@@ -490,10 +490,10 @@ function ModalContent({
         adminCost: '',
         marketPrice: '',
         sellingPrice: '',
-        description: '',
-        image: '',
         rating: 5,
         reviews: 1,
+        image: '',
+        description: '',
       });
     }
   }, [mode, editing, category, mergedBrands, assignableSubcategories]);
@@ -644,8 +644,26 @@ function ModalContent({
     } else if (mode === 'addSub') {
       const trimmed = simpleLabel.trim();
       if (!trimmed) return;
+      // If this label already exists locally, reuse it and avoid inserting
+      const existingLocal = (category.subcategories || []).find(s => String(s.label).toLowerCase() === trimmed.toLowerCase());
+      if (existingLocal) {
+        // ensure UI will select the existing subcategory where appropriate
+        onClose();
+        return;
+      }
+
       const id = trimmed.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
-      actions.addSubcategory(category.id, { id, label: trimmed });
+      // addSubcategory is idempotent and will return an existing row if a concurrent insert occurred
+      (async () => {
+        try {
+          const created = await actions.addSubcategory(category.id, { id, label: trimmed });
+          if (created && created.id) {
+            // optional: setSelectedSubcategory(created.id) if you want immediate selection
+          }
+        } catch (e) {
+          // errors are handled inside addSubcategory
+        }
+      })();
       onClose();
     } else if (mode === 'editSub') {
       if (!editing || !('sub' in editing)) return;

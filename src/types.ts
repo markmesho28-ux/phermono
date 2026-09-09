@@ -108,10 +108,10 @@ export interface DataActions {
   addCategory: (cat: Category) => Promise<void>;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
-  addSubcategory: (categoryId: string, sub: CategorySubcategory) => Promise<void>;
+  addSubcategory: (categoryId: string, sub: CategorySubcategory) => Promise<any>;
   updateSubcategory: (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => void;
   deleteSubcategory: (categoryId: string, subId: string) => void;
-  addBrand: (name: string, categoryId?: string) => Promise<void>;
+  addBrand: (name: string, categoryId?: string) => Promise<any>;
   updateBrand: (oldName: string, newName: string) => void;
   deleteBrand: (name: string) => void;
   addProduct: (prod: Product) => Promise<number>;
