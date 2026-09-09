@@ -12,6 +12,20 @@ const EMPTY_DATA = {
   orders: [] as Order[],
 };
 
+// Hard-coded live schema facts for the `products` table.
+// Confirmed columns: id, name, category_id (UUID FK), brand (text), price,
+//   original_price, selling_price, market_price, admin_cost, image, description,
+//   rating, reviews, skin_type, tag, hero, created_at, updated_at.
+// Columns that do NOT exist: category (plain text), subcategory_id, subcategory, brand_id.
+const PRODUCT_SCHEMA = {
+  productsHasCategoryId: true,
+  productsHasCategory: false,
+  productsHasSubcategoryId: false,
+  productsHasSubcategory: false,
+  productsHasBrandId: false,
+  productsHasBrand: true,
+} as const;
+
 const slugify = (value: string) => {
   const base = String(value || '').trim();
   if (!base) return `item-${Date.now()}`;
@@ -45,10 +59,6 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
     .filter(Boolean),
 });
 
-const mapSubcategoryRow = (row: any): CategorySubcategory => ({
-  id: row?.id ?? row?.slug ?? String(row?.name || 'subcategory'),
-  label: row?.name ?? row?.label ?? row?.slug ?? '',
-});
 
 function getInitialData() {
   try {
@@ -89,23 +99,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Sync initial data from Supabase when available. This runs once after mount.
   const [, setLoading] = useState(true);
   const [, setRemoteError] = useState<string | null>(null);
-  const [schemaInfo, setSchemaInfo] = useState<{
-    brandsHaveCategory: boolean;
-    productsHasCategoryId: boolean;
-    productsHasCategory: boolean;
-    productsHasSubcategoryId: boolean;
-    productsHasSubcategory: boolean;
-    productsHasBrandId: boolean;
-    productsHasBrand: boolean;
-  }>({
-    brandsHaveCategory: false,
-    productsHasCategoryId: false,
-    productsHasCategory: false,
-    productsHasSubcategoryId: false,
-    productsHasSubcategory: false,
-    productsHasBrandId: false,
-    productsHasBrand: false,
-  });
+  // Schema is hard-coded from confirmed live DB columns (see PRODUCT_SCHEMA above).
+  // No runtime probing needed — avoids spurious 400 requests on every mount.
+  const [schemaInfo] = useState(PRODUCT_SCHEMA);
+  // brandsHaveCategory is determined at runtime from the actual brands rows returned by Supabase.
+  const [brandsHaveCategory, setBrandsHaveCategory] = useState(false);
+
   useEffect(() => {
     let mounted = true;
     const fetchRemote = async () => {
@@ -128,7 +127,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         if (!mounted) return;
 
-        const normalizedSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData.map(mapSubcategoryRow) : [];
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
         const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
 
@@ -145,25 +143,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           ? Array.from(new Set((brandsData as any[]).map((brand) => String(brand?.name ?? '')).filter(Boolean)))
           : [];
 
-        // Robust column probing: attempt small selects for specific suspected columns.
-        // PostgREST returns a 400 error when a column does not exist, which we use to detect schema.
-        const probe = async (col: string) => {
-          try {
-            const res = await supabase.from('products').select(col).limit(1);
-            return !(res && res.error && res.error.code === '42703');
-          } catch (e) {
-            return false;
-          }
-        };
 
-        const productsHasCategoryId = await probe('category_id');
-        const productsHasCategory = await probe('category');
-        const productsHasSubcategoryId = await probe('subcategory_id');
-        const productsHasSubcategory = await probe('subcategory');
-        const productsHasBrandId = await probe('brand_id');
-        const productsHasBrand = await probe('brand');
 
-        setSchemaInfo(prev => ({ ...prev, productsHasCategoryId, productsHasCategory, productsHasSubcategoryId, productsHasSubcategory, productsHasBrandId, productsHasBrand }));
 
         if (Array.isArray(productsData) && productsData.length > 0) {
           // Normalize product rows from DB into the app's Product shape and
@@ -210,10 +191,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setCategories(nextCategories);
         setBrands(nextBrands);
         // Determine whether brands are scoped to categories (brands have category_id) or global
-        const brandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
-        setSchemaInfo(prev => ({ ...prev, brandsHaveCategory }));
+        const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
+        setBrandsHaveCategory(detectedBrandsHaveCategory);
+
         // Replace categories' brand lists depending on schema: if brands are scoped, filter by category_id; else treat brands as global
-        if (brandsHaveCategory) {
+        if (detectedBrandsHaveCategory) {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => b.category_id === cat.id).map(b => String(b.name)) } as any)));
         } else {
           // global brands: attach same brand list to all categories
@@ -460,7 +442,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       // Use normalized slug for lookups
       const slug = slugify(clean);
-      const hasCategoryId = !!schemaInfo.brandsHaveCategory;
+      const hasCategoryId = brandsHaveCategory;
 
       // Check for existing brand (avoid duplicates). If brands are scoped by category, check within that category.
       let existingQuery = supabase.from('brands').select('*').eq('slug', slug).limit(1);
@@ -548,12 +530,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (updates.category !== undefined) {
       if (schemaInfo.productsHasCategoryId) row.category_id = updates.category;
       else if (schemaInfo.productsHasCategory) row.category = updates.category;
-      else row.category_id = updates.category;
+      // else: neither column confirmed — skip to avoid 400 on update
     }
     if (updates.subcategory !== undefined) {
       if (schemaInfo.productsHasSubcategoryId) row.subcategory_id = updates.subcategory;
       else if (schemaInfo.productsHasSubcategory) row.subcategory = updates.subcategory;
-      else row.subcategory_id = updates.subcategory;
+      // else: neither column confirmed — skip to avoid 400 on update
     }
     if ((updates as any).originalPrice !== undefined) row.original_price = (updates as any).originalPrice;
     if ((updates as any).sellingPrice !== undefined) row.selling_price = (updates as any).sellingPrice;

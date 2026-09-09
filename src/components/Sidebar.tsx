@@ -104,55 +104,60 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           const isActive = String(activeCategory) === String(cat.id);
 
           return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={(e) => { e.preventDefault(); onSelect(cat.id); if(onClose) onClose(); }}
-              className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto ${
-                isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
-              }`}
-              data-active={isActive}
-            >
-              {/* Left Side (Icon + Text) - Non Interactive */}
-              <div className="flex items-center gap-3.5 pointer-events-none">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${isActive ? "bg-brand-gold text-brand-black shadow-sm" : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
-                  <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="pointer-events-none" />
-                </div>
-                <span className="pointer-events-none">{cat.label}</span>
-              </div>
-
-              {/* Right Side (Actions + Arrow) */}
-              <div className="flex items-center gap-2 pointer-events-none">
-                {user && user.role === 'admin' && (
-                  <div className="flex gap-1 mr-1 pointer-events-auto">
-                    <button 
-                      type="button"
-                      onClick={(e) => openEditModal(e, cat)} 
-                      className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
-                      title="Edit"
-                    >
-                      <div className="pointer-events-none flex items-center justify-center">
-                        <Edit2 size={13} className="pointer-events-none" />
-                      </div>
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }} 
-                      className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer pointer-events-auto shadow-xs flex items-center justify-center"
-                      title="Delete"
-                    >
-                      <div className="pointer-events-none flex items-center justify-center">
-                        <Trash2 size={13} className="pointer-events-none" />
-                      </div>
-                    </button>
+            <div key={cat.id} className="relative">
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); onSelect(cat.id); if(onClose) onClose(); }}
+                className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto ${
+                  isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
+                }`}
+                data-active={isActive}
+              >
+                {/* Left Side (Icon + Text) - Non Interactive */}
+                <div className="flex items-center gap-3.5 pointer-events-none">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${isActive ? "bg-brand-gold text-brand-black shadow-sm" : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
+                    <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="pointer-events-none" />
                   </div>
-                )}
-                {/* Arrow - Non Interactive */}
-                <div className="pointer-events-none">
-                  <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "text-brand-gold translate-x-0.5 opacity-100" : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"}`} />
+                  <span className="pointer-events-none">{cat.label}</span>
                 </div>
-              </div>
-            </button>
+
+                {/* Right Side (Arrow only) - admin buttons moved outside this button */}
+                <div className="flex items-center gap-2 pointer-events-none">
+                  {user && user.role === 'admin' && (
+                    /* Spacer to keep arrow alignment when admin buttons are absolutely positioned */
+                    <div className="flex gap-1 mr-1 invisible" aria-hidden="true">
+                      <div className="p-1 w-5 h-5" />
+                      <div className="p-1 w-5 h-5" />
+                    </div>
+                  )}
+                  {/* Arrow - Non Interactive */}
+                  <div className="pointer-events-none">
+                    <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "text-brand-gold translate-x-0.5 opacity-100" : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"}`} />
+                  </div>
+                </div>
+              </button>
+              {/* Admin edit/delete buttons: outside the nav button to avoid nested <button> violation */}
+              {user && user.role === 'admin' && (
+                <div className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10">
+                  <button
+                    type="button"
+                    onClick={(e) => openEditModal(e, cat)}
+                    className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center"
+                    title="Edit"
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }}
+                    className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center"
+                    title="Delete"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>
