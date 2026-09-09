@@ -108,7 +108,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         if (!mounted) return;
 
-        const normalizedSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData.map(mapSubcategoryRow) : [];
         const nextCategories = Array.isArray(categoriesData)
           ? categoriesData.map((row) => mapCategoryRow(row, subcategoriesData || [], brandsData || []))
           : [];
