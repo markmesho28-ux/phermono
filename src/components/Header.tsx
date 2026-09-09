@@ -146,7 +146,7 @@ export default function Header({
               <div className="w-full md:flex-1 md:max-w-lg mt-2 md:mt-0 order-3 md:order-2">
                 <div className="relative group">
                   <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
-                  <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" />
+                  <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" style={{ fontSize: '16px' }} />
                   {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400"><X size={15} /></button>}
                 </div>
               </div>

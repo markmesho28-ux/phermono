@@ -798,6 +798,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
                 placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
                 dir="auto"
                 className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm max-md:text-base text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
+                style={{ fontSize: '16px' }}
                 aria-label="Type your message"
                 disabled={isLoading}
               />
@@ -903,6 +904,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
                 placeholder={isArabicMode ? "اسأل عن أي منتج أو روتين لشعرك أو بشرتك..." : "Ask about any hair, skin, or beauty product..."}
                 dir="auto"
                 className="flex-1 border-0 bg-transparent px-3 py-1.5 text-sm max-md:text-base text-stone-700 placeholder:text-stone-400 focus:outline-none disabled:cursor-not-allowed"
+                style={{ fontSize: '16px' }}
                 aria-label="Type your message"
                 disabled={isLoading}
               />

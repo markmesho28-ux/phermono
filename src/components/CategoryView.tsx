@@ -124,7 +124,7 @@ export default function CategoryView({
   const openEditBrand = (brand: string) => { setEditing({ categoryId: categoryId, brand }); setModalMode('editBrand'); setModalOpen(true); };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 pb-28 md:pb-12 space-y-8 animate-fadeIn">
+    <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 pt-4 pb-28 md:pb-12 space-y-8 animate-fadeIn overflow-hidden">
       {/* Category Hero (clean, unboxed) */}
       <div className="relative p-8 sm:p-10 text-white">
         <div className="relative z-10 max-w-2xl">
@@ -182,8 +182,8 @@ export default function CategoryView({
 
       {/* ── FILTER BY BRAND ── (identical structure/design to Sub-Categories Breakdown above) */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
             <Tag size={14} className="text-brand-gold" />
             <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Filter by Brand</span>
             {user && user.role === 'admin' && (
@@ -192,16 +192,22 @@ export default function CategoryView({
               </button>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            {selectedBrand !== "all" && (
-              <button type="button" onClick={()=>setSelectedBrand('all')} className="text-xs font-bold text-stone-500 hover:text-red-500 transition-colors flex items-center gap-1">
-                <X size={12} /> Reset Brand
-              </button>
-            )}
-            {availableBrands.length > 8 && (
-              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="text-xs font-bold text-brand-gold-dark hover:text-brand-black transition-colors flex items-center gap-1">
+          <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+            <span className="inline-flex min-w-0 justify-end">
+              {selectedBrand !== "all" ? (
+                <button type="button" onClick={()=>setSelectedBrand('all')} className="flex items-center gap-1 text-xs font-bold text-stone-500 transition-colors hover:text-red-500">
+                  <X size={12} /> Reset Brand
+                </button>
+              ) : (
+                <span className="invisible text-xs font-bold">Reset Brand</span>
+              )}
+            </span>
+            {availableBrands.length > 8 ? (
+              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-xs font-bold text-brand-gold-dark transition-colors hover:text-brand-black">
                 {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
               </button>
+            ) : (
+              <span className="invisible whitespace-nowrap text-xs font-bold">View All (0)</span>
             )}
           </div>
         </div>
@@ -247,34 +253,41 @@ export default function CategoryView({
       {/* ── SORT / FILTER BAR (sticky) ── */}
       <div
         style={{ top: 'var(--header-height, 124px)' }}
-        className="category-control-bar sticky z-20 bg-brand-cream/95 backdrop-blur-md py-2 -mx-4 sm:-mx-6 px-4 sm:px-6 border-b border-brand-gold-border/30 shadow-sm"
+        className="category-control-bar sticky z-20 w-full max-w-full overflow-hidden bg-brand-cream/95 px-3 py-2 backdrop-blur-md shadow-sm sm:px-6"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') && (
-              <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer">
-                <X size={13} /> Clear All Filters
-              </button>
-            )}
-            <span className="text-xs text-stone-400 font-medium hidden sm:inline">Showing <strong className="text-brand-black">{filteredProducts.length}</strong> items</span>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex min-w-0">
+              {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') ? (
+                <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer">
+                  <X size={13} /> Clear All Filters
+                </button>
+              ) : (
+                <span className="invisible whitespace-nowrap text-xs font-semibold">Clear All Filters</span>
+              )}
+            </span>
+            <span className="hidden text-xs font-medium text-stone-400 sm:inline">Showing <strong className="text-brand-black">{filteredProducts.length}</strong> items</span>
           </div>
-          <div className="flex items-center gap-3">
-            {user && user.role==='admin' && (
-              <button type="button" onClick={openAddProduct} className="flex items-center gap-2 px-3 py-2 bg-black text-white rounded text-xs cursor-pointer hidden sm:inline-flex">
-                <PlusCircle size={14} /> Add Product
-              </button>
-            )}
-            <div className="relative">
-              <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="appearance-none bg-white border border-stone-200 text-brand-black text-xs font-semibold rounded-full pl-4 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer shadow-sm">
+          <div className="flex w-full min-w-0 items-center justify-end sm:w-auto">
+            <div className="relative w-full min-w-0 sm:w-auto">
+              <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="w-full min-w-0 appearance-none rounded-full border border-stone-200 bg-white py-2 pl-4 pr-9 text-xs font-semibold text-brand-black shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer sm:w-auto">
                 <option value="price-asc">Price: Low to High (السعر من الأقل)</option>
                 <option value="price-desc">Price: High to Low (السعر من الأكبر)</option>
                 <option value="discount">Best Deals / Offers (أفضل العروض بناءً على نسبة الخصم)</option>
               </select>
-              <ArrowUpDown size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+              <ArrowUpDown size={12} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
             </div>
           </div>
         </div>
       </div>
+
+      {user && user.role === 'admin' && (
+        <div className="flex w-full justify-end pb-2">
+          <button type="button" onClick={openAddProduct} className="inline-flex items-center gap-2 rounded-full bg-brand-black px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-brand-gold shadow-sm transition-all hover:bg-brand-charcoal">
+            <PlusCircle size={14} /> Add Product
+          </button>
+        </div>
+      )}
 
       {/* ── PRODUCT GRID ── */}
       {filteredProducts.length>0 ? (
@@ -405,16 +418,19 @@ function ModalContent({
 
   // Dedicated state for simple text forms (addSub, editSub, addBrand)
   const [simpleLabel, setSimpleLabel] = useState('');
-  const [customBrandMode, setCustomBrandMode] = useState(false);
 
-  // Combine category brands, global brands, and available brands
+  // Combine category brands, global brands, and available brands. Keep any currently
+  // edited brand in the option list so the selected value stays valid.
   const mergedBrands = useMemo(() => {
     const set = new Set<string>();
     (availableBrands || []).forEach((b) => b && set.add(b));
     (category.brands || []).forEach((b) => b && set.add(b));
     (allBrands || []).forEach((b) => b && set.add(b));
+    if (mode === 'editProduct' && editing && 'brand' in editing && editing.brand) {
+      set.add(editing.brand);
+    }
     return Array.from(set);
-  }, [availableBrands, category.brands, allBrands]);
+  }, [availableBrands, category.brands, allBrands, mode, editing]);
 
   // Filter out the "all" pseudo-subcategory for assignment
   const assignableSubcategories = useMemo(() => {
@@ -463,7 +479,6 @@ function ModalContent({
         description: editing.description || '',
       };
       setForm(mapped);
-      setCustomBrandMode(Boolean(editing.brand && !mergedBrands.includes(editing.brand)));
     } else if (mode === 'addProduct') {
       const defaultSub = assignableSubcategories[0]?.id || 'general';
       const defaultBrand = mergedBrands[0] || '';
@@ -480,7 +495,6 @@ function ModalContent({
         rating: 5,
         reviews: 1,
       });
-      setCustomBrandMode(false);
     }
   }, [mode, editing, category, mergedBrands, assignableSubcategories]);
 
@@ -667,11 +681,11 @@ function ModalContent({
   };
 
   return (
-    <div className="space-y-1.5 text-brand-black">
+    <div className="space-y-1.5 text-brand-black sm:space-y-2">
       {(mode === 'addProduct' || mode === 'editProduct') && (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 sm:space-y-2">
           <div>
-            <label className="block text-[10px] font-semibold text-stone-700 mb-0.5">
+            <label className="mb-[3px] block text-[10px] font-semibold text-stone-700 sm:text-[10.5px]">
               Product Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -679,56 +693,41 @@ function ModalContent({
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="Cerave Hydrating Cleanser"
-              className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+              className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] text-brand-black placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-2">
             <div>
-              <div className="flex items-center justify-between mb-0.5 gap-1">
-                <label className="block text-[10px] font-semibold text-stone-700">
-                  Brand <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setCustomBrandMode(!customBrandMode)}
-                  className="text-[8px] text-brand-gold-dark hover:underline cursor-pointer whitespace-nowrap"
-                >
-                  {customBrandMode ? 'Use list' : '+ Custom'}
-                </button>
-              </div>
-              {customBrandMode || mergedBrands.length === 0 ? (
-                <input
-                  type="text"
-                  placeholder="Brand"
-                  value={form.brand}
-                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                  className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
-                />
-              ) : (
-                <select
-                  value={form.brand}
-                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                  className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
-                >
-                  <option value="">Select</option>
-                  {mergedBrands.map((b) => (
+              <label className="mb-[3px] block text-[10px] font-semibold text-stone-700 sm:text-[10.5px]">
+                Brand <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.brand}
+                onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
+              >
+                <option value="">Select Brand</option>
+                {mergedBrands.length > 0 ? (
+                  mergedBrands.map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
-                  ))}
-                </select>
-              )}
+                  ))
+                ) : (
+                  <option value="">No brands available</option>
+                )}
+              </select>
             </div>
 
             <div>
-              <label className="block text-[10px] font-semibold text-stone-700 mb-0.5">
+              <label className="mb-[3px] block text-[10px] font-semibold text-stone-700 sm:text-[10.5px]">
                 Sub-Category <span className="text-red-500">*</span>
               </label>
               <select
                 value={form.subcategory}
                 onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
-                className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               >
                 {assignableSubcategories.length > 0 ? (
                   assignableSubcategories.map((s) => (
@@ -743,9 +742,9 @@ function ModalContent({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2">
             <div>
-              <label className="block text-[9px] font-semibold text-stone-600 mb-0.5">
+              <label className="mb-[3px] block text-[9.5px] font-semibold text-stone-600 sm:text-[10px]">
                 Cost
               </label>
               <input
@@ -754,22 +753,22 @@ function ModalContent({
                 value={form.adminCost}
                 onChange={(e) => setForm({ ...form, adminCost: e.target.value })}
                 placeholder="150"
-                className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
             </div>
             <div>
-              <label className="block text-[9px] font-semibold text-stone-600 mb-0.5">General</label>
+              <label className="mb-[3px] block text-[9.5px] font-semibold text-stone-600 sm:text-[10px]">General</label>
               <input
                 type="text"
                 inputMode="decimal"
                 value={form.marketPrice}
                 onChange={(e) => setForm({ ...form, marketPrice: e.target.value })}
                 placeholder="280"
-                className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
             </div>
-            <div>
-              <label className="block text-[9px] font-semibold text-stone-600 mb-0.5">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="mb-[3px] block text-[9.5px] font-semibold text-stone-600 sm:text-[10px]">
                 Store <span className="text-red-500">*</span>
               </label>
               <input
@@ -778,32 +777,32 @@ function ModalContent({
                 value={form.sellingPrice}
                 onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                 placeholder="220"
-                className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold font-bold text-brand-black"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] font-bold text-brand-black focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] font-semibold text-stone-700 mb-0.5">Product Image</label>
-            <div className="space-y-1">
+            <label className="mb-[3px] block text-[10px] font-semibold text-stone-700 sm:text-[10.5px]">Product Image</label>
+            <div className="space-y-1.5 sm:space-y-2">
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageFileChange}
-                className="w-full text-[9px] text-stone-500 file:mr-1.5 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-[9px] file:font-semibold file:bg-brand-black file:text-white hover:file:bg-brand-charcoal file:cursor-pointer py-1 px-1.5 border border-stone-200 rounded-md bg-stone-50"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[11px] text-stone-500 file:mr-2 file:rounded-full file:border-0 file:bg-brand-black file:px-2 file:py-1.5 file:text-[10px] file:font-semibold file:text-white hover:file:bg-brand-charcoal file:cursor-pointer sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
               <input
                 type="text"
                 placeholder="Image URL"
                 value={form.image.startsWith('data:') ? '' : form.image}
                 onChange={(e) => setForm({ ...form, image: e.target.value })}
-                className="w-full py-1.5 px-2 text-[10px] bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400"
+                className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
             </div>
             {form.image && (
-              <div className="mt-1.5 flex items-center gap-2">
-                <div className="w-10 h-10 rounded-md overflow-hidden border border-stone-200 bg-white shrink-0">
-                  <img src={form.image} alt="Preview" className="w-full h-full object-cover" />
+              <div className="mt-1 flex items-center gap-2">
+                <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-stone-200 bg-white sm:h-10 sm:w-10">
+                  <img src={form.image} alt="Preview" className="h-full w-full object-cover" />
                 </div>
                 <button
                   type="button"
@@ -817,47 +816,45 @@ function ModalContent({
           </div>
 
           <div>
-            <label className="block text-[10px] font-semibold text-stone-700 mb-0.5">Description</label>
+            <label className="mb-[3px] block text-[10px] font-semibold text-stone-700 sm:text-[10.5px]">Description</label>
             <textarea
               rows={2}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Details..."
-              className="w-full py-1.5 px-2 text-xs bg-stone-50 border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 resize-none"
+              className="w-full min-h-[64px] resize-none rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[72px] sm:px-2.5 sm:py-2"
             />
           </div>
         </div>
       )}
 
-      {/* addSub / editSub / addBrand — simple text forms */}
       {(mode === 'addSub' || mode === 'editSub' || mode === 'addBrand' || mode === 'editBrand') && (
         <div>
-          <label className="block text-xs font-semibold text-stone-700 mb-1">
+          <label className="mb-1 block text-xs font-semibold text-stone-700">
             {mode === 'addBrand' || mode === 'editBrand' ? 'Brand Name' : 'Subcategory Label'}
           </label>
           <input
             value={simpleLabel}
             onChange={(e) => setSimpleLabel(e.target.value)}
             placeholder={mode === 'addBrand' || mode === 'editBrand' ? 'e.g. CeraVe' : 'e.g. Face Cleansers'}
-            className="w-full p-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold"
+            className="w-full min-h-[34px] rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-[15px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px]"
             autoFocus
           />
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-stone-100 sticky bottom-0 bg-white">
+      <div className="sticky bottom-0 flex items-center justify-end gap-1.5 border-t border-stone-100 bg-white pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:gap-2 sm:pt-2">
         <button
           type="button"
           onClick={onClose}
-          className="px-2.5 py-1.5 text-[10px] font-semibold text-stone-600 hover:text-brand-black rounded-md transition-colors cursor-pointer"
+          className="cursor-pointer rounded-md px-2.5 py-1.5 text-[10px] font-semibold text-stone-600 transition-colors hover:text-brand-black sm:px-3"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={submit}
-          className="px-3 py-1.5 text-[10px] font-semibold bg-brand-black text-white rounded-md shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 cursor-pointer"
+          className="cursor-pointer rounded-md bg-brand-black px-2.5 py-1.5 text-[10px] font-semibold text-white shadow-luxury transition-all hover:bg-brand-charcoal active:scale-98 sm:px-3"
         >
           {mode === 'addProduct' ? 'Save' : 'Save'}
         </button>

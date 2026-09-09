@@ -44,8 +44,8 @@ export default function BottomNav({ activeCategory, onSelect, isAdmin, onAddCate
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-brand-gold-border/60 md:hidden pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <div className="flex items-center px-2 py-2 max-md:gap-2">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 w-full max-w-full bg-white/95 backdrop-blur-lg border-t border-brand-gold-border/60 md:hidden pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div className="flex w-full items-center px-2 py-2 max-md:gap-2">
           {/* Home */}
           <button
             onClick={() => onSelect("home")}
@@ -68,14 +68,14 @@ export default function BottomNav({ activeCategory, onSelect, isAdmin, onAddCate
           </button>
 
           {/* Departments: mobile horizontal scroll with five visible items */}
-          <div className="max-md:flex-1 max-md:overflow-x-auto max-md:scrollbar-hide max-md:flex-nowrap max-md:pl-1">
-            <div className="max-md:flex max-md:items-stretch max-md:gap-1.5 max-md:min-w-max">
+          <div className="max-md:min-w-0 max-md:flex-1 max-md:overflow-x-auto max-md:scrollbar-hide max-md:pl-1">
+            <div className="max-md:flex max-md:items-stretch max-md:gap-1.5 max-md:min-w-0">
               {CATEGORIES.map((cat) => {
                 const Icon = ICONS[cat.icon] || Sparkles;
                 const isActive = String(activeCategory) === String(cat.id);
 
                 return (
-                  <div key={cat.id} className="relative max-md:flex-[0_0_20%] max-md:min-w-[20%]">
+                  <div key={cat.id} className="relative max-md:flex-[0_0_auto] max-md:min-w-0">
                     <button
                       type="button"
                       onClick={() => onSelect(cat.id)}
@@ -115,7 +115,7 @@ export default function BottomNav({ activeCategory, onSelect, isAdmin, onAddCate
                 <button
                   key="add-category"
                   onClick={() => onAddCategory && onAddCategory()}
-                  className={`bottom-nav-item max-md:flex-[0_0_20%] max-md:min-w-[20%] flex flex-col items-center justify-center py-1 relative transition-colors flex-shrink-0`}
+                  className={`bottom-nav-item max-md:flex-[0_0_auto] max-md:min-w-0 flex flex-col items-center justify-center py-1 relative transition-colors flex-shrink-0`}
                   aria-label="Add category"
                   data-active={false}
                 >
