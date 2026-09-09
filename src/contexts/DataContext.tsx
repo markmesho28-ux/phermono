@@ -42,7 +42,7 @@ const slugify = (value: string) => {
 };
 
 const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] = []): Category => ({
-  id: row?.id ?? row?.slug ?? String(row?.name || 'category'),
+  id: String(row?.id || ''),
   label: row?.name ?? row?.label ?? row?.slug ?? '',
   icon: row?.icon ?? 'Sparkles',
   color: row?.color ?? '',
@@ -59,6 +59,15 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
     .filter(Boolean),
 });
 
+const resolvePrice = (primary: any, secondary: any) => {
+  const numPrimary = primary !== null && primary !== undefined ? Number(primary) : null;
+  const numSecondary = secondary !== null && secondary !== undefined ? Number(secondary) : null;
+  if (numPrimary !== null && !isNaN(numPrimary) && numPrimary > 0) return numPrimary;
+  if (numSecondary !== null && !isNaN(numSecondary) && numSecondary > 0) return numSecondary;
+  if (numPrimary !== null && !isNaN(numPrimary)) return numPrimary;
+  if (numSecondary !== null && !isNaN(numSecondary)) return numSecondary;
+  return null;
+};
 
 function getInitialData() {
   try {
@@ -171,11 +180,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               brand: r.brand ?? r.brand_name ?? '',
               category: categoryVal ?? null,
               subcategory: subVal ?? null,
-              originalPrice: r.original_price ?? r.market_price ?? null,
-              sellingPrice: r.selling_price ?? r.price ?? null,
-              marketPrice: r.market_price ?? null,
-              adminCost: r.admin_cost ?? null,
-              price: r.price ?? null,
+              originalPrice: r.original_price != null ? Number(r.original_price) : (r.market_price != null ? Number(r.market_price) : null),
+              sellingPrice: r.selling_price != null ? Number(r.selling_price) : null,
+              marketPrice: r.market_price != null ? Number(r.market_price) : null,
+              adminCost: r.admin_cost != null ? Number(r.admin_cost) : null,
+              price: r.price != null ? Number(r.price) : 0,
               rating: r.rating ?? 0,
               reviews: r.reviews ?? 0,
               skinType: r.skin_type ?? null,
@@ -243,18 +252,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const payload: any = { name: label, slug: slugify(label), description: '', metadata: {} };
+      const slug = slugify(label);
+      const payload: any = { name: label, slug, description: '', metadata: {} };
       const { data, error } = await supabase.from('categories').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase category insert failed:', error.message || error);
+        if ((error as any)?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate')) {
+          const { data: fallback } = await supabase.from('categories').select('*').eq('slug', slug).limit(1).maybeSingle();
+          if (fallback && fallback.id) {
+            const resolvedCategory: Category = {
+              ...cat,
+              id: fallback.id,
+              label: fallback.name ?? label,
+              icon: cat.icon || 'Sparkles',
+              color: cat.color ?? '',
+              accent: cat.accent ?? '',
+              subcategories: Array.isArray(cat.subcategories) ? cat.subcategories : [{ id: 'all', label: 'All' }],
+              brands: Array.isArray(cat.brands) ? cat.brands : [],
+            };
+            setCategories(prev => [...prev.filter((item) => item.id !== resolvedCategory.id), resolvedCategory]);
+            return;
+          }
+        }
         alert('Failed to create category: ' + (error.message || String(error)));
+        return;
+      }
+
+      if (!data || !data.id) {
+        alert('Failed to create category: Database did not return a valid ID.');
         return;
       }
 
       const newCategory: Category = {
         ...cat,
-        id: data?.id ?? cat.id,
-        label: data?.name ?? label,
+        id: data.id,
+        label: data.name ?? label,
         icon: cat.icon || 'Sparkles',
         color: cat.color ?? '',
         accent: cat.accent ?? '',
@@ -603,6 +635,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       else if (schemaInfo.productsHasSubcategory) payload.subcategory = prod.subcategory ?? null;
 
       payload.price = (prod as any).price ?? null;
+      payload.selling_price = (prod as any).sellingPrice ?? (prod as any).price ?? null;
+      payload.market_price = (prod as any).marketPrice ?? null;
+      payload.admin_cost = (prod as any).adminCost ?? null;
       payload.image = prod.image ?? null;
       payload.description = prod.description ?? null;
 
@@ -621,11 +656,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         brand: (schemaInfo.productsHasBrandId ? (returned.brand_id ?? returned.brand) : returned.brand) ?? prod.brand ?? '',
         category: (schemaInfo.productsHasCategoryId ? (returned.category_id ?? returned.category) : returned.category) ?? prod.category ?? null,
         subcategory: (schemaInfo.productsHasSubcategoryId ? (returned.subcategory_id ?? returned.subcategory) : returned.subcategory) ?? prod.subcategory ?? null,
-        originalPrice: returned.original_price ?? returned.market_price ?? null,
-        sellingPrice: returned.selling_price ?? returned.price ?? null,
-        marketPrice: returned.market_price ?? null,
-        adminCost: returned.admin_cost ?? null,
-        price: returned.price ?? null,
+        originalPrice: returned.original_price != null ? Number(returned.original_price) : (returned.market_price != null ? Number(returned.market_price) : null),
+        sellingPrice: resolvePrice(returned.selling_price, returned.price),
+        marketPrice: returned.market_price != null ? Number(returned.market_price) : null,
+        adminCost: returned.admin_cost != null ? Number(returned.admin_cost) : null,
+        price: resolvePrice(returned.price, returned.selling_price) ?? 0,
         rating: returned.rating ?? 0,
         reviews: returned.reviews ?? 0,
         skinType: returned.skin_type ?? null,

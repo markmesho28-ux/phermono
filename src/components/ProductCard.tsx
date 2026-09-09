@@ -162,7 +162,7 @@ export default function ProductCard({
                   {user && user.role === 'admin' ? (
                 <div className="text-sm md:text-sm text-stone-700 space-y-1">
                   <div className="text-[12px] text-stone-400">Our Price</div>
-                  <div className="text-sm font-semibold">${(typeof product.adminCost==='number' ? product.adminCost : 0).toFixed(2)}</div>
+                  <div className="text-sm font-semibold">${(typeof product.price==='number' ? product.price : 0).toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">General Price</div>
                   <div className="text-sm font-semibold line-through">${(market !== undefined ? market : 0).toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">Store Price</div>
