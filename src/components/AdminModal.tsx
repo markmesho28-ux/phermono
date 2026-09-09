@@ -27,18 +27,27 @@ export default function AdminModal({ open, title, children, onClose }: AdminModa
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 overflow-hidden bg-black/40 md:inset-0 md:flex md:items-start md:justify-center md:p-4"
+      className="fixed inset-x-0 bottom-0 z-50 bg-black/40 md:inset-0 md:flex md:items-start md:justify-center md:p-4 flex items-end"
       style={{ top: 'var(--header-height, 0px)' }}
     >
-      <div className="relative mx-auto flex w-full max-w-[420px] flex-col overflow-hidden rounded-t-2xl border border-stone-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18)] box-border md:my-0 md:max-h-[min(90dvh,540px)] md:rounded-2xl md:h-auto md:max-w-[420px] md:w-full md:overflow-hidden">
+      <div className="relative mx-auto flex w-full max-w-[420px] flex-col rounded-t-2xl border border-stone-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18)] box-border md:my-0 md:max-h-[min(90dvh,540px)] md:rounded-2xl md:h-auto md:max-w-[420px] md:w-full">
         <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/80 px-2.5 py-1.5 sm:px-3 sm:py-2.5">
           <h3 className="text-[10.5px] font-bold text-brand-black sm:text-xs">{title}</h3>
           <button onClick={onClose} className="text-[10px] text-stone-600 hover:text-brand-black touch-target sm:text-[11px]">Close</button>
         </div>
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:px-3 md:pb-3 md:pt-2"
-          style={{ WebkitOverflowScrolling: 'touch', maxHeight: 'calc(100dvh - var(--header-height, 0px) - 12px)' }}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pt-3 md:px-3 md:pt-2"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            // Use the small viewport unit to avoid mobile browser UI glitches and ensure the
+            // modal never exceeds the visible viewport. Allow the inner scroll area to
+            // reach the true bottom and leave room for the fixed bottom nav + safe-area.
+            maxHeight: 'calc(100svh - var(--header-height, 0px) - 12px)',
+            // Keep extra bottom padding so the last input / action buttons are reachable
+            // above the fixed bottom navigation and device safe area.
+            paddingBottom: 'calc(76px + env(safe-area-inset-bottom))',
+          }}
         >
           {children}
         </div>
