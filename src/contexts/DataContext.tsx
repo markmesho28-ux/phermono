@@ -87,8 +87,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [categories, brands, products, priceRanges, orders]);
 
   // Sync initial data from Supabase when available. This runs once after mount.
-  const [loading, setLoading] = useState(true);
-  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [, setLoading] = useState(true);
+  const [, setRemoteError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
     const fetchRemote = async () => {
@@ -326,30 +326,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.warn('Supabase brand write error:', e?.message || e);
       alert('Failed to create brand: ' + (e?.message || String(e)));
     }
-  };
-
-  const productToRow = (p: Product) => {
-    return {
-      // Do not send a client-generated `id` (DB may use UUID). Map category -> category_id
-      name: p.name,
-      brand: p.brand,
-      // We'll decide at write time whether to send `category_id` or `category`, and similar for subcategory.
-      category: p.category,
-      subcategory: p.subcategory,
-      original_price: (p as any).originalPrice ?? null,
-      selling_price: (p as any).sellingPrice ?? null,
-      market_price: (p as any).marketPrice ?? null,
-      admin_cost: (p as any).adminCost ?? null,
-      price: p.price,
-      rating: p.rating ?? 0,
-      reviews: p.reviews ?? 0,
-      skin_type: p.skinType ?? null,
-      tag: p.tag ?? null,
-      hero: p.hero ?? false,
-      image: p.image ?? null,
-      description: p.description ?? null,
-      created_at: new Date().toISOString(),
-    } as Record<string, any>;
   };
 
   const mapProductUpdatesToRow = (updates: Partial<Product>) => {
