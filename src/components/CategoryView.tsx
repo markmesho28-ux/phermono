@@ -10,7 +10,6 @@ interface CategoryViewProps {
   categoryId: string;
   initialBrand?: string | null;
   searchQuery?: string;
-  allProducts?: Product[];
   onAddToCart: (product: Product) => void;
   onQuickView: (product: Product) => void;
   onWishlist: (product: Product) => void;
@@ -24,7 +23,6 @@ export default function CategoryView({
   categoryId,
   initialBrand = null,
   searchQuery = "",
-  allProducts = [],
   onAddToCart,
   onQuickView,
   onWishlist,
@@ -56,7 +54,9 @@ export default function CategoryView({
     setShowAllBrands(false);
   }, [categoryId, initialBrand]);
 
-  const effectiveProducts = contextProducts && contextProducts.length > 0 ? contextProducts : allProducts;
+  // Always use products from DataContext (Supabase source). Do not fall back to any externally
+  // supplied arrays to avoid showing mock/demo items when the database is empty.
+  const effectiveProducts = contextProducts;
   const categoryProducts = useMemo(() => effectiveProducts.filter((p) => p.category === categoryId), [effectiveProducts, categoryId]);
 
   const availableBrands = useMemo(() => {

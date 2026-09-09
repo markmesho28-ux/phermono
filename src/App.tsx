@@ -474,7 +474,7 @@ export default function App(){
             ) : activeCategory === 'admin' ? (
               <AdminDashboard />
             ) : (
-              <CategoryView categoryId={activeCategory} initialBrand={selectedBrand} searchQuery={searchQuery} allProducts={products} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
+              <CategoryView categoryId={activeCategory} initialBrand={selectedBrand} searchQuery={searchQuery} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
             )}
           </main>
         </div>
