@@ -139,22 +139,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
         const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
-
-        // Build quick lookup maps for categories to normalize references (slug -> id)
-        const categoriesById: Record<string, any> = {};
-        const categoriesBySlug: Record<string, any> = {};
-        categoriesArray.forEach((row: any) => {
-          const id = row?.id ?? row?.slug ?? String(row?.name || 'category');
-          categoriesById[id] = row;
-          if (row?.slug) categoriesBySlug[String(row.slug)] = row;
-        });
-
         const nextBrands = Array.isArray(brandsData)
-          ? Array.from(new Set((brandsData as any[]).map((brand) => String(brand?.name ?? '')).filter(Boolean)))
+          ? (brandsData as any[])
+              .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
+              .filter(Boolean)
           : [];
 
-
-
+        const categoriesById: Record<string, Category> = Object.fromEntries(
+          nextCategories.map((category) => [String(category.id), category])
+        );
+        const categoriesBySlug: Record<string, Category> = {};
+        nextCategories.forEach((category) => {
+          const label = String(category.label || '').trim();
+          if (label) {
+            categoriesBySlug[label.toLowerCase()] = category;
+            categoriesBySlug[slugify(label).toLowerCase()] = category;
+          }
+        });
 
         if (Array.isArray(productsData) && productsData.length > 0) {
           // Normalize product rows from DB into the app's Product shape and
@@ -163,8 +164,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             // resolve category: prefer category_id, else category (might be slug)
             let categoryVal: any = r.category_id ?? r.category ?? null;
             if (categoryVal && typeof categoryVal === 'string') {
-              if (!categoriesById[categoryVal] && categoriesBySlug[categoryVal]) {
-                categoryVal = categoriesBySlug[categoryVal].id ?? categoriesBySlug[categoryVal].slug;
+              const key = categoryVal.trim();
+              const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
+              if (mappedCategory) {
+                categoryVal = mappedCategory.id;
               }
             }
 
@@ -354,12 +357,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
+      // 1) Delete products belonging to this category (try both category_id and category columns)
+      if (schemaInfo.productsHasCategoryId) {
+        const { error: prodErr1 } = await supabase.from('products').delete().eq('category_id', id);
+        if (prodErr1) {
+          console.warn('Failed to delete products by category_id before deleting category:', prodErr1);
+          alert('Failed to delete category products: ' + (prodErr1.message || String(prodErr1)));
+          return;
+        }
+      }
+      // also attempt delete by plain category column when present
+      if (schemaInfo.productsHasCategory) {
+        const { error: prodErr2 } = await supabase.from('products').delete().eq('category', id);
+        if (prodErr2) {
+          console.warn('Failed to delete products by category before deleting category:', prodErr2);
+          alert('Failed to delete category products: ' + (prodErr2.message || String(prodErr2)));
+          return;
+        }
+      }
+
+      // 2) Delete subcategories and (if applicable) brands scoped to this category to avoid orphan rows
+      const { error: subErr } = await supabase.from('subcategories').delete().eq('category_id', id);
+      if (subErr) {
+        console.warn('Failed to delete subcategories for category:', subErr);
+        alert('Failed to delete category subcategories: ' + (subErr.message || String(subErr)));
+        return;
+      }
+      // The brands table may not have a category_id column in this schema. Only attempt to delete
+      // brands scoped by category if the runtime-detected flag `brandsHaveCategory` is true.
+      if (brandsHaveCategory) {
+        const { error: brandErr } = await supabase.from('brands').delete().eq('category_id', id);
+        if (brandErr) {
+          console.warn('Failed to delete brands for category:', brandErr);
+          alert('Failed to delete category brands: ' + (brandErr.message || String(brandErr)));
+          return;
+        }
+      } else {
+        // Brands are global or independent — do not delete brand rows when removing a category.
+        // If a cleanup of brand names tied to this category is desired, implement a name-based delete
+        // or a separate relation migration. For safety, skip deletion here.
+        console.debug('Brands table has no category_id column; skipping brand delete.');
+      }
+
+      // 3) Delete the category row itself
       const { error } = await supabase.from('categories').delete().eq('id', id);
       if (error) {
         console.warn('Supabase category delete failed:', error);
         alert('Failed to delete category: ' + (error.message || String(error)));
         return;
       }
+
       // remove local only after successful delete
       setCategories(prev => prev.filter(c => c.id !== id));
       setProducts(prev => prev.filter(p => p.category !== id));
@@ -512,12 +559,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const ok = await requestConfirm('Delete this subcategory? This cannot be undone.');
       if (!ok) return;
+      
+      // 1) Delete products in DB that reference this subcategory
+      if (schemaInfo.productsHasSubcategoryId) {
+        const { error: pErr } = await supabase.from('products').delete().eq('subcategory_id', subId);
+        if (pErr) {
+          console.warn('Failed to delete products by subcategory_id:', pErr);
+          alert('Failed to delete subcategory products: ' + (pErr.message || String(pErr)));
+          return;
+        }
+      }
+      if (schemaInfo.productsHasSubcategory) {
+        const { error: pErr2 } = await supabase.from('products').delete().eq('subcategory', subId);
+        if (pErr2) {
+          console.warn('Failed to delete products by subcategory:', pErr2);
+          alert('Failed to delete subcategory products: ' + (pErr2.message || String(pErr2)));
+          return;
+        }
+      }
+
+      // 2) Delete subcategory row
       const { error } = await supabase.from('subcategories').delete().eq('id', subId);
       if (error) {
         console.warn('Supabase subcategory delete failed:', error);
         alert('Failed to delete subcategory: ' + (error.message || String(error)));
         return;
       }
+
+      // 3) Update local state
       setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subId) } : c ));
       setProducts(prev => prev.filter(p => !(p.category === categoryId && p.subcategory === subId)));
     } catch (e: any) {
@@ -908,20 +977,59 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const ok = await requestConfirm('Delete this brand? This cannot be undone.');
       if (!ok) return;
-      const { error } = await supabase.from('brands').delete().eq('name', name);
-      if (error) {
-        console.warn('Supabase brand delete failed:', error);
-        alert('Failed to delete brand: ' + (error.message || String(error)));
+      
+      // Find brand row to get its id (if any)
+      let brandId: any = null;
+      try {
+        const { data: found } = await supabase.from('brands').select('id').eq('name', name).limit(1).maybeSingle();
+        if (found && found.id) brandId = found.id;
+      } catch (err) {
+        // ignore — we'll fall back to deleting by name
+      }
+
+      // 1) Delete products referencing this brand (by id or by name)
+      if (brandId && schemaInfo.productsHasBrandId) {
+        const { error: perr } = await supabase.from('products').delete().eq('brand_id', brandId);
+        if (perr) {
+          console.warn('Failed to delete products by brand_id:', perr);
+          alert('Failed to delete brand products: ' + (perr.message || String(perr)));
+          return;
+        }
+      }
+      // Also try deleting by brand name column if present
+      if (schemaInfo.productsHasBrand) {
+        const { error: perr2 } = await supabase.from('products').delete().eq('brand', name);
+        if (perr2) {
+          console.warn('Failed to delete products by brand name:', perr2);
+          alert('Failed to delete brand products: ' + (perr2.message || String(perr2)));
+          return;
+        }
+      }
+
+      // 2) Delete brand row itself (prefer id when available)
+      let delErr = null as any;
+      if (brandId) {
+        const { error } = await supabase.from('brands').delete().eq('id', brandId);
+        delErr = error;
+      } else {
+        const { error } = await supabase.from('brands').delete().eq('name', name);
+        delErr = error;
+      }
+      if (delErr) {
+        console.warn('Supabase brand delete failed:', delErr);
+        alert('Failed to delete brand: ' + (delErr.message || String(delErr)));
         return;
       }
+
+      // 3) Update local state after successful DB deletes
       setBrands(prev => prev.filter(b => b !== name));
       setCategories(prev => prev.map(c => {
         const existing = Array.isArray(c.brands) ? c.brands : [];
         return { ...c, brands: existing.filter(b => b !== name) };
       }));
-      setProducts(prev => prev.map(p => p.brand === name ? { ...p, brand: '' } : p));
+      setProducts(prev => prev.filter(p => p.brand !== name && p.brand !== brandId));
     } catch (e: any) {
-      console.warn('Supabase brand delete error', e?.message || e);
+      console.warn('Supabase brand delete error:', e?.message || e);
       alert('Failed to delete brand: ' + (e?.message || String(e)));
     }
   };
