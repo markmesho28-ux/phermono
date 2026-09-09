@@ -29,7 +29,7 @@ export default function Homepage({
 
   // Best sellers: strictly products explicitly flagged by admin. Do NOT fallback to random products.
   const bestSellers = [...products]
-    .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller' || Boolean((p as any).is_best_seller) || Boolean((p as any).best_seller))
+    .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
     .slice(0, 8);
 
   const renderedBestSellers = bestSellers; // intentionally no fallback
