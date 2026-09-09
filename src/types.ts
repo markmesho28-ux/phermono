@@ -105,16 +105,16 @@ export interface CartItem extends Product {
 }
 
 export interface DataActions {
-  addCategory: (cat: Category) => void;
+  addCategory: (cat: Category) => Promise<void>;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
-  addSubcategory: (categoryId: string, sub: CategorySubcategory) => void;
+  addSubcategory: (categoryId: string, sub: CategorySubcategory) => Promise<void>;
   updateSubcategory: (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => void;
   deleteSubcategory: (categoryId: string, subId: string) => void;
-  addBrand: (name: string, categoryId?: string) => void;
+  addBrand: (name: string, categoryId?: string) => Promise<void>;
   updateBrand: (oldName: string, newName: string) => void;
   deleteBrand: (name: string) => void;
-  addProduct: (prod: Product) => number;
+  addProduct: (prod: Product) => Promise<number>;
   updateProduct: (id: number, updates: Partial<Product>) => void;
   deleteProduct: (id: number) => void;
   toggleHero: (id: number) => void;

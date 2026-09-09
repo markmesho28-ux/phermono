@@ -43,10 +43,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       try {
+        // Ensure the app's admin state reflects a real Supabase authenticated user.
         const { data, error } = await supabase.auth.getUser();
-        if (error) return;
+        if (error) {
+          // If Supabase reports an error, clear any UI-only local session to avoid false admin state
+          setUser(null);
+          try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+          return;
+        }
         const supaUser = (data as any)?.user ?? null;
-        if (!supaUser) return;
+        if (!supaUser) {
+          // No real Supabase session: clear UI cached session to prevent anonymous admin actions
+          setUser(null);
+          try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+          return;
+        }
 
         // fetch profile row to get role / is_admin flag
         const { data: profile, error: pfErr } = await supabase
@@ -56,6 +67,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single();
         if (pfErr) {
           console.warn('Failed to fetch profile for current user:', pfErr.message || pfErr);
+          setUser(null);
+          try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
           return;
         }
         if (profile) {
@@ -71,6 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (e) {
         console.warn('Auth init error', e);
+        setUser(null);
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
       }
     };
     init();

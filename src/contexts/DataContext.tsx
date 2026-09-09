@@ -87,10 +87,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [categories, brands, products, priceRanges, orders]);
 
   // Sync initial data from Supabase when available. This runs once after mount.
+  const [loading, setLoading] = useState(true);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   useEffect(() => {
     let mounted = true;
     const fetchRemote = async () => {
       if (!supabase) return;
+      setLoading(true);
       try {
         const [
           { data: productsData },
@@ -108,8 +111,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         if (!mounted) return;
 
+        const normalizedSubcategories = Array.isArray(subcategoriesData) ? subcategoriesData.map(mapSubcategoryRow) : [];
         const nextCategories = Array.isArray(categoriesData)
-          ? categoriesData.map((row) => mapCategoryRow(row, subcategoriesData || [], brandsData || []))
+          ? categoriesData.map((row) => mapCategoryRow(row, normalizedSubcategories, brandsData || []))
           : [];
 
         const nextBrands = Array.isArray(brandsData)
@@ -117,7 +121,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           : [];
 
         if (Array.isArray(productsData) && productsData.length > 0) {
-          setProducts(productsData as any);
+          // Normalize product rows from DB into the app's Product shape.
+          const normalized = (productsData as any[]).map((r) => {
+            return {
+              id: r.id ?? Date.now(),
+              name: r.name ?? r.label ?? '',
+              brand: r.brand ?? r.brand_name ?? '',
+              // products table may use category_id; map it to `category` which the UI expects
+              category: r.category_id ?? r.category ?? null,
+              // subcategory may be stored as `subcategory` or `subcategory_id`
+              subcategory: r.subcategory ?? r.subcategory_id ?? null,
+              originalPrice: r.original_price ?? r.market_price ?? null,
+              sellingPrice: r.selling_price ?? r.price ?? null,
+              marketPrice: r.market_price ?? null,
+              adminCost: r.admin_cost ?? null,
+              price: r.price ?? null,
+              rating: r.rating ?? 0,
+              reviews: r.reviews ?? 0,
+              skinType: r.skin_type ?? null,
+              tag: r.tag ?? null,
+              hero: r.hero ?? false,
+              image: r.image ?? null,
+              description: r.description ?? null,
+            } as any;
+          });
+          setProducts(normalized as any);
         }
         if (nextCategories.length > 0) {
           setCategories(nextCategories);
@@ -125,11 +153,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (nextBrands.length > 0) {
           setBrands(nextBrands);
         }
+        // Determine whether brands are scoped to categories (brands have category_id) or global
+        const brandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && b.hasOwnProperty('category_id'));
+        // Replace categories' brand lists depending on schema: if brands are scoped, filter by category_id; else treat brands as global
+        if (brandsHaveCategory) {
+          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => b.category_id === cat.id).map(b => String(b.name)) } as any)));
+        } else {
+          // global brands: attach same brand list to all categories
+          setCategories(prev => prev.map(cat => ({ ...cat, brands: nextBrands } as any)));
+        }
         if (Array.isArray(ordersData) && ordersData.length > 0) {
           setOrders(ordersData as any);
         }
+        setRemoteError(null);
+        setLoading(false);
       } catch (err) {
         console.warn('Supabase sync failed:', err);
+        setRemoteError(String(err));
+        setLoading(false);
       }
     };
 
@@ -140,30 +181,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Categories
   const addCategory = async (cat: Category) => {
     const label = String(cat?.label || '').trim();
-    if (!label || !supabase) {
-      setCategories(prev => [...prev, cat]);
-      return;
-    }
+    if (!label || !supabase) return;
 
+    // Ensure only real authenticated admins may perform writes
     try {
-      const payload = {
-        id: cat.id || `cat-${Date.now()}`,
-        name: label,
-        slug: slugify(label),
-        image: null,
-        icon: cat.icon || 'Sparkles',
-        color: cat.color || '',
-        accent: cat.accent || '',
-        description: '',
-        is_active: true,
-        sort_order: Date.now(),
-        metadata: {},
-      };
+      const adminCheck = await (async () => {
+        try {
+          const { data, error } = await supabase.auth.getUser();
+          if (error) return false;
+          const supaUser = (data as any)?.user ?? null;
+          if (!supaUser) return false;
+          const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+          if (pfErr || !profile) return false;
+          return (profile.role === 'admin' || profile.is_admin === true);
+        } catch (err) {
+          return false;
+        }
+      })();
 
+      if (!adminCheck) {
+        alert('Admin sign-in required to create categories. Please sign in with an admin account.');
+        return;
+      }
+
+      const payload: any = { name: label, slug: slugify(label), description: '', metadata: {} };
       const { data, error } = await supabase.from('categories').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase category insert failed:', error.message || error);
-        setCategories(prev => [...prev, cat]);
+        alert('Failed to create category: ' + (error.message || String(error)));
         return;
       }
 
@@ -171,17 +216,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         ...cat,
         id: data?.id ?? cat.id,
         label: data?.name ?? label,
-        icon: (data?.icon as Category['icon']) || cat.icon || 'Sparkles',
-        color: data?.color ?? cat.color ?? '',
-        accent: data?.accent ?? cat.accent ?? '',
+        icon: cat.icon || 'Sparkles',
+        color: cat.color ?? '',
+        accent: cat.accent ?? '',
         subcategories: Array.isArray(cat.subcategories) ? cat.subcategories : [{ id: 'all', label: 'All' }],
         brands: Array.isArray(cat.brands) ? cat.brands : [],
       };
-
       setCategories(prev => [...prev.filter((item) => item.id !== newCategory.id), newCategory]);
     } catch (e: any) {
       console.warn('Supabase category write error:', e?.message || e);
-      setCategories(prev => [...prev, cat]);
+      alert('Failed to create category: ' + (e?.message || String(e)));
     }
   };
   const updateCategory = (id: string, updates: Partial<Category>) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
@@ -190,46 +234,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Subcategories
   const addSubcategory = async (categoryId: string, sub: CategorySubcategory) => {
     const label = String(sub?.label || '').trim();
-    if (!label || !supabase) {
-      setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: [...c.subcategories, sub] } : c));
-      return;
-    }
+    if (!label || !supabase) return;
 
     try {
-      const payload = {
-        id: sub.id || `sub-${Date.now()}`,
-        category_id: categoryId,
-        name: label,
-        slug: slugify(label),
-        image: null,
-        description: '',
-        is_active: true,
-        sort_order: Date.now(),
-        metadata: {},
-      };
-
-      const { data, error } = await supabase.from('subcategories').insert([payload]).select().single();
-      if (error) {
-        console.warn('Supabase subcategory insert failed:', error.message || error);
-        setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: [...c.subcategories, sub] } : c));
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authData?.user) {
+        alert('Admin sign-in required to create subcategories.');
+        return;
+      }
+      const supaUser = (authData as any).user;
+      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
+        alert('Admin sign-in required to create subcategories.');
         return;
       }
 
-      const inbound = {
-        id: data?.id ?? sub.id,
-        label: data?.name ?? label,
-      };
+      const payload: any = { category_id: categoryId, name: label, slug: slugify(label), description: '', metadata: {} };
+      const { data, error } = await supabase.from('subcategories').insert([payload]).select().single();
+      if (error) {
+        console.warn('Supabase subcategory insert failed:', error.message || error);
+        alert('Failed to create subcategory: ' + (error.message || String(error)));
+        return;
+      }
 
+      const inbound = { id: data?.id ?? sub.id, label: data?.name ?? label };
       setCategories(prev => prev.map(c => {
         if (c.id !== categoryId) return c;
-        return {
-          ...c,
-          subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound],
-        };
+        return { ...c, subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound] } as any;
       }));
     } catch (e: any) {
       console.warn('Supabase subcategory write error:', e?.message || e);
-      setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: [...c.subcategories, sub] } : c));
+      alert('Failed to create subcategory: ' + (e?.message || String(e)));
     }
   };
   const updateSubcategory = (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => setCategories(prev => prev.map(c => {
@@ -241,54 +276,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Brands
   const addBrand = async (name: string, categoryId?: string) => {
     const clean = String(name || '').trim();
-    if (!clean) return;
-
-    if (!supabase) {
-      setBrands(prev => {
-        const exists = prev.some(b => String(b).toLowerCase() === clean.toLowerCase());
-        if (exists) return prev;
-        return [...prev, clean];
-      });
-      if (categoryId) {
-        setCategories(prev => prev.map(c => {
-          if (c.id !== categoryId) return c;
-          const existing = Array.isArray(c.brands) ? c.brands : [];
-          const existsInCategory = existing.some(b => String(b).toLowerCase() === clean.toLowerCase());
-          if (existsInCategory) return c;
-          return { ...c, brands: [...existing, clean] };
-        }));
-      }
-      return;
-    }
+    if (!clean || !supabase) return;
 
     try {
-      const payload = {
-        id: `brand-${Date.now()}`,
-        category_id: categoryId || null,
-        name: clean,
-        slug: slugify(clean),
-        logo: null,
-        description: '',
-        is_active: true,
-        sort_order: Date.now(),
-        metadata: {},
-      };
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authData?.user) {
+        alert('Admin sign-in required to create brands.');
+        return;
+      }
+      const supaUser = (authData as any).user;
+      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
+        alert('Admin sign-in required to create brands.');
+        return;
+      }
+
+      const { data: sampleData } = await supabase.from('brands').select('*').limit(1);
+      const hasCategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'category_id');
+
+      const payload: any = { name: clean, slug: slugify(clean), description: '', metadata: {} };
+      if (hasCategoryId && categoryId) payload.category_id = categoryId;
 
       const { data, error } = await supabase.from('brands').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase brand insert failed:', error.message || error);
+        alert('Failed to create brand: ' + (error.message || String(error)));
         return;
       }
 
       const brandName = data?.name ?? clean;
-
       setBrands(prev => {
         const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
         if (exists) return prev;
         return [...prev, brandName];
       });
 
-      if (categoryId) {
+      if (hasCategoryId && categoryId) {
         setCategories(prev => prev.map(c => {
           if (c.id !== categoryId) return c;
           const existing = Array.isArray(c.brands) ? c.brands : [];
@@ -296,17 +319,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (existsInCategory) return c;
           return { ...c, brands: [...existing, brandName] };
         }));
+      } else {
+        setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
       }
     } catch (e: any) {
       console.warn('Supabase brand write error:', e?.message || e);
+      alert('Failed to create brand: ' + (e?.message || String(e)));
     }
   };
 
   const productToRow = (p: Product) => {
     return {
-      id: p.id,
+      // Do not send a client-generated `id` (DB may use UUID). Map category -> category_id
       name: p.name,
       brand: p.brand,
+      // We'll decide at write time whether to send `category_id` or `category`, and similar for subcategory.
       category: p.category,
       subcategory: p.subcategory,
       original_price: (p as any).originalPrice ?? null,
@@ -329,8 +356,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const row: Record<string, any> = {};
     if (updates.name !== undefined) row.name = updates.name;
     if (updates.brand !== undefined) row.brand = updates.brand;
-    if (updates.category !== undefined) row.category = updates.category;
-    if (updates.subcategory !== undefined) row.subcategory = updates.subcategory;
+    if (updates.category !== undefined) row.category_id = updates.category;
+    if (updates.subcategory !== undefined) row.subcategory_id = updates.subcategory;
     if ((updates as any).originalPrice !== undefined) row.original_price = (updates as any).originalPrice;
     if ((updates as any).sellingPrice !== undefined) row.selling_price = (updates as any).sellingPrice;
     if ((updates as any).marketPrice !== undefined) row.market_price = (updates as any).marketPrice;
@@ -347,41 +374,57 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return row;
   };
 
-  const addProduct = (prod: Product) => {
+  const addProduct = async (prod: Product) => {
     const id = Date.now();
     const newProd: Product = { ...prod, id };
     setProducts(prev => [newProd, ...prev]);
     if (prod.brand && prod.category) {
-      addBrand(prod.brand, prod.category);
+      void addBrand(prod.brand, prod.category);
     }
-    // Persist to Supabase (best-effort) with proper field mapping and error handling
+
+    if (!supabase) return id;
+
     try {
-      if (supabase) {
-        (async () => {
-          try {
-            const payload = productToRow(newProd);
-            const { data, error } = await supabase.from('products').upsert([payload], { onConflict: 'id' }).select();
-            if (error) {
-              console.warn('Supabase product upsert failed:', error.message || error);
-              if ((error as any)?.code === '23514' || (error as any)?.message?.includes('permission')) {
-                console.warn('Possible RLS or permission issue. Ensure table policies allow inserts for anon role or run migrations via a service role.');
-              }
-            } else {
-              // Optionally sync back any returned representation
-              if (Array.isArray(data) && data[0]) {
-                const returned = data[0] as any;
-                setProducts(prev => prev.map(p => p.id === newProd.id ? ({ ...p, id: returned.id, name: returned.name || p.name }) : p));
-              }
-            }
-          } catch (e: any) {
-            console.warn('Supabase product write error:', e?.message || e);
-          }
-        })();
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authData?.user) {
+        alert('Admin sign-in required to create products.');
+        return id;
       }
-    } catch (e) {
-      console.warn('Supabase product write error', e);
+      const supaUser = (authData as any).user;
+      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
+        alert('Admin sign-in required to create products.');
+        return id;
+      }
+
+      const { data: sampleData } = await supabase.from('products').select('*').limit(1);
+      const hasCategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'category_id');
+      const hasSubcategoryId = Array.isArray(sampleData) && sampleData.length > 0 && Object.prototype.hasOwnProperty.call(sampleData[0], 'subcategory_id');
+
+      const payload: any = {};
+      payload.name = newProd.name;
+      payload.brand = newProd.brand;
+      if (hasCategoryId) payload.category_id = newProd.category; else payload.category = newProd.category;
+      if (hasSubcategoryId) payload.subcategory_id = newProd.subcategory; else payload.subcategory = newProd.subcategory;
+      payload.price = (newProd as any).price ?? null;
+      payload.image = newProd.image ?? null;
+      payload.description = newProd.description ?? null;
+
+      const { data, error } = await supabase.from('products').insert([payload]).select().single();
+      if (error) {
+        console.warn('Supabase product insert failed:', error.message || error);
+        alert('Failed to create product: ' + (error.message || String(error)));
+        return id;
+      }
+
+      const inserted: Product = { ...newProd, id: data?.id ?? newProd.id };
+      setProducts(prev => [...prev.filter(item => item.id !== inserted.id), inserted]);
+      return inserted.id;
+    } catch (e: any) {
+      console.warn('Supabase product write error:', e?.message || e);
+      alert('Failed to create product: ' + (e?.message || String(e)));
+      return id;
     }
-    return id;
   };
   const updateProduct = (id: number, updates: Partial<Product>) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
