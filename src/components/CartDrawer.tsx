@@ -134,15 +134,15 @@ export function CartDrawer({
                 <div className="bg-stone-50 rounded-2xl p-4">
                   <div className="flex justify-between text-sm text-stone-600 mb-2">
                     <span>Subtotal</span>
-                    <span className="font-semibold text-brand-black">${subtotal.toFixed(2)}</span>
+                    <span className="font-semibold text-brand-black">EGP {subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-stone-600 mb-2">
                     <span>Shipping</span>
-                    <span className="font-semibold text-emerald-700">${shippingFee.toFixed(2)}</span>
+                    <span className="font-semibold text-emerald-700">EGP {shippingFee.toFixed(2)}</span>
                   </div>
                   <div className="border-t border-stone-200 pt-2 flex justify-between text-base font-bold text-brand-black">
                     <span>Total</span>
-                    <span>${total.toFixed(2)}</span>
+                    <span>EGP {total.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -231,15 +231,15 @@ export function CartDrawer({
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between text-stone-500">
                     <span>Subtotal</span>
-                    <span className="font-semibold text-brand-black">${subtotal.toFixed(2)}</span>
+                    <span className="font-semibold text-brand-black">EGP {subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-stone-500 text-xs">
                     <span>Pharmacy Shipping</span>
-                    <span className="text-emerald-700 font-bold">${shippingFee.toFixed(2)}</span>
+                    <span className="text-emerald-700 font-bold">EGP {shippingFee.toFixed(2)}</span>
                   </div>
                   <div className="border-t border-stone-200 pt-2 flex justify-between text-base font-bold text-brand-black">
                     <span>Total Amount</span>
-                    <span>${total.toFixed(2)}</span>
+                    <span>EGP {total.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -280,7 +280,7 @@ function CartItemRow({ item, onUpdateQty, onRemove }: CartItemRowProps) {
             {item.name}
           </h4>
           <span className="text-xs font-extrabold text-brand-black mt-1 block">
-            ${(item.price * item.qty).toFixed(2)}
+            EGP {(item.price * item.qty).toFixed(2)}
           </span>
         </div>
 
@@ -407,9 +407,9 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
                   const sell = typeof product.sellingPrice === 'number' ? product.sellingPrice : (product.price || 0);
                   return (
                     <>
-                      <span className="text-3xl font-extrabold text-brand-black">${sell.toFixed(2)}</span>
+                      <span className="text-3xl font-extrabold text-brand-black">EGP {sell.toFixed(2)}</span>
                       {market != null && (
-                        <span className="text-base text-stone-400 line-through">${market.toFixed(2)}</span>
+                        <span className="text-base text-stone-400 line-through">EGP {market.toFixed(2)}</span>
                       )}
                     </>
                   );

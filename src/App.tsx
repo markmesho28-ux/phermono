@@ -78,7 +78,7 @@ function TrackingPage() {
                   <div className="text-sm font-semibold">Order #{order.id}</div>
                   <div className="text-xs text-stone-400">Placed: {new Date(order.createdAt).toLocaleString()}</div>
                 </div>
-                <div className="text-sm font-medium">Total: ${order.total.toFixed(2)}</div>
+                <div className="text-sm font-medium">Total: EGP {order.total.toFixed(2)}</div>
               </div>
 
               <div className="mt-4">

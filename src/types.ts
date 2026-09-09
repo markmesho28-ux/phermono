@@ -22,6 +22,7 @@ export interface Product {
   category: string;
   subcategory: string;
   price: number;
+  createdAt?: number | string | null;
   originalPrice?: number | null;
   sellingPrice?: number;
   marketPrice?: number | null;
@@ -121,6 +122,7 @@ export interface DataActions {
   addOrder: (order: OrderInput) => number;
   updateOrder: (id: number, updates: Partial<Order>) => void;
   deleteOrder: (id: number) => void;
+  adminClearDatabase?: () => Promise<void>;
 }
 
 export interface DataContextValue {

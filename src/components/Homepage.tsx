@@ -21,15 +21,19 @@ export default function Homepage({
 }: HomepageProps) {
   const { products } = useData();
 
-  const sortedProductsByNewest = [...products].sort((a, b) => Number(b.id) - Number(a.id));
-  const bestSellers = [...products]
-    .filter((p) => p.hero)
-    .sort((a, b) => Number(b.id) - Number(a.id))
-    .slice(0, 8);
+  // New arrivals: strictly by creation date (most recent first). Only include rows that have a valid `createdAt`.
+  const sortedProductsByNewest = [...products]
+    .filter((p) => p.createdAt)
+    .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
   const newArrivals = sortedProductsByNewest.slice(0, 8);
 
-  const renderedBestSellers = bestSellers.length ? bestSellers : sortedProductsByNewest.slice(0, 8);
-  const renderedNewArrivals = newArrivals.length ? newArrivals : sortedProductsByNewest.slice(0, 8);
+  // Best sellers: strictly products explicitly flagged by admin. Do NOT fallback to random products.
+  const bestSellers = [...products]
+    .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller' || Boolean((p as any).is_best_seller) || Boolean((p as any).best_seller))
+    .slice(0, 8);
+
+  const renderedBestSellers = bestSellers; // intentionally no fallback
+  const renderedNewArrivals = newArrivals; // intentionally no fallback
 
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">

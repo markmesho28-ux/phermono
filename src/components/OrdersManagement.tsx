@@ -43,10 +43,10 @@ export default function OrdersManagement(){
                   <div className="text-xs text-stone-500">Items</div>
                   <ul className="text-sm list-disc list-inside">
                     {order.items.map(it=> (
-                      <li key={it.id}>{it.name} x{it.qty} — ${it.price.toFixed(2)}</li>
+                      <li key={it.id}>{it.name} x{it.qty} — EGP {it.price.toFixed(2)}</li>
                     ))}
                   </ul>
-                  <div className="mt-2 text-sm font-bold">Total: ${order.total.toFixed(2)}</div>
+                  <div className="mt-2 text-sm font-bold">Total: EGP {order.total.toFixed(2)}</div>
                 </div>
               </div>
               <div className="mt-3 flex gap-2">

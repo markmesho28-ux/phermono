@@ -86,7 +86,7 @@ export default function AdminDashboard() {
         </div>
         <div className="rounded-2xl border border-brand-gold/30 bg-brand-gold/10 px-4 py-3 text-right">
           <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">Inventory Value</div>
-          <div className="text-xl font-bold text-brand-black">${inventoryValue.toFixed(2)}</div>
+          <div className="text-xl font-bold text-brand-black">EGP {inventoryValue.toFixed(2)}</div>
         </div>
       </div>
 

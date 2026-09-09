@@ -75,9 +75,9 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
         </div>
         {/* Order Summary */}
         <div className="bg-stone-50 p-3 rounded">
-          <div className="flex justify-between text-sm text-stone-600"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
-          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>${getShippingCost(form.governorate).toFixed(2)}</span></div>
-          <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>${(subtotal + getShippingCost(form.governorate)).toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-stone-600"><span>Subtotal</span><span>EGP {subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>EGP {getShippingCost(form.governorate).toFixed(2)}</span></div>
+          <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>EGP {(subtotal + getShippingCost(form.governorate)).toFixed(2)}</span></div>
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded touch-target">Cancel</button>

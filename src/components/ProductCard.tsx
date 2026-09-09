@@ -162,17 +162,17 @@ export default function ProductCard({
                   {user && user.role === 'admin' ? (
                 <div className="text-sm md:text-sm text-stone-700 space-y-1">
                   <div className="text-[12px] text-stone-400">Our Price</div>
-                  <div className="text-sm font-semibold">${(typeof product.price==='number' ? product.price : 0).toFixed(2)}</div>
+                  <div className="text-sm font-semibold">EGP {(typeof product.price==='number' ? product.price : 0).toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">General Price</div>
-                  <div className="text-sm font-semibold line-through">${(market !== undefined ? market : 0).toFixed(2)}</div>
+                  <div className="text-sm font-semibold line-through">EGP {(market !== undefined ? market : 0).toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">Store Price</div>
-                  <div className="text-base font-bold text-brand-black">${(sell).toFixed(2)}</div>
+                  <div className="text-base font-bold text-brand-black">EGP {(sell).toFixed(2)}</div>
                 </div>
                   ) : (
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm md:text-base font-bold text-brand-black">${(sell).toFixed(2)}</span>
+                  <span className="text-sm md:text-base font-bold text-brand-black">EGP {(sell).toFixed(2)}</span>
                   {market !== undefined && (
-                    <span className="text-[11px] md:text-xs text-stone-400 line-through -mt-1">${market.toFixed(2)}</span>
+                    <span className="text-[11px] md:text-xs text-stone-400 line-through -mt-1">EGP {market.toFixed(2)}</span>
                   )}
                 </div>
               )}

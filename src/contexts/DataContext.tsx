@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import ConfirmModal from '../components/ConfirmModal';
 import supabase from '../lib/supabase';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
 
@@ -178,6 +179,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               id: r.id ?? Date.now(),
               name: r.name ?? r.label ?? '',
               brand: r.brand ?? r.brand_name ?? '',
+              createdAt: r.created_at ?? r.createdAt ?? null,
               category: categoryVal ?? null,
               subcategory: subVal ?? null,
               originalPrice: r.original_price != null ? Number(r.original_price) : (r.market_price != null ? Number(r.market_price) : null),
@@ -225,6 +227,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void fetchRemote();
     return () => { mounted = false; };
   }, []);
+
+  // In-app confirmation modal state and helper
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; resolve?: (v: boolean) => void }>({ open: false, message: '' });
+  const requestConfirm = (message: string) => new Promise<boolean>((resolve) => {
+    setConfirmState({ open: true, message, resolve });
+  });
+  const handleConfirm = () => {
+    try { confirmState.resolve?.(true); } catch (e) { /* ignore */ }
+    setConfirmState({ open: false, message: '' });
+  };
+  const handleCancel = () => {
+    try { confirmState.resolve?.(false); } catch (e) { /* ignore */ }
+    setConfirmState({ open: false, message: '' });
+  };
 
   // Categories
   const addCategory = async (cat: Category) => {
@@ -299,12 +315,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       alert('Failed to create category: ' + (e?.message || String(e)));
     }
   };
-  const updateCategory = (id: string, updates: Partial<Category>) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
+    // Local optimistic update kept until server confirms
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    if (!supabase) return;
+    try {
+      const row: any = {};
+      if (updates.label !== undefined) {
+        row.name = updates.label;
+        row.slug = slugify(String(updates.label || ''));
+      }
+      if (updates.icon !== undefined) row.icon = updates.icon;
+      if (updates.color !== undefined) row.color = updates.color;
+      if (updates.accent !== undefined) row.accent = updates.accent;
+
+      if (Object.keys(row).length === 0) return;
+      const { error } = await supabase.from('categories').update(row).eq('id', id).select().single();
+      if (error) {
+        console.warn('Supabase category update failed:', error.message || error);
+        // revert local change by refetching or leaving as-is; here we log and alert
+        alert('Failed to update category: ' + (error.message || String(error)));
+      }
+    } catch (e: any) {
+      console.warn('Supabase category update error:', e?.message || e);
+      alert('Failed to update category: ' + (e?.message || String(e)));
+    }
+  };
   const deleteCategory = async (id: string) => { await deleteCategoryRemote(id); };
 
   // Ensure deletes wait for Supabase confirmation before updating local state
   const deleteCategoryRemote = async (id: string) => {
     if (!supabase) return;
+    // Confirm with admin before destructive delete
+    try {
+      const ok = await requestConfirm('Delete this category and all its sub-items? This cannot be undone.');
+      if (!ok) return;
+    } catch (e) {
+      return;
+    }
     try {
       const { error } = await supabase.from('categories').delete().eq('id', id);
       if (error) {
@@ -432,15 +480,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       alert('Failed to create subcategory: ' + (e?.message || String(e)));
     }
   };
-  const updateSubcategory = (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => setCategories(prev => prev.map(c => {
-    if (c.id !== categoryId) return c;
-    return { ...c, subcategories: c.subcategories.map(s => s.id === subId ? { ...s, ...updates } : s) };
-  }));
+  const updateSubcategory = async (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => {
+    // Optimistic local update
+    setCategories(prev => prev.map(c => {
+      if (c.id !== categoryId) return c;
+      return { ...c, subcategories: c.subcategories.map(s => s.id === subId ? { ...s, ...updates } : s) } as any;
+    }));
+
+    if (!supabase) return;
+    try {
+      const row: any = {};
+      if (updates.label !== undefined) {
+        row.name = updates.label;
+        row.slug = slugify(String(updates.label || ''));
+      }
+      if (Object.keys(row).length === 0) return;
+      const { error } = await supabase.from('subcategories').update(row).eq('id', subId).select().single();
+      if (error) {
+        console.warn('Supabase subcategory update failed:', error.message || error);
+        alert('Failed to update subcategory: ' + (error.message || String(error)));
+      }
+    } catch (e: any) {
+      console.warn('Supabase subcategory update error:', e?.message || e);
+      alert('Failed to update subcategory: ' + (e?.message || String(e)));
+    }
+  };
 
   // Delete a subcategory only after Supabase confirms deletion
   const deleteSubcategory = async (categoryId: string, subId: string) => {
     if (!supabase) return;
     try {
+      const ok = await requestConfirm('Delete this subcategory? This cannot be undone.');
+      if (!ok) return;
       const { error } = await supabase.from('subcategories').delete().eq('id', subId);
       if (error) {
         console.warn('Supabase subcategory delete failed:', error);
@@ -505,9 +576,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       // Not found — insert
       const payload: any = { name: clean, slug, description: '', metadata: {} };
-      if (hasCategoryId && categoryId) payload.category_id = categoryId;
-      // set a sensible id equal to slug when DB expects an id (text PK). If DB assigns id automatically, this will be ignored.
-      payload.id = slug;
+
+      // Helper to test UUID shape
+      const isUuid = (v: string | undefined | null) => {
+        if (!v) return false;
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v));
+      };
+
+      // Resolve and only set category_id when it is a valid UUID or can be resolved to one
+      if (hasCategoryId && categoryId) {
+        if (isUuid(categoryId)) {
+          payload.category_id = categoryId;
+        } else {
+          // try to resolve a slug/name -> id from categories table
+          try {
+            const { data: catRow } = await supabase.from('categories').select('id').or(`slug.eq.${categoryId},name.eq.${categoryId}`).limit(1).maybeSingle();
+            if (catRow && catRow.id && isUuid(catRow.id)) payload.category_id = catRow.id;
+          } catch (err) {
+            // resolution failed — omit category_id to avoid inserting invalid uuid text
+            console.debug('Could not resolve category slug to UUID for brand insert:', err);
+          }
+        }
+      }
+
+      // Avoid sending a text `slug` into an `id` column that may be UUID. Only set payload.id when
+      // existing brand rows indicate the `id` column uses text keys (non-UUID). If the brand table
+      // appears to use UUIDs (common), omit `id` so the DB generates one.
+      try {
+        const { data: anyBrandRow } = await supabase.from('brands').select('id').limit(1).maybeSingle();
+        if (anyBrandRow && anyBrandRow.id) {
+          // if existing id is not a UUID, assume text ids are allowed and set slug as id
+          if (!isUuid(String(anyBrandRow.id))) payload.id = slug;
+        } else {
+          // no rows — safer to let DB assign id (do not set)
+        }
+      } catch (err) {
+        // on error, do not set id to avoid sending slug into possible uuid column
+        console.debug('Could not inspect brands table id type; omitting client id on insert', err);
+      }
 
       const { data, error } = await supabase.from('brands').insert([payload]).select().single();
       if (error) {
@@ -656,6 +762,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         brand: (schemaInfo.productsHasBrandId ? (returned.brand_id ?? returned.brand) : returned.brand) ?? prod.brand ?? '',
         category: (schemaInfo.productsHasCategoryId ? (returned.category_id ?? returned.category) : returned.category) ?? prod.category ?? null,
         subcategory: (schemaInfo.productsHasSubcategoryId ? (returned.subcategory_id ?? returned.subcategory) : returned.subcategory) ?? prod.subcategory ?? null,
+        createdAt: returned.created_at ?? returned.createdAt ?? null,
         originalPrice: returned.original_price != null ? Number(returned.original_price) : (returned.market_price != null ? Number(returned.market_price) : null),
         sellingPrice: resolvePrice(returned.selling_price, returned.price),
         marketPrice: returned.market_price != null ? Number(returned.market_price) : null,
@@ -698,6 +805,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteProduct = async (id: number) => {
     if (!supabase) return;
     try {
+      const ok = await requestConfirm('Delete this product? This action cannot be undone.');
+      if (!ok) return;
       const { error } = await supabase.from('products').delete().eq('id', id);
       if (error) {
         console.warn('Supabase product delete failed:', error.message || error);
@@ -710,11 +819,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       alert('Failed to delete product: ' + (e?.message || String(e)));
     }
   };
+
+  // Admin-only: clear core tables while preserving admin profiles
+  const adminClearDatabase = async () => {
+    if (!supabase) return;
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authData?.user) {
+        alert('Admin sign-in required to reset database.');
+        return;
+      }
+      const supaUser = (authData as any).user;
+      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
+      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
+        alert('Admin sign-in required to reset database.');
+        return;
+      }
+
+      // WARNING: The following deletes are destructive. They remove ALL rows from the listed tables.
+      const ok = await requestConfirm('WARNING: This will permanently clear core tables (products, orders, brands, subcategories, categories) and remove non-admin profiles. Proceed?');
+      if (!ok) return;
+      // Execution order matters to satisfy FK constraints: delete child tables first.
+      // 1) products, orders
+      await supabase.from('products').delete().neq('id', '');
+      await supabase.from('orders').delete().neq('id', '');
+      // 2) brands, subcategories
+      await supabase.from('brands').delete().neq('id', '');
+      await supabase.from('subcategories').delete().neq('id', '');
+      // 3) categories
+      await supabase.from('categories').delete().neq('id', '');
+
+      // 4) Remove non-admin profiles while preserving admin accounts
+      await supabase.from('profiles').delete().not('role', 'eq', 'admin').not('is_admin', 'eq', true);
+
+      // Refresh local state
+      setProducts([]);
+      setCategories([]);
+      setBrands([]);
+      setOrders([]);
+      console.log('Admin database clear completed');
+    } catch (e: any) {
+      console.warn('Admin DB clear failed:', e?.message || e);
+      alert('Failed to clear database: ' + (e?.message || String(e)));
+    }
+  };
   const toggleHero = (id: number) => setProducts(prev => prev.map(p => p.id === id ? { ...p, hero: !p.hero } : p));
 
-  const updateBrand = (oldName: string, newName: string) => {
+  const updateBrand = async (oldName: string, newName: string) => {
     const clean = String(newName || '').trim();
     if (!clean) return;
+    // Optimistic local updates
     setBrands(prev => prev.map(b => b === oldName ? clean : b));
     setCategories(prev => prev.map(c => {
       const existing = Array.isArray(c.brands) ? c.brands : [];
@@ -724,24 +878,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       };
     }));
     setProducts(prev => prev.map(p => p.brand === oldName ? { ...p, brand: clean } : p));
+
+    if (!supabase) return;
     try {
-      if (supabase) {
-        (async () => {
-          try {
-            await supabase.from('brands').update({ name: clean }).eq('name', oldName);
-          } catch (e: any) {
-            console.warn('Supabase brand update failed:', e?.message || e);
-          }
-        })();
+      // Find the brand row by name to get its id, then update by id to be explicit
+      const { data: found } = await supabase.from('brands').select('id').eq('name', oldName).limit(1).maybeSingle();
+      if (found && found.id) {
+        const { error } = await supabase.from('brands').update({ name: clean, slug: slugify(clean) }).eq('id', found.id).select().single();
+        if (error) {
+          console.warn('Supabase brand update failed:', error.message || error);
+          alert('Failed to update brand: ' + (error.message || String(error)));
+        }
+      } else {
+        // fallback: update by name if id not found
+        const { error } = await supabase.from('brands').update({ name: clean, slug: slugify(clean) }).eq('name', oldName);
+        if (error) {
+          console.warn('Supabase brand update failed (fallback):', error.message || error);
+          alert('Failed to update brand: ' + (error.message || String(error)));
+        }
       }
-    } catch (e) {
-      console.warn('Supabase brand update error', e);
+    } catch (e: any) {
+      console.warn('Supabase brand update error', e?.message || e);
+      alert('Failed to update brand: ' + (e?.message || String(e)));
     }
   };
 
   const deleteBrand = async (name: string) => {
     if (!supabase) return;
     try {
+      const ok = await requestConfirm('Delete this brand? This cannot be undone.');
+      if (!ok) return;
       const { error } = await supabase.from('brands').delete().eq('name', name);
       if (error) {
         console.warn('Supabase brand delete failed:', error);
@@ -823,7 +989,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.warn('Supabase order update error', e);
     }
   };
-  const deleteOrder = (id: number) => {
+  const deleteOrder = async (id: number) => {
+    try {
+      const ok = await requestConfirm('Delete this order? This cannot be undone.');
+      if (!ok) return;
+    } catch (e) {
+      return;
+    }
     setOrders(prev => prev.filter(o => o.id !== id));
     try {
       if (supabase) {
@@ -841,8 +1013,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder } }}>
+    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
       {children}
+      <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>
   );
 }
