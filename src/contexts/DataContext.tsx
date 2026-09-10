@@ -60,7 +60,7 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
       label: sub?.name ?? sub?.label ?? sub?.slug ?? '',
     })),
   brands: (brandRows || [])
-    .filter((brand) => brand?.category_id === row?.id || (!brand?.category_id && row?.id))
+    .filter((brand) => String(brand?.category_id) === String(row?.id))
     .map((brand) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
     .filter(Boolean),
 });
@@ -86,17 +86,65 @@ const removePriceKeys = (value: any): any => {
   return value;
 };
 
-// Resolve a subcategory identifier (id, slug, or name) to a canonical DB id when possible.
+// Resolve a subcategory identifier (id, slug, name, or object) to a canonical DB id when possible.
 const resolveSubcategoryId = async (value: any): Promise<string | null> => {
   if (!value) return null;
-  const raw = String(value);
+
+  // If given an object like { id } or { slug } or { name }, prefer id then slug/name
+  if (typeof value === 'object') {
+    try {
+      if (value?.id) return String(value.id);
+      if (value?.slug) value = String(value.slug);
+      else if (value?.name) value = String(value.name);
+      else value = '';
+    } catch (_) {
+      value = '';
+    }
+  }
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  // If it's already a UUID, return as-is
   if (isUuid(raw)) return raw;
+
+  // Try a few prioritized lookups: exact slug, exact name, slugified, then case-insensitive partial matches.
+  const slugCandidate = slugify(raw);
   try {
-    const { data } = await supabase.from('subcategories').select('id,slug,name').or(`slug.eq.${raw},name.eq.${raw}`).limit(1).maybeSingle();
-    if (data && data.id) return data.id;
+    // Exact slug
+    try {
+      const { data: bySlug } = await supabase.from('subcategories').select('id').eq('slug', raw).limit(1).maybeSingle();
+      if (bySlug && (bySlug as any).id) return String((bySlug as any).id);
+    } catch (_) {}
+
+    // Exact name
+    try {
+      const { data: byName } = await supabase.from('subcategories').select('id').eq('name', raw).limit(1).maybeSingle();
+      if (byName && (byName as any).id) return String((byName as any).id);
+    } catch (_) {}
+
+    // Slugified match
+    if (slugCandidate && slugCandidate !== raw) {
+      try {
+        const { data: bySlug2 } = await supabase.from('subcategories').select('id').eq('slug', slugCandidate).limit(1).maybeSingle();
+        if (bySlug2 && (bySlug2 as any).id) return String((bySlug2 as any).id);
+      } catch (_) {}
+    }
+
+    // Case-insensitive contains on slug and name as a last resort
+    try {
+      const { data: bySlugIlike } = await supabase.from('subcategories').select('id').ilike('slug', `%${raw}%`).limit(1).maybeSingle();
+      if (bySlugIlike && (bySlugIlike as any).id) return String((bySlugIlike as any).id);
+    } catch (_) {}
+
+    try {
+      const { data: byNameIlike } = await supabase.from('subcategories').select('id').ilike('name', `%${raw}%`).limit(1).maybeSingle();
+      if (byNameIlike && (byNameIlike as any).id) return String((byNameIlike as any).id);
+    } catch (_) {}
   } catch (e) {
     // ignore resolution errors; caller will decide fallback
   }
+
   return null;
 };
 
@@ -291,8 +339,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
         const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
+        // Global brands (unscoped) should only include brands with no category_id
+        // Derive global brands (no category_id) and prepare per-category lists reliably
         const nextBrands = Array.isArray(brandsData)
           ? (brandsData as any[])
+              .filter((brand: any) => !brand?.category_id)
               .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
               .filter(Boolean)
           : [];
@@ -448,16 +499,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Supabase is the source of truth — replace local lists
         setCategories(nextCategories);
         setBrands(nextBrands);
-        // Determine whether brands are scoped to categories (brands have category_id) or global
+        // Determine whether brands are scoped to categories (brands have category_id)
         const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
         setBrandsHaveCategory(detectedBrandsHaveCategory);
 
-        // Replace categories' brand lists depending on schema: if brands are scoped, filter by category_id; else treat brands as global
-        if (detectedBrandsHaveCategory) {
-          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => b.category_id === cat.id).map(b => String(b.name)) } as any)));
+        // Always build per-category brand lists from the fetched `brandsData` rows.
+        // Categories with no brands will receive an empty array.
+        if (Array.isArray(brandsData)) {
+          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
         } else {
-          // global brands: attach same brand list to all categories
-          setCategories(prev => prev.map(cat => ({ ...cat, brands: nextBrands } as any)));
+          setCategories(prev => prev.map(cat => ({ ...cat, brands: [] } as any)));
         }
         if (Array.isArray(ordersData) && ordersData.length > 0) {
           setOrders(ordersData as any);
@@ -1035,13 +1086,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(existing) && existing.length > 0 && existing[0]) {
         const row = existing[0] as any;
         const brandName = row.name ?? clean;
-        // Ensure local state includes this brand
-        setBrands(prev => {
-          const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
-          if (exists) return prev;
-          return [...prev, brandName];
-        });
-        if (hasCategoryId && categoryId) {
+
+        if (hasCategoryId && row?.category_id) {
+          // Category-scoped brand: attach only to the owning category locally
+          setCategories(prev => prev.map(c => {
+            if (c.id !== String(row.category_id)) return c;
+            const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+            const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+            if (existsInCategory) return c;
+            return { ...c, brands: [...existingBrands, brandName] };
+          }));
+        } else if (hasCategoryId && categoryId) {
+          // brands table supports category_id but the existing row lacked it; attach to provided categoryId and
+          // also keep it in global list
+          setBrands(prev => {
+            const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+            if (exists) return prev;
+            return [...prev, brandName];
+          });
           setCategories(prev => prev.map(c => {
             if (c.id !== categoryId) return c;
             const existingBrands = Array.isArray(c.brands) ? c.brands : [];
@@ -1050,27 +1112,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             return { ...c, brands: [...existingBrands, brandName] };
           }));
         } else {
+          // Global brands: add to global list and to all categories' brand lists
+          setBrands(prev => {
+            const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+            if (exists) return prev;
+            return [...prev, brandName];
+          });
           setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
         }
+
         return existing[0] as any;
       }
 
       // Not found — insert
       const payload: any = { name: clean, slug, description: '', metadata: {} };
 
-      // Resolve and only set category_id when it is a valid UUID or can be resolved to one
-      if (hasCategoryId && categoryId) {
-        if (isUuid(categoryId)) {
-          payload.category_id = categoryId;
-        } else {
-          // try to resolve a slug/name -> id from categories table
-          try {
-            const { data: catRow } = await supabase.from('categories').select('id').or(`slug.eq.${categoryId},name.eq.${categoryId}`).limit(1).maybeSingle();
-            if (catRow && catRow.id && isUuid(catRow.id)) payload.category_id = catRow.id;
-          } catch (err) {
-            // resolution failed — omit category_id to avoid inserting invalid uuid text
-            console.debug('Could not resolve category slug to UUID for brand insert:', err);
-          }
+      // If caller provided a categoryId, prefer to persist it into `category_id` so the brand is scoped.
+      // Attempt to resolve the category id first; include it in the payload and fall back if the DB rejects.
+      if (categoryId) {
+        try {
+          const { data: catRow } = await supabase.from('categories').select('id').or(`id.eq.${categoryId},slug.eq.${categoryId},name.eq.${categoryId}`).limit(1).maybeSingle();
+          if (catRow && catRow.id) payload.category_id = String(catRow.id);
+          else payload.category_id = String(categoryId);
+        } catch (err) {
+          // If category resolution fails, still set the provided categoryId as a best-effort value
+          payload.category_id = String(categoryId);
         }
       }
 
@@ -1090,7 +1156,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         console.debug('Could not inspect brands table id type; omitting client id on insert', err);
       }
 
-      const { data, error } = await supabase.from('brands').insert([payload]).select().single();
+      // Try inserting including `category_id` when provided. If the insert fails due to a missing column,
+      // retry without `category_id` to preserve compatibility with older schemas.
+      let insertRes: any;
+      try {
+        insertRes = await supabase.from('brands').insert([payload]).select().single();
+      } catch (err) {
+        // SDK-level error, attempt fallback
+        insertRes = { error: err };
+      }
+      let data = insertRes.data;
+      let error = insertRes.error;
+      if (error) {
+        // If the DB rejected `category_id` (column doesn't exist), retry without it
+        const msg = String(error?.message || error || '').toLowerCase();
+        if (msg.includes('column') && msg.includes('category_id') || (error?.code === '42703')) {
+          const fallback = { ...payload };
+          delete fallback.category_id;
+          try {
+            const res2 = await supabase.from('brands').insert([fallback]).select().single();
+            data = res2.data;
+            error = res2.error;
+          } catch (err2) {
+            data = null;
+            error = err2;
+          }
+        }
+      }
       if (error) {
         console.warn('Supabase brand insert failed:', error.message || error);
         if ((error as any)?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate')) {
@@ -1098,7 +1190,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           const { data: fallback } = await supabase.from('brands').select('*').eq('slug', slug).limit(1).maybeSingle();
           if (fallback) {
             const brandName = (fallback as any).name ?? clean;
-            setBrands(prev => (prev.some(b => b.toLowerCase() === brandName.toLowerCase()) ? prev : [...prev, brandName]));
+            // Attach to category if present on the found row
+            if (fallback.category_id) {
+              setCategories(prev => prev.map(c => {
+                if (String(c.id) !== String(fallback.category_id)) return c;
+                const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+                const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+                if (existsInCategory) return c;
+                return { ...c, brands: [...existingBrands, brandName] };
+              }));
+            } else {
+              setBrands(prev => (prev.some(b => b.toLowerCase() === brandName.toLowerCase()) ? prev : [...prev, brandName]));
+              setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
+            }
             return fallback as any;
           }
         }
@@ -1107,21 +1211,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       const brandName = data?.name ?? clean;
-      setBrands(prev => {
-        const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
-        if (exists) return prev;
-        return [...prev, brandName];
-      });
+      // Determine an effective category scope: prefer the DB-returned `category_id`, fall back to the caller-provided `categoryId`.
+      const insertedCategoryId = (data && data.category_id) ? String(data.category_id) : null;
+      const effectiveCategoryId = insertedCategoryId ?? (categoryId ? String(categoryId) : null);
 
-      if (hasCategoryId && categoryId) {
+      if (effectiveCategoryId) {
+        // Attach the new brand only to the effective category locally (do not make it global)
         setCategories(prev => prev.map(c => {
-          if (c.id !== categoryId) return c;
+          if (String(c.id) !== String(effectiveCategoryId)) return c;
           const existingBrands = Array.isArray(c.brands) ? c.brands : [];
           const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
           if (existsInCategory) return c;
           return { ...c, brands: [...existingBrands, brandName] };
         }));
       } else {
+        // No category scope — treat as global brand
+        setBrands(prev => {
+          const exists = prev.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+          if (exists) return prev;
+          return [...prev, brandName];
+        });
         setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
       }
 
@@ -1553,7 +1662,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) return;
     try {
       // Find the brand row by name to get its id, then update by id to be explicit
-      const { data: found } = await supabase.from('brands').select('id').eq('name', oldName).limit(1).maybeSingle();
+      // Attempt to scope update to the category that currently lists this brand to avoid cross-category updates
+      const scopedCategory = categories.find(cat => Array.isArray(cat.brands) && cat.brands.some(b => String(b).toLowerCase() === String(oldName).toLowerCase()));
+      const brandingQuery = scopedCategory
+        ? supabase.from('brands').select('id, category_id').eq('name', oldName).eq('category_id', scopedCategory.id).limit(1).maybeSingle()
+        : supabase.from('brands').select('id, category_id').eq('name', oldName).limit(1).maybeSingle();
+      const { data: found } = await brandingQuery;
       if (found && found.id) {
         const { error } = await supabase.from('brands').update({ name: clean, slug: slugify(clean) }).eq('id', found.id).select().single();
         if (error) {
@@ -1562,6 +1676,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         // fallback: update by name if id not found
+        // Fallback: update possibly-ungrouped brand rows by name
         const { error } = await supabase.from('brands').update({ name: clean, slug: slugify(clean) }).eq('name', oldName);
         if (error) {
           console.warn('Supabase brand update failed (fallback):', error.message || error);
@@ -1601,28 +1716,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 1) Find the brand row in Supabase to get its canonical id, name, and slug
+      // 1) Find the brand row in Supabase to get its canonical id, name, slug and category scope
       try {
         let foundRow: any = null;
-        if (isUuid(target)) {
-          const { data } = await supabase.from('brands').select('id, name, slug').eq('id', target).limit(1).maybeSingle();
-          if (data) foundRow = data;
+        // Prefer to scope to the category that currently shows this brand locally
+        const scopedCategory = categories.find(cat => Array.isArray(cat.brands) && cat.brands.some(b => String(b).toLowerCase() === target.toLowerCase()));
+
+        const tryQueries = [];
+        if (isUuid(target)) tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').eq('id', target).limit(1).maybeSingle());
+        // If we have a scoped category, prefer brand rows in that category
+        if (scopedCategory) {
+          tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').eq('name', target).eq('category_id', scopedCategory.id).limit(1).maybeSingle());
+          tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').eq('slug', slugify(target)).eq('category_id', scopedCategory.id).limit(1).maybeSingle());
         }
-        if (!foundRow) {
-          const { data } = await supabase.from('brands').select('id, name, slug').eq('name', target).limit(1).maybeSingle();
-          if (data) foundRow = data;
-        }
-        if (!foundRow) {
-          const { data } = await supabase.from('brands').select('id, name, slug').ilike('name', target).limit(1).maybeSingle();
-          if (data) foundRow = data;
-        }
-        if (!foundRow) {
-          const { data } = await supabase.from('brands').select('id, name, slug').eq('slug', slugify(target)).limit(1).maybeSingle();
-          if (data) foundRow = data;
-        }
-        if (!foundRow && !isUuid(target)) {
-          const { data } = await supabase.from('brands').select('id, name, slug').eq('id', target).limit(1).maybeSingle();
-          if (data) foundRow = data;
+        // Generic fallbacks
+        tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').eq('name', target).limit(1).maybeSingle());
+        tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').ilike('name', target).limit(1).maybeSingle());
+        tryQueries.push(supabase.from('brands').select('id, name, slug, category_id').eq('slug', slugify(target)).limit(1).maybeSingle());
+
+        for (const q of tryQueries) {
+          try {
+            const { data } = await q;
+            if (data) { foundRow = data; break; }
+          } catch (_) { /* ignore single query failures */ }
         }
 
         if (foundRow) {
@@ -1645,9 +1761,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 3) Delete referencing products (by brand_id or brand name)
+      // 3) Delete referencing products (by brand_id or brand name) scoped to category when possible
+      const scopedCategory = categories.find(cat => Array.isArray(cat.brands) && cat.brands.some(b => String(b).toLowerCase() === target.toLowerCase()));
       if (brandId && schemaInfo.productsHasBrandId) {
-        const { error: perr } = await supabase.from('products').delete().eq('brand_id', brandId);
+        let delQ = supabase.from('products').delete().eq('brand_id', brandId);
+        if (scopedCategory) delQ = delQ.eq('category_id', scopedCategory.id);
+        const { error: perr } = await delQ;
         if (perr) {
           console.warn('Failed to delete products by brand_id:', perr);
           alert('Failed to delete brand products: ' + (perr.message || String(perr)));
@@ -1657,7 +1776,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (schemaInfo.productsHasBrand) {
         const brandNamesToDelete = Array.from(new Set([brandName, target].filter(Boolean)));
         for (const bName of brandNamesToDelete) {
-          const { error: perr2 } = await supabase.from('products').delete().eq('brand', bName);
+          let delQ = supabase.from('products').delete().eq('brand', bName);
+            if (scopedCategory) {
+              if (schemaInfo.productsHasCategoryId) {
+                delQ = delQ.eq('category_id', scopedCategory.id);
+              } else if (schemaInfo.productsHasCategory) {
+                delQ = delQ.eq('category', scopedCategory.id);
+              }
+            }
+          const { error: perr2 } = await delQ;
           if (perr2) {
             console.warn('Failed to delete products by brand name:', perr2);
             alert('Failed to delete brand products: ' + (perr2.message || String(perr2)));
@@ -1668,18 +1795,51 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       // 4) Execute delete query against brands table
       let delErr: any = null;
+      // Track which category (if any) this deleted brand belonged to so we update local state narrowly
+      let deletedBrandCategoryId: string | null = null;
       if (brandId) {
-        const { error } = await supabase.from('brands').delete().eq('id', brandId);
-        delErr = error;
+        // If this brand row has a category scope, delete only that row; otherwise delete by id
+        const { data: brandRow } = await supabase.from('brands').select('category_id').eq('id', brandId).limit(1).maybeSingle();
+        if (brandRow && brandRow.category_id) {
+          deletedBrandCategoryId = String(brandRow.category_id);
+          const { error } = await supabase.from('brands').delete().eq('id', brandId).eq('category_id', brandRow.category_id);
+          delErr = error;
+        } else {
+          // global brand (no category_id)
+          const { error } = await supabase.from('brands').delete().eq('id', brandId);
+          delErr = error;
+        }
       } else {
-        const { error } = await supabase.from('brands').delete().eq('name', brandName);
-        delErr = error;
-        if (delErr) {
-          const { error: slugErr } = await supabase.from('brands').delete().eq('slug', brandSlug);
-          delErr = slugErr;
+        // If we have a scopedCategory, delete by name within that category only (tolerant to missing category_id column)
+        const scopedCategory = categories.find(cat => Array.isArray(cat.brands) && cat.brands.some(b => String(b).toLowerCase() === target.toLowerCase()));
+        if (scopedCategory) {
+          deletedBrandCategoryId = scopedCategory.id;
+          try {
+            const { error } = await supabase.from('brands').delete().eq('name', brandName).eq('category_id', scopedCategory.id);
+            // If delete returned a missing-column error, treat as successful local deletion (DB cannot represent scope)
+            if (error && isMissingColumnError(error)) {
+              delErr = null;
+            } else {
+              delErr = error;
+            }
+          } catch (err) {
+            // SDK/transport errors - if it's a missing-column issue, ignore; else propagate
+            if (String(err).toLowerCase().includes('column') && String(err).toLowerCase().includes('category_id')) {
+              delErr = null;
+            } else {
+              delErr = err;
+            }
+          }
+        } else {
+          // global delete by name/slug
+          const { error } = await supabase.from('brands').delete().eq('name', brandName);
+          delErr = error;
+          if (delErr) {
+            const { error: slugErr } = await supabase.from('brands').delete().eq('slug', brandSlug);
+            delErr = slugErr;
+          }
         }
       }
-
       if (delErr) {
         console.warn('Supabase brand delete failed:', delErr);
         alert('Failed to delete brand: ' + (delErr.message || String(delErr)));
@@ -1698,12 +1858,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
       };
 
-      setBrands(prev => prev.filter(b => !matchBrand(b)));
-      setCategories(prev => prev.map(c => {
-        const existing = Array.isArray(c.brands) ? c.brands : [];
-        return { ...c, brands: existing.filter(b => !matchBrand(b)) };
-      }));
-      setProducts(prev => prev.filter(p => !matchBrand(p.brand)));
+      // Update local state narrowly: if the deleted brand belonged to a specific category, only remove it from that
+      // category's `brands` list. If it was a global brand (no category_id), remove from global `brands` and from all categories.
+      if (deletedBrandCategoryId) {
+        // Remove from the specific category's brand list only
+        setCategories(prev => prev.map(c => {
+          if (c.id !== deletedBrandCategoryId) return c;
+          const existing = Array.isArray(c.brands) ? c.brands : [];
+          return { ...c, brands: existing.filter(b => !matchBrand(b)) };
+        }));
+        // Remove products matching the brand across the category scope
+        setProducts(prev => prev.filter(p => !(String(p.category) === String(deletedBrandCategoryId) && matchBrand(p.brand))));
+      } else {
+        // Global brand deletion: remove from global list and from every category's brand lists
+        setBrands(prev => prev.filter(b => !matchBrand(b)));
+        setCategories(prev => prev.map(c => {
+          const existing = Array.isArray(c.brands) ? c.brands : [];
+          return { ...c, brands: existing.filter(b => !matchBrand(b)) };
+        }));
+        setProducts(prev => prev.filter(p => !matchBrand(p.brand)));
+      }
     } catch (e: any) {
       console.warn('Supabase brand delete error:', e?.message || e);
       alert('Failed to delete brand: ' + (e?.message || String(e)));
@@ -1800,8 +1974,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const getBrandsForCategory = (categoryId: string) => {
+    if (!categoryId) return [] as string[];
+    const cat = categories.find(c => String(c.id) === String(categoryId));
+    if (cat && Array.isArray(cat.brands) && cat.brands.length > 0) return cat.brands;
+
+    // Fallback: derive from products belonging to this category and global brands list
+    const productBrandSet = new Set(products.filter(p => String(p.category) === String(categoryId)).map(p => String(p.brand || '')));
+    const derived = Array.from(productBrandSet).filter(Boolean);
+    if (derived.length > 0) return derived;
+
+    // final fallback: return empty array
+    return [] as string[];
+  };
+
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
+    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, getBrandsForCategory, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
       {children}
       <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>

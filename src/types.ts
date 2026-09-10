@@ -132,6 +132,7 @@ export interface DataContextValue {
   products: Product[];
   priceRanges: PriceRange[];
   orders: Order[];
+  getBrandsForCategory?: (categoryId: string) => string[];
   actions: DataActions;
 }
 
