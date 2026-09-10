@@ -1170,7 +1170,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         // If the DB rejected `category_id` (column doesn't exist), retry without it
         const msg = String(error?.message || error || '').toLowerCase();
-        if (msg.includes('column') && msg.includes('category_id') || (error?.code === '42703')) {
+        if ((msg.includes('column') && msg.includes('category_id')) || (error?.code === '42703')) {
           const fallback = { ...payload };
           delete fallback.category_id;
           try {
