@@ -71,6 +71,21 @@ const toNumberOrUndefined = (value: any): number | undefined => {
   return Number.isFinite(num) ? num : undefined;
 };
 
+// Recursively remove any property named `price` from objects/arrays to avoid sending
+// legacy/deleted `price` columns to Supabase.
+const removePriceKeys = (value: any): any => {
+  if (Array.isArray(value)) return value.map(removePriceKeys);
+  if (value && typeof value === 'object') {
+    const out: Record<string, any> = {};
+    for (const k of Object.keys(value)) {
+      if (k === 'price') continue;
+      out[k] = removePriceKeys((value as any)[k]);
+    }
+    return out;
+  }
+  return value;
+};
+
 const normalizeProductImage = (value: any): string => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -1523,7 +1538,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               phone: o.phone,
               governorate: o.governorate || null,
               address: o.address || null,
-              items: o.items || [],
+                    // Ensure we never send a top-level or nested `price` property to the DB
+                    items: removePriceKeys(o.items || []),
               total: o.total,
               shipping: (o as any).shipping ?? 0,
               status: o.status || 'pending',
@@ -1559,7 +1575,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (supabase) {
         (async () => {
           try {
-            await supabase.from('orders').update({ ...updates }).eq('id', id);
+            // Remove any `price` keys from updates.items before sending to Supabase
+            const cleaned = { ...updates } as any;
+            if (cleaned.items) cleaned.items = removePriceKeys(cleaned.items);
+            await supabase.from('orders').update(cleaned).eq('id', id);
           } catch (e) {
             console.warn('Supabase order update failed', e);
           }
