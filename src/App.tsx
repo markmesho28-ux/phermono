@@ -316,7 +316,7 @@ export default function App(){
     return products.filter(p => {
       const name = (p.name || '').toLowerCase();
       const brand = (p.brand || '').toLowerCase();
-      const sub = (p.subcategory || '').toLowerCase();
+      const sub = (p.subcategoryId || '').toLowerCase();
       const desc = (p.description || '').toLowerCase();
       // any token must match any of these fields (multi-word supports)
       return tokens.every(tok => (

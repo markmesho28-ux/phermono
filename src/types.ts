@@ -20,7 +20,8 @@ export interface Product {
   name: string;
   brand: string;
   category: string;
-  subcategory: string;
+  subcategory?: string | null;
+  subcategoryId?: string | null;
   price?: number | null;
   createdAt?: number | string | null;
   originalPrice?: number | null;

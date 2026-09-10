@@ -330,10 +330,10 @@ export const buildCatalogContext = (products: Product[] = []) => {
   return products
     .slice(0, 30)
     .map((p, idx) => {
-      const isHair =
+        const isHair =
         p.category === "haircare" ||
         /hair|shampoo|conditioner|curl|scalp|frizz|شعر|كيرلي/i.test(
-          `${p.category} ${p.subcategory ?? ""} ${p.name} ${p.description ?? ""}`
+          `${p.category} ${p.subcategoryId ?? ""} ${p.name} ${p.description ?? ""}`
         );
 
       const price = p.sellingPrice != null ? `${p.sellingPrice} EGP` : "price not set";
@@ -350,7 +350,7 @@ export const buildCatalogContext = (products: Product[] = []) => {
         `RAW_PRODUCT_NAME: ${p.name}`,
         `BRAND: ${p.brand}`,
         `CATEGORY: ${p.category}`,
-        `SUBCATEGORY: ${p.subcategory || "general"}`,
+        `SUBCATEGORY: ${p.subcategoryId || "general"}`,
         `PRICE: ${price}${original}`,
         `${suitabilityLabel}: ${suitabilityValue}`,
         p.tag ? `TAG: ${p.tag}` : "",

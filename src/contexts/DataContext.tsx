@@ -14,14 +14,14 @@ const EMPTY_DATA = {
 };
 
 // Hard-coded live schema facts for the `products` table.
-// Confirmed columns: id, name, category_id (UUID FK), brand (text), price,
-//   original_price, selling_price, market_price, admin_cost, image, description,
-//   rating, reviews, skin_type, tag, hero, created_at, updated_at.
-// Columns that do NOT exist: category (plain text), subcategory_id, subcategory, brand_id.
+// Confirmed columns: id, name, category_id, brand (text), selling_price, market_price, admin_cost, image, description,
+// rating, reviews, hero, created_at, updated_at.
+// After migration we will persist product -> subcategory in `products.subcategory_id` (TEXT) referencing `subcategories.id`.
 const PRODUCT_SCHEMA = {
   productsHasCategoryId: true,
   productsHasCategory: false,
-  productsHasSubcategoryId: false,
+  // We expect to persist subcategory relationships in products.subcategory_id
+  productsHasSubcategoryId: true,
   productsHasSubcategory: false,
   productsHasBrandId: false,
   productsHasBrand: true,
@@ -54,9 +54,9 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
   color: row?.color ?? '',
   accent: row?.accent ?? '',
   subcategories: (subcategoryRows || [])
-    .filter((sub) => sub?.category_id === row?.id)
+    .filter((sub) => String(sub?.category_id) === String(row?.id))
     .map((sub) => ({
-      id: sub?.id ?? sub?.slug ?? String(sub?.name || 'subcategory'),
+      id: String(sub?.id ?? sub?.slug ?? sub?.name ?? sub?.label ?? ''),
       label: sub?.name ?? sub?.label ?? sub?.slug ?? '',
     })),
   brands: (brandRows || [])
@@ -264,6 +264,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [schemaInfo] = useState(PRODUCT_SCHEMA);
   // brandsHaveCategory is determined at runtime from the actual brands rows returned by Supabase.
   const [brandsHaveCategory, setBrandsHaveCategory] = useState(false);
+  // Use canonical subcategory column name; code expects `subcategory_id` to exist after migration
+  const [productSubcategoryColumn, setProductSubcategoryColumn] = useState<string | null>('subcategory_id');
 
   useEffect(() => {
     let mounted = true;
@@ -307,7 +309,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
+        // Detect the exact subcategory column name present in product rows so we read/write the exact DB column.
+        let detectedColumn: string | null = productSubcategoryColumn;
         if (Array.isArray(productsData) && productsData.length > 0) {
+          const sample = productsData[0] || {};
+          const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
+          const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
+          if (!productSubcategoryColumn) setProductSubcategoryColumn(detected);
+          detectedColumn = detected ?? productSubcategoryColumn;
+        }
+
+        if (Array.isArray(productsData) && productsData.length > 0) {
+          // Build a robust lookup for subcategories (id, slug, name -> canonical id)
+          const subLookup: Record<string, string> = {};
+          if (Array.isArray(subcategoriesData)) {
+            (subcategoriesData as any[]).forEach((s: any) => {
+              const sid = s?.id ? String(s.id) : '';
+              const slug = s?.slug ? String(s.slug) : '';
+              const name = s?.name ? String(s.name) : '';
+              if (sid) subLookup[sid] = sid;
+              if (slug) subLookup[slug] = sid || slug;
+              if (name) subLookup[name.toLowerCase().trim()] = sid || name.toLowerCase().trim();
+              if (slug) subLookup[slug.toLowerCase().trim()] = sid || slug.toLowerCase().trim();
+            });
+          }
+
           // Normalize product rows from DB into the app's Product shape and
           // ensure category/subcategory reference uses canonical category id when possible.
           const normalized = (productsData as any[]).map((r) => {
@@ -321,11 +347,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
-            // resolve subcategory: prefer subcategory_id, else try to map slug/name -> id within fetched subcategories
-            let subVal: any = r.subcategory_id ?? r.subcategory ?? null;
-            if (subVal && typeof subVal === 'string' && Array.isArray(subcategoriesData)) {
-              const found = (subcategoriesData as any[]).find((s: any) => s.id === subVal || String(s.slug) === String(subVal) || String(s.name) === String(subVal));
-              if (found) subVal = found.id;
+            // resolve subcategory: prefer the exact detected DB column (detectedColumn),
+            // falling back to common names. Use subLookup to map any slug/name/id to canonical id.
+            let subVal: any = null;
+            const col = detectedColumn;
+            const tryLookup = (v: string | undefined | null) => {
+              if (!v) return null;
+              const raw = String(v).trim();
+              if (!raw) return null;
+              if (subLookup[raw]) return String(subLookup[raw]);
+              const lower = raw.toLowerCase();
+              if (subLookup[lower]) return String(subLookup[lower]);
+              return null;
+            };
+
+            if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+              const val = r[col];
+              if (/id$/i.test(col)) {
+                subVal = String(val);
+                const mapped = tryLookup(subVal);
+                if (mapped) subVal = mapped;
+              } else {
+                const candidate = String(val).trim();
+                const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
+                subVal = mapped ?? candidate;
+              }
+            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+              const candidate = String(r.subcategory_id).trim();
+              subVal = tryLookup(candidate) || candidate;
+            } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
+              const candidate = String(r.subcategory).trim();
+              const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
+              subVal = mapped ?? candidate;
             }
 
             const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
@@ -336,13 +389,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             const dbAdminCost = toNumberOrUndefined(r.admin_cost);
             const normalizedImage = normalizeProductImage(imageValue);
 
+            // determine persisted subcategory id (if any) separately from the canonical `subcategory` used by UI
+            let persistedSubId: string | null = null;
+            if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+              if (/id$/i.test(col)) persistedSubId = String(r[col]);
+              else {
+                const candidate = String(r[col]).trim();
+                if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
+              }
+            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+              persistedSubId = String(r.subcategory_id);
+            } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
+              persistedSubId = String(r.subcategory);
+            }
+
             return {
               id: r.id ?? Date.now(),
               name: r.name ?? r.label ?? '',
               brand: r.brand ?? r.brand_name ?? '',
               createdAt: r.created_at ?? r.createdAt ?? null,
               category: categoryVal ?? null,
+              // UI-facing `subcategory` remains the canonical id/slug used for comparisons
               subcategory: subVal ?? null,
+              // persisted canonical subcategory id (when present in DB)
+              subcategoryId: persistedSubId ?? null,
               originalPrice: dbMarketPrice ?? null,
               sellingPrice: dbSellingPrice ?? null,
               marketPrice: dbMarketPrice ?? null,
@@ -360,6 +430,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             } as any;
           });
           setProducts(normalized as any);
+
+          // Debug: log sample of product subcategory values and a counts summary to aid diagnosis
+          try {
+            const sample = (normalized as any[]).slice(0, 10).map((p: any) => ({ id: p.id, subcategoryId: p.subcategoryId, matchesKnown: !!(p.subcategoryId && subLookup[String(p.subcategoryId)]) }));
+            console.debug('DataContext: product.subcategoryId sample (first 10)', sample);
+            const counts: Record<string, number> = {};
+            (normalized as any[]).forEach((p: any) => {
+              const key = p.subcategoryId ?? '<<none>>';
+              counts[String(key)] = (counts[String(key)] || 0) + 1;
+            });
+            console.debug('DataContext: product counts by subcategoryId (sample keys)', counts);
+          } catch (e) {
+            console.debug('DataContext: debug logging failed', e);
+          }
         }
         // Supabase is the source of truth — replace local lists
         setCategories(nextCategories);
@@ -874,20 +958,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (!ok) return;
       
       // 1) Delete products in DB that reference this subcategory
-      if (schemaInfo.productsHasSubcategoryId) {
-        const { error: pErr } = await supabase.from('products').delete().eq('subcategory_id', subId);
-        if (pErr) {
-          console.warn('Failed to delete products by subcategory_id:', pErr);
-          alert('Failed to delete subcategory products: ' + (pErr.message || String(pErr)));
+      // Delete products referencing this subcategory using the exact detected column when possible
+      if (productSubcategoryColumn) {
+        try {
+          const { error: pErr } = await supabase.from('products').delete().eq(productSubcategoryColumn, subId);
+          if (pErr) {
+            console.warn(`Failed to delete products by ${productSubcategoryColumn}:`, pErr);
+            alert('Failed to delete subcategory products: ' + (pErr.message || String(pErr)));
+            return;
+          }
+        } catch (e) {
+          console.debug('Error deleting products by detected subcategory column:', e);
           return;
         }
-      }
-      if (schemaInfo.productsHasSubcategory) {
-        const { error: pErr2 } = await supabase.from('products').delete().eq('subcategory', subId);
-        if (pErr2) {
-          console.warn('Failed to delete products by subcategory:', pErr2);
-          alert('Failed to delete subcategory products: ' + (pErr2.message || String(pErr2)));
-          return;
+      } else {
+        if (schemaInfo.productsHasSubcategoryId) {
+          const { error: pErr } = await supabase.from('products').delete().eq('subcategory_id', subId);
+          if (pErr) {
+            console.warn('Failed to delete products by subcategory_id:', pErr);
+            alert('Failed to delete subcategory products: ' + (pErr.message || String(pErr)));
+            return;
+          }
+        }
+        if (schemaInfo.productsHasSubcategory) {
+          const { error: pErr2 } = await supabase.from('products').delete().eq('subcategory', subId);
+          if (pErr2) {
+            console.warn('Failed to delete products by subcategory:', pErr2);
+            alert('Failed to delete subcategory products: ' + (pErr2.message || String(pErr2)));
+            return;
+          }
         }
       }
 
@@ -901,7 +1000,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       // 3) Update local state
       setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subId) } : c ));
-      setProducts(prev => prev.filter(p => !(p.category === categoryId && p.subcategory === subId)));
+      setProducts(prev => prev.filter(p => !(p.category === categoryId && p.subcategoryId === subId)));
     } catch (e: any) {
       console.warn('Supabase subcategory delete error:', e?.message || e);
       alert('Failed to delete subcategory: ' + (e?.message || String(e)));
@@ -1034,15 +1133,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
     const sanitizeProductPayload = (input: Record<string, any>) => {
-    const allowed = new Set([
+      const allowed = new Set([
       'id',
       'name',
       'brand',
       'brand_id',
       'category',
       'category_id',
-      'subcategory',
-      'subcategory_id',
+        'subcategory',
+        'subcategory_id',
       'selling_price',
       'market_price',
       'admin_cost',
@@ -1054,6 +1153,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       'created_at',
       'updated_at',
     ]);
+
+      // Allow the exact detected subcategory DB column name (e.g., 'sub_category_id')
+      if (productSubcategoryColumn) {
+        allowed.add(productSubcategoryColumn);
+      }
 
     const cleaned: Record<string, any> = {};
     Object.keys(input || {}).forEach((key) => {
@@ -1083,8 +1187,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       else row.category = updates.category;
     }
     if (updates.subcategory !== undefined) {
-      if (schemaInfo.productsHasSubcategoryId) row.subcategory_id = updates.subcategory;
-      else row.subcategory = updates.subcategory;
+      // Respect the exact DB column name for subcategory if detected, else fall back to schemaInfo
+      if (productSubcategoryColumn) {
+        // write to the exact column name
+        row[productSubcategoryColumn] = updates.subcategory;
+      } else if (schemaInfo.productsHasSubcategoryId) {
+        row.subcategory_id = updates.subcategory;
+      } else {
+        row.subcategory = updates.subcategory;
+      }
     }
     const rawSelling = toNumberOrUndefined((updates as any).sellingPrice);
     const rawMarket = toNumberOrUndefined((updates as any).marketPrice ?? (updates as any).originalPrice);
@@ -1158,22 +1269,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (schemaInfo.productsHasCategoryId) payload.category_id = prod.category ?? null;
       else if (schemaInfo.productsHasCategory) payload.category = prod.category ?? null;
 
-      if (schemaInfo.productsHasSubcategoryId) {
-        // Resolve incoming `prod.subcategory` (may be id, slug, or name) to a DB id if possible.
+      // Determine exact subcategory DB value and require a canonical id when persisting
+      if (productSubcategoryColumn && /id$/i.test(String(productSubcategoryColumn))) {
         let subId: any = null;
         if (prod.subcategory) {
-          if (isUuid(String(prod.subcategory))) subId = prod.subcategory;
+          if (isUuid(String(prod.subcategory))) subId = String(prod.subcategory);
           else {
             try {
               const { data: found } = await supabase.from('subcategories').select('id').or(`slug.eq.${String(prod.subcategory)},name.eq.${String(prod.subcategory)}`).limit(1).maybeSingle();
-              if (found && found.id) subId = found.id;
+              if (found && found.id) subId = String(found.id);
             } catch (e) {
-              // fallback: do not set subcategory_id if resolution fails
+              // ignore resolution errors
             }
           }
         }
-        payload.subcategory_id = subId ?? null;
+
+        // If caller provided a subcategory value but we couldn't resolve it to an id, fail explicitly
+        if (prod.subcategory && !subId) {
+          alert('Failed to persist product: selected subcategory could not be resolved to an id. Ensure the subcategory exists in the database.');
+          return tempId;
+        }
+
+        payload[productSubcategoryColumn] = subId ?? null;
       } else if (schemaInfo.productsHasSubcategory) {
+        // legacy fallback (should not be used once migration is applied)
         payload.subcategory = prod.subcategory ?? null;
       }
 
@@ -1204,6 +1323,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       payload.updated_at = new Date().toISOString();
 
       const cleanPayload = sanitizeProductPayload(payload);
+      try {
+        console.debug('DataContext:addProduct payload', cleanPayload);
+      } catch (e) {}
 
       let remoteData: any = null;
       const { data, error } = await supabase.from('products').insert([cleanPayload]).select().single();
@@ -1220,12 +1342,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const dbSellingPrice = toNumberOrUndefined(returned.selling_price);
       const dbMarketPrice = toNumberOrUndefined(returned.market_price);
       const dbAdminCost = toNumberOrUndefined(returned.admin_cost);
+      // Derive persisted subcategory id from returned row when available
+      let returnedSubId: string | null = null;
+      if (productSubcategoryColumn && returned[productSubcategoryColumn] !== undefined && returned[productSubcategoryColumn] !== null && String(returned[productSubcategoryColumn]).trim() !== '') {
+        if (/id$/i.test(productSubcategoryColumn)) returnedSubId = String(returned[productSubcategoryColumn]);
+        else {
+          const cand = String(returned[productSubcategoryColumn]).trim();
+          returnedSubId = cand && isUuid(cand) ? cand : null;
+        }
+      } else if (returned.subcategory_id !== undefined && returned.subcategory_id !== null && String(returned.subcategory_id).trim() !== '') {
+        returnedSubId = String(returned.subcategory_id);
+      } else if (returned.subcategory !== undefined && returned.subcategory !== null && isUuid(String(returned.subcategory))) {
+        returnedSubId = String(returned.subcategory);
+      }
+
       const inserted: Product = {
         id: returned.id ?? Date.now(),
         name: returned.name ?? '',
         brand: (schemaInfo.productsHasBrandId ? (returned.brand_id ?? returned.brand) : returned.brand) ?? prod.brand ?? '',
         category: (schemaInfo.productsHasCategoryId ? (returned.category_id ?? returned.category) : returned.category) ?? prod.category ?? null,
-        subcategory: (schemaInfo.productsHasSubcategoryId ? (returned.subcategory_id ?? returned.subcategory) : returned.subcategory) ?? prod.subcategory ?? null,
+        subcategory: (schemaInfo.productsHasSubcategoryId
+          ? (returned.subcategory_id !== undefined && returned.subcategory_id !== null ? String(returned.subcategory_id) : (returned.subcategory !== undefined && returned.subcategory !== null ? String(returned.subcategory) : null))
+          : (returned.subcategory !== undefined && returned.subcategory !== null ? String(returned.subcategory) : null)) ?? (prod.subcategory !== undefined && prod.subcategory !== null ? String(prod.subcategory) : null),
+        subcategoryId: returnedSubId ?? null,
         createdAt: returned.created_at ?? returned.createdAt ?? null,
         originalPrice: dbMarketPrice ?? null,
         sellingPrice: dbSellingPrice ?? null,
@@ -1264,9 +1403,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             try {
               const resolved = await resolveSubcategoryId(rawSub);
               if (resolved) (updatesForMapping as any).subcategory = resolved;
-              else delete (updatesForMapping as any).subcategory; // avoid sending non-UUID into uuid column
+              else {
+                alert('Failed to update product: provided subcategory could not be resolved to an id.');
+                return;
+              }
             } catch (e) {
-              delete (updatesForMapping as any).subcategory;
+              alert('Failed to update product: could not resolve subcategory.');
+              return;
             }
           }
         }

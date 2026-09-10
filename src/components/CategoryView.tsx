@@ -68,7 +68,7 @@ export default function CategoryView({
 
   const filteredProducts = useMemo(() => {
     let result = [...categoryProducts];
-    if (selectedSubcategory !== "all") result = result.filter((p) => p.subcategory === selectedSubcategory);
+    if (selectedSubcategory !== "all") result = result.filter((p) => p.subcategoryId === selectedSubcategory);
     if (selectedBrand && selectedBrand !== "all") result = result.filter((p) => p.brand === selectedBrand);
     if (selectedPriceRange !== "all") {
       const range = priceRanges.find((r) => r.id === selectedPriceRange);
@@ -84,7 +84,7 @@ export default function CategoryView({
     if (selectedSkinType !== "all") result = result.filter((p) => p.skinType === selectedSkinType || p.skinType === "All");
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      result = result.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.subcategory.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
+      result = result.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || String(p.subcategoryId || '').toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
     }
     switch (sortBy) {
       case "price-asc": result.sort((a,b)=>{
@@ -156,7 +156,7 @@ export default function CategoryView({
         <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
           {category.subcategories.map((sub) => {
             const isActive = selectedSubcategory === sub.id;
-            const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategory===sub.id).length;
+            const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===sub.id).length;
             return (
               <div key={sub.id} className="relative">
                 <button
@@ -221,12 +221,12 @@ export default function CategoryView({
           >
             <span className="pointer-events-none">All Brands</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${selectedBrand==='all'?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>
-              {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategory===selectedSubcategory).length}
+              {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===selectedSubcategory).length}
             </span>
           </button>
           {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
             const isSelected = selectedBrand===brand;
-            const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategory===selectedSubcategory)).length;
+            const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategoryId===selectedSubcategory)).length;
             return (
               <div key={brand} className="relative">
                 <button
@@ -405,7 +405,7 @@ function ModalContent({
     name: string;
     brand: string;
     category: string;
-    subcategory: string;
+    subcategory: string | null;
     adminCost: string;
     marketPrice: string;
     sellingPrice: string;
@@ -446,6 +446,7 @@ function ModalContent({
       const descriptionValue = (editing as any).description ?? (editing as any).details ?? '';
       return {
         ...editing,
+        subcategory: (editing as any).subcategory ?? null,
         adminCost: adminValue !== undefined && adminValue !== null ? String(adminValue) : '',
         marketPrice: marketValue !== undefined && marketValue !== null ? String(marketValue) : '',
         sellingPrice: sellingValue !== undefined && sellingValue !== null ? String(sellingValue) : '',
@@ -482,6 +483,7 @@ function ModalContent({
       const descriptionValue = (editing as any).description ?? (editing as any).details ?? '';
       const mapped: ProductFormState = {
         ...editing,
+        subcategory: (editing as any).subcategory ?? null,
         adminCost: adminValue !== undefined && adminValue !== null ? String(adminValue) : '',
         marketPrice: marketValue !== undefined && marketValue !== null ? String(marketValue) : '',
         sellingPrice: sellingValue !== undefined && sellingValue !== null ? String(sellingValue) : '',
@@ -762,7 +764,7 @@ function ModalContent({
                 Sub-Category <span className="text-red-500">*</span>
               </label>
               <select
-                value={form.subcategory}
+                value={form.subcategory ?? ''}
                 onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               >
