@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import ConfirmModal from '../components/ConfirmModal';
-import supabase from '../lib/supabase';
+import supabase, { SUPABASE_URL } from '../lib/supabase';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -26,6 +26,11 @@ const PRODUCT_SCHEMA = {
   productsHasBrandId: false,
   productsHasBrand: true,
 } as const;
+
+const isUuid = (v: string | undefined | null): boolean => {
+  if (!v) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v));
+};
 
 const slugify = (value: string) => {
   const base = String(value || '').trim();
@@ -60,14 +65,103 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
     .filter(Boolean),
 });
 
-const resolvePrice = (primary: any, secondary: any) => {
-  const numPrimary = primary !== null && primary !== undefined ? Number(primary) : null;
-  const numSecondary = secondary !== null && secondary !== undefined ? Number(secondary) : null;
-  if (numPrimary !== null && !isNaN(numPrimary) && numPrimary > 0) return numPrimary;
-  if (numSecondary !== null && !isNaN(numSecondary) && numSecondary > 0) return numSecondary;
-  if (numPrimary !== null && !isNaN(numPrimary)) return numPrimary;
-  if (numSecondary !== null && !isNaN(numSecondary)) return numSecondary;
+const toNumberOrUndefined = (value: any): number | undefined => {
+  if (value === null || value === undefined || value === '') return undefined;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+};
+
+const normalizeProductImage = (value: any): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  // do not return blob/data URLs directly; caller should upload them before saving
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) return '';
+  if (raw.startsWith('/')) {
+    if (raw.startsWith('/storage/')) return `${SUPABASE_URL}${raw}`;
+    return `${SUPABASE_URL}/storage/v1/object/public${raw}`;
+  }
+
+  const storagePath = raw.replace(/^\/+/, '');
+  const candidates = ['products', 'images', 'uploads', 'assets'];
+  const bucket = candidates.find((name) => storagePath.toLowerCase().startsWith(`${name}/`));
+  if (bucket) {
+    const remainder = storagePath.slice(bucket.length + 1);
+    if (remainder) return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${remainder}`;
+  }
+
+  return raw;
+};
+
+const resolvePersistedProductImage = (row: any): string | null => {
+  const candidates = [
+    row?.image,
+    Array.isArray(row?.images) ? row.images.find((item: any) => !!String(item ?? '').trim()) : null,
+    row?.image_url,
+    row?.imageUrl,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+
   return null;
+};
+
+// Upload data/blob image strings to Supabase Storage (bucket: 'products') and return public URL.
+const uploadImageIfNeeded = async (value: any): Promise<string | null> => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw; // already an absolute URL
+
+  // Only handle data: or blob: or plain filenames.
+  if (!raw.startsWith('data:') && !raw.startsWith('blob:') && !raw.startsWith('/')) {
+    // treat as storage path candidate
+    // normalize to public URL if it matches common bucket patterns
+    const normalized = normalizeProductImage(raw);
+    if (normalized) return normalized;
+  }
+
+  try {
+    // Convert data/blob URL to Blob
+    const response = await fetch(raw);
+    const blob = await response.blob();
+    const ext = (blob.type && blob.type.split('/')[1]) ? blob.type.split('/')[1].split(';')[0] : 'jpg';
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const bucket = 'products';
+    const path = `${fileName}`; // flat filename inside bucket
+
+    const uploadRes = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
+    if (uploadRes.error) {
+      console.warn('Image upload failed:', uploadRes.error.message || uploadRes.error);
+      return null;
+    }
+
+    // Construct public URL (prefer SDK helper when available)
+    try {
+      const maybe = supabase.storage.from(bucket).getPublicUrl(path);
+      // supabase-js may return { data: { publicUrl } } or { publicURL }
+      if (maybe && typeof maybe === 'object') {
+        // data.publicUrl
+        if ((maybe as any).data && (maybe as any).data.publicUrl) return (maybe as any).data.publicUrl;
+        // data.publicURL
+        if ((maybe as any).data && (maybe as any).data.publicURL) return (maybe as any).data.publicURL;
+        // publicURL
+        if ((maybe as any).publicURL) return (maybe as any).publicURL;
+        // publicUrl
+        if ((maybe as any).publicUrl) return (maybe as any).publicUrl;
+      }
+    } catch (e) {
+      // ignore and fallback to manual construction
+    }
+
+    // Fallback manual construction: <SUPABASE_URL>/storage/v1/object/public/<bucket>/<path>
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURI(path)}`;
+    return publicUrl;
+  } catch (err) {
+    console.warn('Failed to upload/convert image:', err);
+    return null;
+  }
 };
 
 const isMissingColumnError = (error: any) => {
@@ -206,6 +300,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             }
 
             const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
+            const imageValue = resolvePersistedProductImage(r);
+            const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
+            const dbSellingPrice = toNumberOrUndefined(r.selling_price);
+            const dbMarketPrice = toNumberOrUndefined(r.market_price);
+            const dbAdminCost = toNumberOrUndefined(r.admin_cost);
+            const normalizedImage = normalizeProductImage(imageValue);
 
             return {
               id: r.id ?? Date.now(),
@@ -214,18 +314,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               createdAt: r.created_at ?? r.createdAt ?? null,
               category: categoryVal ?? null,
               subcategory: subVal ?? null,
-              originalPrice: r.original_price != null ? Number(r.original_price) : (r.market_price != null ? Number(r.market_price) : null),
-              sellingPrice: r.selling_price != null ? Number(r.selling_price) : null,
-              marketPrice: r.market_price != null ? Number(r.market_price) : null,
-              adminCost: r.admin_cost != null ? Number(r.admin_cost) : null,
-              price: r.price != null ? Number(r.price) : 0,
+              originalPrice: dbMarketPrice ?? null,
+              sellingPrice: dbSellingPrice ?? null,
+              marketPrice: dbMarketPrice ?? null,
+              adminCost: dbAdminCost ?? null,
+              cost: dbAdminCost ?? null,
               rating: r.rating ?? 0,
               reviews: r.reviews ?? 0,
               skinType: r.skin_type ?? null,
               tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
               hero: r.hero ?? bestSellerFlag,
-              image: r.image ?? null,
-              description: r.description ?? null,
+              image: normalizedImage,
+              image_url: normalizedImage,
+              description: descriptionValue ?? null,
+              details: descriptionValue ?? null,
             } as any;
           });
           setProducts(normalized as any);
@@ -377,7 +479,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Ensure deletes wait for Supabase confirmation before updating local state
   const deleteCategoryRemote = async (id: string) => {
-    if (!supabase) return;
     // Confirm with admin before destructive delete
     try {
       const ok = await requestConfirm('Delete this category and all its sub-items? This cannot be undone.');
@@ -394,6 +495,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const categoryMeta = categories.find((cat) => cat.id === id) ?? null;
     const categoryName = categoryMeta?.label ?? '';
     const categorySlug = categoryName ? slugify(categoryName) : '';
+    const categoryBrandNames = categoryMeta && Array.isArray(categoryMeta.brands) ? categoryMeta.brands : [];
+
+    const deletedBrandNamesSet = new Set<string>(categoryBrandNames.map((b) => b.toLowerCase()));
+
+    if (!supabase) {
+      // Local fallback mode when Supabase is not configured
+      setCategories((prev) =>
+        prev
+          .filter((c) => c.id !== id)
+          .map((c) => ({
+            ...c,
+            brands: Array.isArray(c.brands) ? c.brands.filter((b) => !deletedBrandNamesSet.has(b.toLowerCase())) : [],
+          }))
+      );
+      setBrands((prev) => prev.filter((b) => !deletedBrandNamesSet.has(b.toLowerCase())));
+      setProducts((prev) =>
+        prev.filter((p) => {
+          const matchesCategoryId = p.category === id;
+          const matchesCategoryName = categoryName && p.category === categoryName;
+          const matchesCategorySlug = categorySlug && p.category === categorySlug;
+          const matchesBrand = p.brand && deletedBrandNamesSet.has(String(p.brand).toLowerCase());
+          return !(matchesCategoryId || matchesCategoryName || matchesCategorySlug || matchesBrand);
+        })
+      );
+      return;
+    }
 
     try {
       // 1) Delete products belonging to this category using only columns that actually exist.
@@ -419,42 +546,154 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2) Delete subcategories and (if applicable) brands scoped to this category to avoid orphan rows
+      // 2) Delete subcategories for category
       const { error: subErr } = await supabase.from('subcategories').delete().eq('category_id', id);
-      if (subErr) {
+      if (subErr && !isMissingColumnError(subErr)) {
         console.warn('Failed to delete subcategories for category:', subErr);
         alert('Failed to delete category subcategories: ' + (subErr.message || String(subErr)));
         return;
       }
 
-      if (brandsHaveCategory) {
-        const { error: brandErr } = await supabase.from('brands').delete().eq('category_id', id);
-        if (brandErr && !isMissingColumnError(brandErr)) {
-          console.warn('Failed to delete brands for category:', brandErr);
-          alert('Failed to delete category brands: ' + (brandErr.message || String(brandErr)));
-          return;
+      // 3) Find all brands associated with this category to ensure explicit deletion
+      const associatedBrands: Array<{ id?: string; name?: string; slug?: string }> = [];
+
+      // Query brands by category_id (id or slug)
+      try {
+        const { data: dbBrands } = await supabase
+          .from('brands')
+          .select('id, name, slug, category_id')
+          .eq('category_id', id);
+        if (Array.isArray(dbBrands)) {
+          associatedBrands.push(...dbBrands);
         }
-      } else {
-        console.debug('Brands are independent/global; skipping category-scoped brand delete.');
+      } catch (err) {
+        console.debug('Could not select brands by category_id:', err);
       }
 
-      // 3) Delete the category row itself.
-      // For a DB-level cascade solution, set the products.category_id FK to ON DELETE CASCADE in Supabase.
-      const { error } = await supabase.from('categories').delete().eq('id', id);
-      if (error) {
-        console.warn('Supabase category delete failed:', error);
-        alert('Failed to delete category: ' + (error.message || String(error)));
+      if (categorySlug && categorySlug !== id) {
+        try {
+          const { data: dbBrandsSlug } = await supabase
+            .from('brands')
+            .select('id, name, slug, category_id')
+            .eq('category_id', categorySlug);
+          if (Array.isArray(dbBrandsSlug)) {
+            associatedBrands.push(...dbBrandsSlug);
+          }
+        } catch (_) {}
+      }
+
+      // Query brands linked via category_brands junction table
+      try {
+        const { data: junctionRows } = await supabase
+          .from('category_brands')
+          .select('brand_id')
+          .eq('category_id', id);
+        if (Array.isArray(junctionRows) && junctionRows.length > 0) {
+          for (const row of junctionRows) {
+            if (row?.brand_id) {
+              associatedBrands.push({ id: row.brand_id });
+            }
+          }
+        }
+      } catch (_) {
+        // junction table might not exist
+      }
+
+      // Also collect brands matching categoryMeta.brands
+      for (const bName of categoryBrandNames) {
+        if (!associatedBrands.some((b) => String(b.name || '').toLowerCase() === bName.toLowerCase())) {
+          try {
+            const { data: found } = await supabase
+              .from('brands')
+              .select('id, name, slug')
+              .eq('name', bName)
+              .limit(1)
+              .maybeSingle();
+            if (found) {
+              associatedBrands.push(found);
+            } else {
+              associatedBrands.push({ name: bName, slug: slugify(bName) });
+            }
+          } catch (_) {
+            associatedBrands.push({ name: bName, slug: slugify(bName) });
+          }
+        }
+      }
+
+      // Populate deletedBrandNamesSet with all names, slugs, and IDs
+      associatedBrands.forEach((b) => {
+        if (b.name) deletedBrandNamesSet.add(b.name.toLowerCase());
+        if (b.slug) deletedBrandNamesSet.add(b.slug.toLowerCase());
+        if (b.id) deletedBrandNamesSet.add(String(b.id).toLowerCase());
+      });
+
+      // 4) Clean up category_brands junction table for this category and associated brands
+      try {
+        await supabase.from('category_brands').delete().eq('category_id', id);
+      } catch (_) {}
+
+      for (const brand of associatedBrands) {
+        if (brand.id) {
+          try {
+            await supabase.from('category_brands').delete().eq('brand_id', brand.id);
+          } catch (_) {}
+        }
+      }
+
+      // 5) Explicitly delete all associated brands from the `brands` table in Supabase
+      // First: delete by category_id directly
+      const { error: brandErr } = await supabase.from('brands').delete().eq('category_id', id);
+      if (brandErr && !isMissingColumnError(brandErr)) {
+        console.warn('Failed to delete brands by category_id:', brandErr);
+      }
+      if (categorySlug && categorySlug !== id) {
+        try {
+          await supabase.from('brands').delete().eq('category_id', categorySlug);
+        } catch (_) {}
+      }
+
+      // Next: delete each associated brand by id or name
+      for (const brand of associatedBrands) {
+        if (brand.id) {
+          const { error: delByIdErr } = await supabase.from('brands').delete().eq('id', brand.id);
+          if (delByIdErr && !isMissingColumnError(delByIdErr)) {
+            console.warn('Failed to delete brand by id:', brand.id, delByIdErr);
+          }
+        } else if (brand.name) {
+          const { error: delByNameErr } = await supabase.from('brands').delete().eq('name', brand.name);
+          if (delByNameErr && !isMissingColumnError(delByNameErr)) {
+            console.warn('Failed to delete brand by name:', brand.name, delByNameErr);
+          }
+        }
+      }
+
+      // 6) Delete the category row itself
+      const { error: catErr } = await supabase.from('categories').delete().eq('id', id);
+      if (catErr) {
+        console.warn('Supabase category delete failed:', catErr);
+        alert('Failed to delete category: ' + (catErr.message || String(catErr)));
         return;
       }
 
-      // remove local only after successful delete
-      setCategories(prev => prev.filter(c => c.id !== id));
-      setProducts(prev => prev.filter((p) => {
-        const matchesCategoryId = p.category === id;
-        const matchesCategoryName = categoryName && p.category === categoryName;
-        const matchesCategorySlug = categorySlug && p.category === categorySlug;
-        return !(matchesCategoryId || matchesCategoryName || matchesCategorySlug);
-      }));
+      // 7) Update local state immediately after successful database deletion
+      setCategories((prev) =>
+        prev
+          .filter((c) => c.id !== id)
+          .map((c) => ({
+            ...c,
+            brands: Array.isArray(c.brands) ? c.brands.filter((b) => !deletedBrandNamesSet.has(b.toLowerCase())) : [],
+          }))
+      );
+      setBrands((prev) => prev.filter((b) => !deletedBrandNamesSet.has(b.toLowerCase())));
+      setProducts((prev) =>
+        prev.filter((p) => {
+          const matchesCategoryId = p.category === id;
+          const matchesCategoryName = categoryName && p.category === categoryName;
+          const matchesCategorySlug = categorySlug && p.category === categorySlug;
+          const matchesBrand = p.brand && deletedBrandNamesSet.has(String(p.brand).toLowerCase());
+          return !(matchesCategoryId || matchesCategoryName || matchesCategorySlug || matchesBrand);
+        })
+      );
     } catch (e: any) {
       console.warn('Supabase category delete error:', e?.message || e);
       alert('Failed to delete category: ' + (e?.message || String(e)));
@@ -691,12 +930,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Not found — insert
       const payload: any = { name: clean, slug, description: '', metadata: {} };
 
-      // Helper to test UUID shape
-      const isUuid = (v: string | undefined | null) => {
-        if (!v) return false;
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v));
-      };
-
       // Resolve and only set category_id when it is a valid UUID or can be resolved to one
       if (hasCategoryId && categoryId) {
         if (isUuid(categoryId)) {
@@ -771,40 +1004,86 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+    const sanitizeProductPayload = (input: Record<string, any>) => {
+    const allowed = new Set([
+      'id',
+      'name',
+      'brand',
+      'brand_id',
+      'category',
+      'category_id',
+      'subcategory',
+      'subcategory_id',
+      'selling_price',
+      'market_price',
+      'admin_cost',
+      'image',
+      'images',
+      'description',
+      'tag',
+      'hero',
+      'created_at',
+      'updated_at',
+    ]);
+
+    const cleaned: Record<string, any> = {};
+    Object.keys(input || {}).forEach((key) => {
+      if (allowed.has(key) && input[key] !== undefined && input[key] !== null) {
+        cleaned[key] = input[key];
+      }
+    });
+
+    // The live schema uses: selling_price, market_price, admin_cost, image, images, description.
+    // The `price` column has been removed from the database.
+    const unsupported = ['price', 'rating', 'reviews', 'original_price', 'skin_type', 'general_price', 'cost', 'store', 'image_url', 'imageUrl', 'title', 'is_best_seller', 'details', 'long_description'];
+    unsupported.forEach((key) => delete cleaned[key]);
+
+    return cleaned;
+  };
+
   const mapProductUpdatesToRow = (updates: Partial<Product>) => {
     const row: Record<string, any> = {};
+
     if (updates.name !== undefined) row.name = updates.name;
     if (updates.brand !== undefined) {
       if (schemaInfo.productsHasBrandId) row.brand_id = updates.brand;
-      else if (schemaInfo.productsHasBrand) row.brand = updates.brand;
       else row.brand = updates.brand;
     }
     if (updates.category !== undefined) {
       if (schemaInfo.productsHasCategoryId) row.category_id = updates.category;
-      else if (schemaInfo.productsHasCategory) row.category = updates.category;
-      // else: neither column confirmed — skip to avoid 400 on update
+      else row.category = updates.category;
     }
     if (updates.subcategory !== undefined) {
       if (schemaInfo.productsHasSubcategoryId) row.subcategory_id = updates.subcategory;
-      else if (schemaInfo.productsHasSubcategory) row.subcategory = updates.subcategory;
-      // else: neither column confirmed — skip to avoid 400 on update
+      else row.subcategory = updates.subcategory;
     }
-    if ((updates as any).originalPrice !== undefined) row.original_price = (updates as any).originalPrice;
-    if ((updates as any).sellingPrice !== undefined) row.selling_price = (updates as any).sellingPrice;
-    if ((updates as any).marketPrice !== undefined) row.market_price = (updates as any).marketPrice;
-    if ((updates as any).adminCost !== undefined) row.admin_cost = (updates as any).adminCost;
-    if (updates.price !== undefined) row.price = updates.price;
-    if (updates.rating !== undefined) row.rating = updates.rating;
-    if (updates.reviews !== undefined) row.reviews = updates.reviews;
-    if (updates.skinType !== undefined) row.skin_type = updates.skinType;
+    const rawSelling = toNumberOrUndefined((updates as any).sellingPrice);
+    const rawMarket = toNumberOrUndefined((updates as any).marketPrice ?? (updates as any).originalPrice);
+    if (rawSelling !== undefined) row.selling_price = rawSelling;
+    if (rawMarket !== undefined) row.market_price = rawMarket;
     if (updates.tag !== undefined) row.tag = updates.tag;
-    if (updates.hero !== undefined) {
-      row.hero = updates.hero;
+    if (updates.hero !== undefined) row.hero = updates.hero;
+
+    // Map cost if provided (from form.adminCost or updates.cost), using the actual DB column name.
+    const rawCost = toNumberOrUndefined((updates as any).adminCost ?? (updates as any).cost);
+    if (rawCost !== undefined) {
+      row.admin_cost = rawCost;
     }
-    if (updates.image !== undefined) row.image = updates.image;
-    if (updates.description !== undefined) row.description = updates.description;
+
+    const nextImage = (updates as any).image_url ?? (updates as any).image ?? updates.image;
+    if ((updates as any).image_url !== undefined || updates.image !== undefined) {
+      row.image = normalizeProductImage(nextImage) || null;
+      if (row.image) {
+        row.images = [row.image];
+      } else {
+        delete row.images;
+      }
+    }
+    const nextDescription = (updates as any).description ?? (updates as any).details ?? updates.description;
+    if ((updates as any).description !== undefined || (updates as any).details !== undefined) row.description = nextDescription;
+
     row.updated_at = new Date().toISOString();
-    return row;
+    return sanitizeProductPayload(row);
   };
 
   const addProduct = async (prod: Product): Promise<number> => {
@@ -825,19 +1104,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Prepare payload based on discovered schema (do not probe per-call)
+      // Build a strict allowlist to avoid sending stale or unsupported columns to Supabase.
       const payload: any = {};
       payload.name = prod.name;
+      const imageValue = (prod as any).image_url ?? (prod as any).image ?? null;
+      const descriptionValue = (prod as any).description ?? (prod as any).details ?? null;
 
-      // Handle brand: if DB expects brand_id, ensure brand exists in brands table and use its id
       if (schemaInfo.productsHasBrandId) {
         let brandId: any = null;
         if (prod.brand) {
-          // Ensure brand exists, creating it when necessary (addBrand avoids duplicates)
           const created = await addBrand(prod.brand, prod.category || undefined);
-          // created may be a brand row
           if (created && (created as any).id) brandId = (created as any).id;
           else {
-            // Try to find brand by slug/name
             const slug = slugify(prod.brand || '');
             const { data: found } = await supabase.from('brands').select('id').eq('slug', slug).limit(1).maybeSingle();
             if (found && (found as any).id) brandId = (found as any).id;
@@ -848,25 +1126,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         payload.brand = prod.brand ?? null;
       }
 
-      // Category mapping
       if (schemaInfo.productsHasCategoryId) payload.category_id = prod.category ?? null;
       else if (schemaInfo.productsHasCategory) payload.category = prod.category ?? null;
 
-      // Subcategory mapping
       if (schemaInfo.productsHasSubcategoryId) payload.subcategory_id = prod.subcategory ?? null;
       else if (schemaInfo.productsHasSubcategory) payload.subcategory = prod.subcategory ?? null;
 
-      payload.price = (prod as any).price ?? null;
-      payload.selling_price = (prod as any).sellingPrice ?? (prod as any).price ?? null;
-      payload.market_price = (prod as any).marketPrice ?? null;
-      payload.admin_cost = (prod as any).adminCost ?? null;
-      payload.image = prod.image ?? null;
-      payload.description = prod.description ?? null;
+      const parsedSell = toNumberOrUndefined((prod as any).sellingPrice);
+      const parsedMarket = toNumberOrUndefined((prod as any).marketPrice ?? (prod as any).originalPrice);
+      const parsedAdmin = toNumberOrUndefined((prod as any).adminCost ?? (prod as any).cost);
+
+      if (parsedSell !== undefined) payload.selling_price = parsedSell;
+      if (parsedMarket !== undefined) payload.market_price = parsedMarket;
+
+      let finalImage: string | null = null;
+      try {
+        finalImage = await uploadImageIfNeeded(imageValue ?? prod.image ?? null);
+      } catch (e) {
+        console.warn('uploadImageIfNeeded failed for addProduct:', e);
+      }
+      const finalImageUrl = finalImage || normalizeProductImage(imageValue ?? prod.image ?? null) || null;
+      payload.image = finalImageUrl;
+      if (finalImageUrl) payload.images = [finalImageUrl];
+
+      payload.description = descriptionValue ?? prod.description ?? null;
+
+      // Map adminCost to the actual product column in the live schema.
+      if (parsedAdmin !== undefined) payload.admin_cost = parsedAdmin;
 
       if (prod.hero !== undefined) payload.hero = prod.hero;
+      payload.created_at = new Date().toISOString();
+      payload.updated_at = new Date().toISOString();
+
+      const cleanPayload = sanitizeProductPayload(payload);
 
       let remoteData: any = null;
-      const { data, error } = await supabase.from('products').insert([payload]).select().single();
+      const { data, error } = await supabase.from('products').insert([cleanPayload]).select().single();
       if (error) {
         console.warn('Supabase product insert failed:', error.message || error);
         alert('Failed to create product: ' + (error.message || String(error)));
@@ -876,6 +1171,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       // Map returned row into app Product shape
       const returned = remoteData as any;
+      const persistedImage = resolvePersistedProductImage(returned) ?? returned.image ?? null;
+      const dbSellingPrice = toNumberOrUndefined(returned.selling_price);
+      const dbMarketPrice = toNumberOrUndefined(returned.market_price);
+      const dbAdminCost = toNumberOrUndefined(returned.admin_cost);
       const inserted: Product = {
         id: returned.id ?? Date.now(),
         name: returned.name ?? '',
@@ -883,17 +1182,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         category: (schemaInfo.productsHasCategoryId ? (returned.category_id ?? returned.category) : returned.category) ?? prod.category ?? null,
         subcategory: (schemaInfo.productsHasSubcategoryId ? (returned.subcategory_id ?? returned.subcategory) : returned.subcategory) ?? prod.subcategory ?? null,
         createdAt: returned.created_at ?? returned.createdAt ?? null,
-        originalPrice: returned.original_price != null ? Number(returned.original_price) : (returned.market_price != null ? Number(returned.market_price) : null),
-        sellingPrice: resolvePrice(returned.selling_price, returned.price),
-        marketPrice: returned.market_price != null ? Number(returned.market_price) : null,
-        adminCost: returned.admin_cost != null ? Number(returned.admin_cost) : null,
-        price: resolvePrice(returned.price, returned.selling_price) ?? 0,
+        originalPrice: dbMarketPrice ?? null,
+        sellingPrice: dbSellingPrice ?? null,
+        marketPrice: dbMarketPrice ?? null,
+        adminCost: dbAdminCost ?? null,
+        cost: dbAdminCost ?? null,
         rating: returned.rating ?? 0,
         reviews: returned.reviews ?? 0,
         skinType: returned.skin_type ?? null,
         tag: returned.tag ?? null,
         hero: returned.hero ?? false,
-        image: returned.image ?? null,
+        image: normalizeProductImage(persistedImage),
         description: returned.description ?? null,
       } as any;
 
@@ -913,6 +1212,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (!supabase) return;
         const row = mapProductUpdatesToRow(updates);
         if (Object.keys(row).length === 0) return;
+
+        // If image update is a data/blob URL, upload it first to obtain a persistent public URL
+        if ((updates as any).image !== undefined && typeof (updates as any).image === 'string') {
+          const imgVal = (updates as any).image;
+          if (imgVal.startsWith('data:') || imgVal.startsWith('blob:') || (!/^https?:\/\//i.test(imgVal) && !imgVal.startsWith('/'))) {
+            try {
+              const uploaded = await uploadImageIfNeeded(imgVal);
+              if (uploaded) {
+                row.image = uploaded;
+                row.images = [uploaded];
+              } else {
+                delete row.image;
+                delete row.images;
+              }
+            } catch (e) {
+              console.warn('Failed to upload image during product update:', e);
+              delete row.image;
+              delete row.images;
+            }
+          }
+        }
+
         const { error } = await supabase.from('products').update(row).eq('id', id).select().single();
         if (error && !isMissingColumnError(error)) {
           console.warn('Supabase product update failed:', error.message || error);
@@ -1049,22 +1370,78 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteBrand = async (name: string) => {
-    if (!supabase) return;
+  const deleteBrand = async (nameOrId: string) => {
+    const target = String(nameOrId || '').trim();
+    if (!target) return;
+
     try {
       const ok = await requestConfirm('Delete this brand? This cannot be undone.');
       if (!ok) return;
-      
-      // Find brand row to get its id (if any)
-      let brandId: any = null;
-      try {
-        const { data: found } = await supabase.from('brands').select('id').eq('name', name).limit(1).maybeSingle();
-        if (found && found.id) brandId = found.id;
-      } catch (err) {
-        // ignore — we'll fall back to deleting by name
+
+      let brandId: string | number | null = null;
+      let brandName: string = target;
+      let brandSlug: string = slugify(target);
+
+      if (!supabase) {
+        const matchBrand = (val: any) => {
+          if (!val) return false;
+          const s = String(val).trim().toLowerCase();
+          return s === target.toLowerCase() || s === brandSlug.toLowerCase();
+        };
+        setBrands(prev => prev.filter(b => !matchBrand(b)));
+        setCategories(prev => prev.map(c => {
+          const existing = Array.isArray(c.brands) ? c.brands : [];
+          return { ...c, brands: existing.filter(b => !matchBrand(b)) };
+        }));
+        setProducts(prev => prev.filter(p => !matchBrand(p.brand)));
+        return;
       }
 
-      // 1) Delete products referencing this brand (by id or by name)
+      // 1) Find the brand row in Supabase to get its canonical id, name, and slug
+      try {
+        let foundRow: any = null;
+        if (isUuid(target)) {
+          const { data } = await supabase.from('brands').select('id, name, slug').eq('id', target).limit(1).maybeSingle();
+          if (data) foundRow = data;
+        }
+        if (!foundRow) {
+          const { data } = await supabase.from('brands').select('id, name, slug').eq('name', target).limit(1).maybeSingle();
+          if (data) foundRow = data;
+        }
+        if (!foundRow) {
+          const { data } = await supabase.from('brands').select('id, name, slug').ilike('name', target).limit(1).maybeSingle();
+          if (data) foundRow = data;
+        }
+        if (!foundRow) {
+          const { data } = await supabase.from('brands').select('id, name, slug').eq('slug', slugify(target)).limit(1).maybeSingle();
+          if (data) foundRow = data;
+        }
+        if (!foundRow && !isUuid(target)) {
+          const { data } = await supabase.from('brands').select('id, name, slug').eq('id', target).limit(1).maybeSingle();
+          if (data) foundRow = data;
+        }
+
+        if (foundRow) {
+          brandId = foundRow.id;
+          if (foundRow.name) brandName = foundRow.name;
+          if (foundRow.slug) brandSlug = foundRow.slug;
+        } else if (isUuid(target)) {
+          brandId = target;
+        }
+      } catch (err) {
+        console.debug('Error resolving brand before deletion:', err);
+      }
+
+      // 2) Clean up referencing rows in junction table if present
+      if (brandId) {
+        try {
+          await supabase.from('category_brands').delete().eq('brand_id', brandId);
+        } catch (_) {
+          // ignore if junction table does not exist
+        }
+      }
+
+      // 3) Delete referencing products (by brand_id or brand name)
       if (brandId && schemaInfo.productsHasBrandId) {
         const { error: perr } = await supabase.from('products').delete().eq('brand_id', brandId);
         if (perr) {
@@ -1073,38 +1450,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       }
-      // Also try deleting by brand name column if present
       if (schemaInfo.productsHasBrand) {
-        const { error: perr2 } = await supabase.from('products').delete().eq('brand', name);
-        if (perr2) {
-          console.warn('Failed to delete products by brand name:', perr2);
-          alert('Failed to delete brand products: ' + (perr2.message || String(perr2)));
-          return;
+        const brandNamesToDelete = Array.from(new Set([brandName, target].filter(Boolean)));
+        for (const bName of brandNamesToDelete) {
+          const { error: perr2 } = await supabase.from('products').delete().eq('brand', bName);
+          if (perr2) {
+            console.warn('Failed to delete products by brand name:', perr2);
+            alert('Failed to delete brand products: ' + (perr2.message || String(perr2)));
+            return;
+          }
         }
       }
 
-      // 2) Delete brand row itself (prefer id when available)
-      let delErr = null as any;
+      // 4) Execute delete query against brands table
+      let delErr: any = null;
       if (brandId) {
         const { error } = await supabase.from('brands').delete().eq('id', brandId);
         delErr = error;
       } else {
-        const { error } = await supabase.from('brands').delete().eq('name', name);
+        const { error } = await supabase.from('brands').delete().eq('name', brandName);
         delErr = error;
+        if (delErr) {
+          const { error: slugErr } = await supabase.from('brands').delete().eq('slug', brandSlug);
+          delErr = slugErr;
+        }
       }
+
       if (delErr) {
         console.warn('Supabase brand delete failed:', delErr);
         alert('Failed to delete brand: ' + (delErr.message || String(delErr)));
         return;
       }
 
-      // 3) Update local state after successful DB deletes
-      setBrands(prev => prev.filter(b => b !== name));
+      // 5) Update local state immediately after successful database deletion
+      const matchBrand = (val: any) => {
+        if (!val) return false;
+        const s = String(val).trim().toLowerCase();
+        return (
+          s === target.toLowerCase() ||
+          (brandName && s === brandName.toLowerCase()) ||
+          (brandId != null && s === String(brandId).toLowerCase()) ||
+          (brandSlug && s === brandSlug.toLowerCase())
+        );
+      };
+
+      setBrands(prev => prev.filter(b => !matchBrand(b)));
       setCategories(prev => prev.map(c => {
         const existing = Array.isArray(c.brands) ? c.brands : [];
-        return { ...c, brands: existing.filter(b => b !== name) };
+        return { ...c, brands: existing.filter(b => !matchBrand(b)) };
       }));
-      setProducts(prev => prev.filter(p => p.brand !== name && p.brand !== brandId));
+      setProducts(prev => prev.filter(p => !matchBrand(p.brand)));
     } catch (e: any) {
       console.warn('Supabase brand delete error:', e?.message || e);
       alert('Failed to delete brand: ' + (e?.message || String(e)));

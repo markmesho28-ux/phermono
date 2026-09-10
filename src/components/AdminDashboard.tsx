@@ -12,7 +12,7 @@ export default function AdminDashboard() {
 
   const inventoryValue = useMemo(
     () => products.reduce((sum, product) => {
-      const price = typeof product.sellingPrice === 'number' ? product.sellingPrice : (product.price || 0);
+      const price = typeof product.sellingPrice === 'number' ? product.sellingPrice : 0;
       return sum + price;
     }, 0),
     [products],
@@ -64,7 +64,6 @@ export default function AdminDashboard() {
       brand: 'PherMono',
       category: defaultCategory?.id ?? 'skincare',
       subcategory: defaultCategory?.subcategories?.[0]?.id ?? 'all',
-      price: 0,
       sellingPrice: 0,
       marketPrice: 0,
       rating: 5,

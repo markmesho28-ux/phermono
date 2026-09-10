@@ -21,7 +21,7 @@ export interface Product {
   brand: string;
   category: string;
   subcategory: string;
-  price: number;
+  price?: number | null;
   createdAt?: number | string | null;
   originalPrice?: number | null;
   sellingPrice?: number;
@@ -114,7 +114,7 @@ export interface DataActions {
   deleteSubcategory: (categoryId: string, subId: string) => void;
   addBrand: (name: string, categoryId?: string) => Promise<any>;
   updateBrand: (oldName: string, newName: string) => void;
-  deleteBrand: (name: string) => void;
+  deleteBrand: (nameOrId: string) => Promise<void> | void;
   addProduct: (prod: Product) => Promise<number>;
   updateProduct: (id: number, updates: Partial<Product>) => void;
   deleteProduct: (id: number) => void;

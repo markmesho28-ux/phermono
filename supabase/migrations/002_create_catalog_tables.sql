@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS public.subcategories (
 -- Brands (category-scoped when needed)
 CREATE TABLE IF NOT EXISTS public.brands (
   id TEXT PRIMARY KEY,
-  category_id TEXT REFERENCES public.categories(id) ON DELETE SET NULL,
+  category_id TEXT REFERENCES public.categories(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   slug TEXT NOT NULL,
   logo TEXT,

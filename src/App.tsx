@@ -288,7 +288,7 @@ export default function App(){
     setCartItems(prev => {
       const ex = prev.find(i=>i.id===product.id);
       if(ex) return prev.map(i=> i.id===product.id ? { ...i, qty: i.qty+1 } : i);
-      const price = typeof product.sellingPrice === 'number' ? product.sellingPrice : (typeof product.price === 'number' ? product.price : 0);
+      const price = typeof product.sellingPrice === 'number' ? product.sellingPrice : 0;
       return [...prev, { ...product, price, qty: 1 }];
     });
     showToast(`Added "${product.name}" to your bag`);

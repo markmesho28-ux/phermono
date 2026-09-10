@@ -17,7 +17,6 @@ export const PRODUCTS: Array<{
   brand: string;
   category: string;
   subcategory: string;
-  price: number;
   originalPrice?: number | null;
   rating: number;
   reviews: number;

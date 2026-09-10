@@ -35,9 +35,12 @@ export default function ProductCard({
   const { user } = useAuth();
   const { actions } = useData();
 
-  const market = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
-  const sell = typeof product.sellingPrice === 'number' ? product.sellingPrice : (typeof product.price === 'number' ? product.price : 0);
-  const discount = market ? Math.round(((market - sell) / market) * 100) : null;
+  const generalPrice = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
+  const storePrice = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
+  const ourPrice = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
+  const discount = (typeof generalPrice === 'number' && typeof storePrice === 'number' && generalPrice > 0)
+    ? Math.round(((generalPrice - storePrice) / generalPrice) * 100)
+    : null;
   const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
@@ -162,17 +165,17 @@ export default function ProductCard({
                   {user && user.role === 'admin' ? (
                 <div className="text-sm md:text-sm text-stone-700 space-y-1">
                   <div className="text-[12px] text-stone-400">Our Price</div>
-                  <div className="text-sm font-semibold">EGP {(typeof product.price==='number' ? product.price : 0).toFixed(2)}</div>
+                  <div className="text-sm font-semibold">EGP {ourPrice.toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">General Price</div>
-                  <div className="text-sm font-semibold line-through">EGP {(market !== undefined ? market : 0).toFixed(2)}</div>
+                  <div className="text-sm font-semibold line-through">EGP {(generalPrice !== undefined ? generalPrice : 0).toFixed(2)}</div>
                   <div className="text-[12px] text-stone-400 mt-1">Store Price</div>
-                  <div className="text-base font-bold text-brand-black">EGP {(sell).toFixed(2)}</div>
+                  <div className="text-base font-bold text-brand-black">EGP {(typeof storePrice === 'number' ? storePrice.toFixed(2) : '0.00')}</div>
                 </div>
                   ) : (
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm md:text-base font-bold text-brand-black">EGP {(sell).toFixed(2)}</span>
-                  {market !== undefined && (
-                    <span className="text-[11px] md:text-xs text-stone-400 line-through -mt-1">EGP {market.toFixed(2)}</span>
+                  <span className="text-sm md:text-base font-bold text-brand-black">EGP {(typeof storePrice === 'number' ? storePrice.toFixed(2) : '0.00')}</span>
+                  {generalPrice !== undefined && (
+                    <span className="text-[11px] md:text-xs text-stone-400 line-through -mt-1">EGP {generalPrice.toFixed(2)}</span>
                   )}
                 </div>
               )}

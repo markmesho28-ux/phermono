@@ -336,7 +336,7 @@ export const buildCatalogContext = (products: Product[] = []) => {
           `${p.category} ${p.subcategory ?? ""} ${p.name} ${p.description ?? ""}`
         );
 
-      const price = p.price != null ? `${p.price} EGP` : "price not set";
+      const price = p.sellingPrice != null ? `${p.sellingPrice} EGP` : "price not set";
       const original =
         p.originalPrice != null || p.marketPrice != null
           ? ` (original: ${p.originalPrice ?? p.marketPrice} EGP)`

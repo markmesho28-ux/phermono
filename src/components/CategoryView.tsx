@@ -88,20 +88,20 @@ export default function CategoryView({
     }
     switch (sortBy) {
       case "price-asc": result.sort((a,b)=>{
-        const pa = typeof a.sellingPrice==='number' ? a.sellingPrice : (a.price||0);
-        const pb = typeof b.sellingPrice==='number' ? b.sellingPrice : (b.price||0);
+        const pa = typeof a.sellingPrice === 'number' ? a.sellingPrice : 0;
+        const pb = typeof b.sellingPrice === 'number' ? b.sellingPrice : 0;
         return pa-pb;
       }); break;
       case "price-desc": result.sort((a,b)=>{
-        const pa = typeof a.sellingPrice==='number' ? a.sellingPrice : (a.price||0);
-        const pb = typeof b.sellingPrice==='number' ? b.sellingPrice : (b.price||0);
+        const pa = typeof a.sellingPrice === 'number' ? a.sellingPrice : 0;
+        const pb = typeof b.sellingPrice === 'number' ? b.sellingPrice : 0;
         return pb-pa;
       }); break;
       case "rating": result.sort((a,b)=>b.rating-a.rating); break;
       case "popular": result.sort((a,b)=>b.reviews-a.reviews); break;
       case "discount": result.sort((a,b)=>{
-        const da = a.marketPrice ? ((a.marketPrice - (typeof a.sellingPrice==='number'?a.sellingPrice:(a.price||0)))/a.marketPrice) : 0;
-        const db = b.marketPrice ? ((b.marketPrice - (typeof b.sellingPrice==='number'?b.sellingPrice:(b.price||0)))/b.marketPrice) : 0;
+        const da = a.marketPrice ? ((a.marketPrice - (typeof a.sellingPrice === 'number' ? a.sellingPrice : 0))/a.marketPrice) : 0;
+        const db = b.marketPrice ? ((b.marketPrice - (typeof b.sellingPrice === 'number' ? b.sellingPrice : 0))/b.marketPrice) : 0;
         return db-da;
       }); break;
       default: break;
@@ -439,13 +439,18 @@ function ModalContent({
 
   const [form, setForm] = useState<ProductFormState>(() => {
     if (mode === 'editProduct' && editing && 'id' in editing) {
+      const sellingValue = (editing as any).sellingPrice ?? '';
+      const marketValue = (editing as any).marketPrice ?? (editing as any).originalPrice ?? '';
+      const adminValue = (editing as any).adminCost ?? (editing as any).cost ?? '';
+      const imageValue = (editing as any).image_url ?? (editing as any).image ?? '';
+      const descriptionValue = (editing as any).description ?? (editing as any).details ?? '';
       return {
         ...editing,
-        adminCost: editing.adminCost !== undefined ? String(editing.adminCost) : '',
-        marketPrice: editing.marketPrice !== undefined ? String(editing.marketPrice) : '',
-        sellingPrice: editing.sellingPrice !== undefined ? String(editing.sellingPrice) : '',
-        image: editing.image || '',
-        description: editing.description || '',
+        adminCost: adminValue !== undefined && adminValue !== null ? String(adminValue) : '',
+        marketPrice: marketValue !== undefined && marketValue !== null ? String(marketValue) : '',
+        sellingPrice: sellingValue !== undefined && sellingValue !== null ? String(sellingValue) : '',
+        image: imageValue || '',
+        description: descriptionValue || '',
       };
     }
     return {
@@ -470,13 +475,18 @@ function ModalContent({
     );
 
     if (mode === 'editProduct' && editing && 'id' in editing) {
+      const sellingValue = (editing as any).sellingPrice ?? '';
+      const marketValue = (editing as any).marketPrice ?? (editing as any).originalPrice ?? '';
+      const adminValue = (editing as any).adminCost ?? (editing as any).cost ?? '';
+      const imageValue = (editing as any).image_url ?? (editing as any).image ?? '';
+      const descriptionValue = (editing as any).description ?? (editing as any).details ?? '';
       const mapped: ProductFormState = {
         ...editing,
-        adminCost: editing.adminCost !== undefined ? String(editing.adminCost) : '',
-        marketPrice: editing.marketPrice !== undefined ? String(editing.marketPrice) : '',
-        sellingPrice: editing.sellingPrice !== undefined ? String(editing.sellingPrice) : '',
-        image: editing.image || '',
-        description: editing.description || '',
+        adminCost: adminValue !== undefined && adminValue !== null ? String(adminValue) : '',
+        marketPrice: marketValue !== undefined && marketValue !== null ? String(marketValue) : '',
+        sellingPrice: sellingValue !== undefined && sellingValue !== null ? String(sellingValue) : '',
+        image: imageValue || '',
+        description: descriptionValue || '',
       };
       setForm(mapped);
     } else if (mode === 'addProduct') {
@@ -557,11 +567,14 @@ function ModalContent({
         alert('Please enter a valid Store Price.');
         return;
       }
-      const parsedSell = parseFloat(String(form.sellingPrice).trim());
+      const parsedSell =
+        form.sellingPrice && String(form.sellingPrice).trim() !== '' && !isNaN(Number(form.sellingPrice))
+          ? parseFloat(String(form.sellingPrice).trim())
+          : undefined;
       const parsedMarket =
         form.marketPrice && String(form.marketPrice).trim() !== '' && !isNaN(Number(form.marketPrice))
           ? parseFloat(String(form.marketPrice).trim())
-          : parsedSell;
+          : undefined;
       const parsedAdmin =
         form.adminCost && String(form.adminCost).trim() !== '' && !isNaN(Number(form.adminCost))
           ? parseFloat(String(form.adminCost).trim())
@@ -580,8 +593,7 @@ function ModalContent({
         adminCost: parsedAdmin,
         marketPrice: parsedMarket,
         sellingPrice: parsedSell,
-        price: parsedSell,
-        originalPrice: parsedMarket,
+        originalPrice: parsedMarket ?? null,
         rating: Number(form.rating) || 5,
         reviews: Number(form.reviews) || 1,
         image: fallbackImage,
@@ -612,11 +624,14 @@ function ModalContent({
         alert('Please enter a valid Store Price.');
         return;
       }
-      const parsedSell = parseFloat(String(form.sellingPrice).trim());
+      const parsedSell =
+        form.sellingPrice && String(form.sellingPrice).trim() !== '' && !isNaN(Number(form.sellingPrice))
+          ? parseFloat(String(form.sellingPrice).trim())
+          : undefined;
       const parsedMarket =
         form.marketPrice && String(form.marketPrice).trim() !== '' && !isNaN(Number(form.marketPrice))
           ? parseFloat(String(form.marketPrice).trim())
-          : parsedSell;
+          : undefined;
       const parsedAdmin =
         form.adminCost && String(form.adminCost).trim() !== '' && !isNaN(Number(form.adminCost))
           ? parseFloat(String(form.adminCost).trim())
@@ -630,14 +645,18 @@ function ModalContent({
         adminCost: parsedAdmin,
         marketPrice: parsedMarket,
         sellingPrice: parsedSell,
-        price: parsedSell,
-        originalPrice: parsedMarket,
-        image: form.image.trim() || undefined,
-        description: form.description.trim(),
-      };
+        originalPrice: parsedMarket ?? null,
+        rating: Number(form.rating) || 0,
+        reviews: Number(form.reviews) || 0,
+        image: form.image.trim() || (editing as any)?.image_url || (editing as any)?.image || undefined,
+        image_url: form.image.trim() || (editing as any)?.image_url || (editing as any)?.image || undefined,
+        description: form.description.trim() || (editing as any)?.description || (editing as any)?.details || '',
+        details: form.description.trim() || (editing as any)?.description || (editing as any)?.details || '',
+      } as any;
 
       actions.updateProduct(form.id, updated);
       if (onProductSaved) {
+        // Merge the updated fields into the form snapshot to ensure UI updates include the saved values
         onProductSaved({ ...form, ...updated } as Product);
       }
       onClose();

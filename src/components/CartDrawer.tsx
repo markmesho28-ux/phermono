@@ -324,7 +324,7 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
   if (!product) return null;
 
   const marketP = product ? (typeof product.marketPrice === 'number' ? product.marketPrice : product.originalPrice) : undefined;
-  const sellP = product ? (typeof product.sellingPrice === 'number' ? product.sellingPrice : product.price || 0) : 0;
+  const sellP = product ? (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0) : 0;
   const discount = marketP ? Math.round(((marketP - sellP) / marketP) * 100) : null;
 
   return (
@@ -404,7 +404,7 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
               <div className="flex items-baseline gap-3 mb-4">
                 {(() => {
                   const market = typeof product.marketPrice === 'number' ? product.marketPrice : product.originalPrice;
-                  const sell = typeof product.sellingPrice === 'number' ? product.sellingPrice : (product.price || 0);
+                  const sell = typeof product.sellingPrice === 'number' ? product.sellingPrice : 0;
                   return (
                     <>
                       <span className="text-3xl font-extrabold text-brand-black">EGP {sell.toFixed(2)}</span>
