@@ -86,6 +86,20 @@ const removePriceKeys = (value: any): any => {
   return value;
 };
 
+// Resolve a subcategory identifier (id, slug, or name) to a canonical DB id when possible.
+const resolveSubcategoryId = async (value: any): Promise<string | null> => {
+  if (!value) return null;
+  const raw = String(value);
+  if (isUuid(raw)) return raw;
+  try {
+    const { data } = await supabase.from('subcategories').select('id,slug,name').or(`slug.eq.${raw},name.eq.${raw}`).limit(1).maybeSingle();
+    if (data && data.id) return data.id;
+  } catch (e) {
+    // ignore resolution errors; caller will decide fallback
+  }
+  return null;
+};
+
 const normalizeProductImage = (value: any): string => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -1144,8 +1158,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (schemaInfo.productsHasCategoryId) payload.category_id = prod.category ?? null;
       else if (schemaInfo.productsHasCategory) payload.category = prod.category ?? null;
 
-      if (schemaInfo.productsHasSubcategoryId) payload.subcategory_id = prod.subcategory ?? null;
-      else if (schemaInfo.productsHasSubcategory) payload.subcategory = prod.subcategory ?? null;
+      if (schemaInfo.productsHasSubcategoryId) {
+        // Resolve incoming `prod.subcategory` (may be id, slug, or name) to a DB id if possible.
+        let subId: any = null;
+        if (prod.subcategory) {
+          if (isUuid(String(prod.subcategory))) subId = prod.subcategory;
+          else {
+            try {
+              const { data: found } = await supabase.from('subcategories').select('id').or(`slug.eq.${String(prod.subcategory)},name.eq.${String(prod.subcategory)}`).limit(1).maybeSingle();
+              if (found && found.id) subId = found.id;
+            } catch (e) {
+              // fallback: do not set subcategory_id if resolution fails
+            }
+          }
+        }
+        payload.subcategory_id = subId ?? null;
+      } else if (schemaInfo.productsHasSubcategory) {
+        payload.subcategory = prod.subcategory ?? null;
+      }
 
       const parsedSell = toNumberOrUndefined((prod as any).sellingPrice);
       const parsedMarket = toNumberOrUndefined((prod as any).marketPrice ?? (prod as any).originalPrice);
@@ -1225,7 +1255,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         if (!supabase) return;
-        const row = mapProductUpdatesToRow(updates);
+        // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
+        // any incoming subcategory value (slug/name) to the canonical id first.
+        const updatesForMapping: Partial<Product> = { ...updates };
+        if (schemaInfo.productsHasSubcategoryId && (updatesForMapping as any).subcategory !== undefined && (updatesForMapping as any).subcategory !== null) {
+          const rawSub = String((updatesForMapping as any).subcategory);
+          if (!isUuid(rawSub)) {
+            try {
+              const resolved = await resolveSubcategoryId(rawSub);
+              if (resolved) (updatesForMapping as any).subcategory = resolved;
+              else delete (updatesForMapping as any).subcategory; // avoid sending non-UUID into uuid column
+            } catch (e) {
+              delete (updatesForMapping as any).subcategory;
+            }
+          }
+        }
+
+        const row = mapProductUpdatesToRow(updatesForMapping);
         if (Object.keys(row).length === 0) return;
 
         // If image update is a data/blob URL, upload it first to obtain a persistent public URL
