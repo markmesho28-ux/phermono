@@ -1190,19 +1190,64 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           const { data: fallback } = await supabase.from('brands').select('*').eq('slug', slug).limit(1).maybeSingle();
           if (fallback) {
             const brandName = (fallback as any).name ?? clean;
-            // Attach to category if present on the found row
-            if (fallback.category_id) {
-              setCategories(prev => prev.map(c => {
-                if (String(c.id) !== String(fallback.category_id)) return c;
-                const existingBrands = Array.isArray(c.brands) ? c.brands : [];
-                const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
-                if (existsInCategory) return c;
-                return { ...c, brands: [...existingBrands, brandName] };
-              }));
-            } else {
-              setBrands(prev => (prev.some(b => b.toLowerCase() === brandName.toLowerCase()) ? prev : [...prev, brandName]));
-              setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
+            const existingBrandId = (fallback as any).id ?? null;
+            const existingBrandCategory = (fallback as any).category_id ?? null;
+
+            // If caller provided a categoryId and the DB supports category scoping, try to attach the existing brand
+            // to that category. Prefer updating the brands row to set category_id; if that fails (missing column),
+            // try creating a category_brands junction row.
+            if (categoryId) {
+              const desiredCatId = String(categoryId);
+              if (existingBrandCategory && String(existingBrandCategory) === desiredCatId) {
+                // already scoped correctly
+                setCategories(prev => prev.map(c => {
+                  if (String(c.id) !== desiredCatId) return c;
+                  const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+                  const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+                  if (existsInCategory) return c;
+                  return { ...c, brands: [...existingBrands, brandName] };
+                }));
+              } else if (existingBrandId) {
+                // Try to update brands.category_id when possible
+                try {
+                  const { error: updErr } = await supabase.from('brands').update({ category_id: desiredCatId }).eq('id', existingBrandId);
+                  if (!updErr) {
+                    setCategories(prev => prev.map(c => {
+                      if (String(c.id) !== desiredCatId) return c;
+                      const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+                      const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+                      if (existsInCategory) return c;
+                      return { ...c, brands: [...existingBrands, brandName] };
+                    }));
+                    // Also remove from global list if present
+                    setBrands(prev => prev.filter(b => String(b).toLowerCase() !== brandName.toLowerCase()));
+                    return fallback as any;
+                  }
+                } catch (err) {
+                  // ignore update failure and fall back to junction table
+                }
+
+                // Try junction table fallback
+                try {
+                  await supabase.from('category_brands').insert([{ category_id: desiredCatId, brand_id: existingBrandId }]);
+                  setCategories(prev => prev.map(c => {
+                    if (String(c.id) !== desiredCatId) return c;
+                    const existingBrands = Array.isArray(c.brands) ? c.brands : [];
+                    const existsInCategory = existingBrands.some(b => String(b).toLowerCase() === brandName.toLowerCase());
+                    if (existsInCategory) return c;
+                    return { ...c, brands: [...existingBrands, brandName] };
+                  }));
+                  setBrands(prev => prev.filter(b => String(b).toLowerCase() !== brandName.toLowerCase()));
+                  return fallback as any;
+                } catch (_) {
+                  // if fallback fails, continue to global attach below
+                }
+              }
             }
+
+            // Default: attach as global brand (no category scope)
+            setBrands(prev => (prev.some(b => b.toLowerCase() === brandName.toLowerCase()) ? prev : [...prev, brandName]));
+            setCategories(prev => prev.map(c => ({ ...c, brands: Array.from(new Set([...(c.brands || []), brandName])) } as any)));
             return fallback as any;
           }
         }
