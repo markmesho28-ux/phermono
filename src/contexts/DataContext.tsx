@@ -510,8 +510,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         } else {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: [] } as any)));
         }
-        if (Array.isArray(ordersData) && ordersData.length > 0) {
-          setOrders(ordersData as any);
+        if (Array.isArray(ordersData)) {
+          setOrders(ordersData.map((row: any) => ({
+            ...row,
+            createdAt: row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString(),
+          })) as any);
         }
         setRemoteError(null);
         setLoading(false);
@@ -1933,7 +1936,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Orders
   const addOrder = (order: Omit<Order, 'id' | 'createdAt'> & { createdAt?: number | string }) => {
     const id = Date.now();
-    const o: Order = { ...order, id, createdAt: new Date().toISOString(), status: order.status || 'pending' } as Order;
+    const createdAt = (order as any).createdAt || (order as any).created_at || (order as any).date || (order as any).order_date || new Date().toISOString();
+    const o: Order = { ...order, id, createdAt, status: order.status || 'pending' } as Order;
     setOrders(prev => [...prev, o]);
     // Persist order to Supabase (best-effort) with proper mapping
     try {
@@ -1964,7 +1968,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               // optionally sync representation
               if (Array.isArray(data) && data[0]) {
                 const returned = data[0] as any;
-                setOrders(prev => prev.map(p => p.id === o.id ? ({ ...p, id: returned.id, createdAt: returned.created_at || p.createdAt }) : p));
+                setOrders(prev => prev.map(p => p.id === o.id ? ({ ...p, id: returned.id, createdAt: returned.created_at || returned.createdAt || p.createdAt }) : p));
               }
             }
           } catch (e: any) {
@@ -1977,8 +1981,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
     return id;
   };
-  const updateOrder = (id: number, updates: Partial<Order>) => {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
+  const updateOrder = (id: number | string, updates: Partial<Order>) => {
+    setOrders(prev => prev.map(o => String(o.id) === String(id) ? { ...o, ...updates } : o));
     try {
       if (supabase) {
         (async () => {
@@ -1996,27 +2000,68 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.warn('Supabase order update error', e);
     }
   };
-  const deleteOrder = async (id: number) => {
+  const deleteOrder = async (id: number | string) => {
     try {
       const ok = await requestConfirm('Delete this order? This cannot be undone.');
       if (!ok) return;
     } catch (e) {
       return;
     }
-    setOrders(prev => prev.filter(o => o.id !== id));
-    try {
-      if (supabase) {
-        (async () => {
-          try {
-            await supabase.from('orders').delete().eq('id', id);
-          } catch (e) {
-            console.warn('Supabase order delete failed', e);
+
+    if (supabase) {
+      try {
+        // Explicitly target primary key column `id` with count: 'exact' and .select() to verify rows affected
+        const { data, error, count } = await supabase
+          .from('orders')
+          .delete({ count: 'exact' })
+          .eq('id', id)
+          .select();
+
+        if (error) {
+          // If code is 22P02 (invalid uuid syntax), it might be a client-side temporary numeric ID not in Supabase
+          if (error.code === '22P02' && typeof id === 'number') {
+            console.warn('Order has numeric client-side ID not present in Supabase UUID column. Removing from local state only.', id);
+            setOrders(prev => prev.filter(o => String(o.id) !== String(id)));
+            return;
           }
-        })();
+          console.error('Supabase order delete failed:', error.message || error, {
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            id,
+          });
+          alert('Failed to delete order from database: ' + (error.message || String(error)));
+          return;
+        }
+
+        const rowsAffected = count ?? (Array.isArray(data) ? data.length : 0);
+        if (rowsAffected === 0) {
+          // Check if order still exists in Supabase to detect silent RLS blocking
+          const { data: existing, error: checkErr } = await supabase
+            .from('orders')
+            .select('id')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (checkErr) {
+            console.warn('Could not verify order existence after 0-row deletion:', checkErr);
+          }
+
+          if (existing) {
+            console.error('Supabase order delete silent failure: 0 rows deleted due to Row Level Security (RLS) or missing DELETE policy on "orders" table.', { id });
+            alert('Database permission error: The order could not be deleted from the database. Please ensure you are logged in with an admin account and that the Supabase "orders" table allows DELETE for your role.');
+            return;
+          }
+        }
+      } catch (e: any) {
+        console.error('Supabase order delete exception:', e?.message || e, e);
+        alert('Failed to delete order: ' + (e?.message || String(e)));
+        return;
       }
-    } catch (e) {
-      console.warn('Supabase order delete error', e);
     }
+
+    // Only update local React state when database deletion succeeds or row is confirmed gone
+    setOrders(prev => prev.filter(o => String(o.id) !== String(id)));
   };
 
   const getBrandsForCategory = (categoryId: string) => {

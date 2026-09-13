@@ -52,7 +52,7 @@ export interface OrderItem {
 }
 
 export interface Order {
-  id: number;
+  id: number | string;
   name: string;
   phone: string;
   governorate: string;
@@ -62,6 +62,9 @@ export interface Order {
   shipping?: number;
   status: string;
   createdAt: number | string;
+  created_at?: number | string | null;
+  order_date?: number | string | null;
+  date?: number | string | null;
 }
 
 export type OrderInput = Omit<Order, "id" | "createdAt"> & {
@@ -121,8 +124,8 @@ export interface DataActions {
   deleteProduct: (id: number) => void;
   toggleHero: (id: number) => void;
   addOrder: (order: OrderInput) => number;
-  updateOrder: (id: number, updates: Partial<Order>) => void;
-  deleteOrder: (id: number) => void;
+  updateOrder: (id: number | string, updates: Partial<Order>) => void;
+  deleteOrder: (id: number | string) => Promise<void> | void;
   adminClearDatabase?: () => Promise<void>;
 }
 

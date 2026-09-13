@@ -2,7 +2,6 @@ import React, { useState, useCallback } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import Sidebar from "./components/Sidebar";
-import BottomNav from "./components/BottomNav";
 import Homepage from "./components/Homepage";
 import CategoryView from "./components/CategoryView";
 import { CartDrawer, QuickViewModal } from "./components/CartDrawer";
@@ -13,6 +12,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { CheckCircle2 } from "lucide-react";
 import ProductCard from "./components/ProductCard";
 import ChatWidget from "./components/ChatWidget";
+import { formatOrderDate } from "./utils/orderDate";
 import type { CartItem, OrderInput, Product } from "./types";
 
 function AssistantPage({ products }: { products: Product[] }) {
@@ -76,9 +76,9 @@ function TrackingPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="text-sm font-semibold">Order #{order.id}</div>
-                  <div className="text-xs text-stone-400">Placed: {new Date(order.createdAt).toLocaleString()}</div>
+                  <div className="text-xs text-stone-400">Placed: {formatOrderDate(order)}</div>
                 </div>
-                <div className="text-sm font-medium">Total: EGP {order.total.toFixed(2)}</div>
+                <div className="text-sm font-medium">Total: EGP {(Number(order?.total) || 0).toFixed(2)}</div>
               </div>
 
               <div className="mt-4">
@@ -101,7 +101,7 @@ function TrackingPage() {
               <div className="mt-3 text-sm">
                 <div className="text-xs text-stone-500">Items</div>
                 <ul className="list-disc list-inside mt-1">
-                  {order.items.map(it => <li key={it.id}>{it.name} x{it.qty}</li>)}
+                  {(order.items || []).map(it => <li key={it.id}>{it.name} x{it.qty}</li>)}
                 </ul>
               </div>
             </div>
@@ -261,6 +261,7 @@ export default function App(){
   const [toast, setToast] = useState<ToastProps>({ message: '', visible: false });
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   // wishlist is rendered as a dedicated page via `activeCategory === 'favorites'`
 
   const { products, actions } = useData();
@@ -274,7 +275,13 @@ export default function App(){
     setTimeout(()=> setToast(t => ({ ...t, visible: false })), 2500);
   }, []);
 
-  const handleCategorySelect = useCallback((id: string) => { setActiveCategory(id); setSelectedBrand(null); setSearchQuery(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+  const handleCategorySelect = useCallback((id: string) => {
+    setActiveCategory(id);
+    setSelectedBrand(null);
+    setSearchQuery('');
+    setMobileMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
   const handleBrandSelect = useCallback((brandName: string) => {
     const matching = products.find(p=>p.brand===brandName);
     const targetCategory = matching ? matching.category : 'skincare';
@@ -436,13 +443,19 @@ export default function App(){
           setAuthIntent(null);
           setAuthOpen(!!v);
         }}
+        onMenuToggle={() => setMobileMenuOpen(prev => !prev)}
       />
 
       {activeCategory === 'assistant' ? (
         <AssistantPage products={products} />
       ) : (
         <div className="flex-1 flex max-w-7xl mx-auto w-full relative z-30 pointer-events-auto">
-          <Sidebar activeCategory={activeCategory} onSelect={handleCategorySelect} />
+          <Sidebar
+            activeCategory={activeCategory}
+            onSelect={handleCategorySelect}
+            mobileOpen={mobileMenuOpen}
+            onClose={() => setMobileMenuOpen(false)}
+          />
 
           <main className="flex-1 min-w-0 px-2 sm:px-4">
             {searchQuery && String(searchQuery).trim() !== '' ? (
@@ -479,13 +492,6 @@ export default function App(){
           </main>
         </div>
       )}
-
-      <BottomNav
-        activeCategory={activeCategory}
-        onSelect={handleCategorySelect}
-        isAdmin={!!(user && user.role === 'admin')}
-        onAddCategory={() => setIsAddCategoryModalOpen(true)}
-      />
 
       <CartDrawer
         isOpen={cartOpen}

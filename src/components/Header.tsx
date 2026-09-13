@@ -123,14 +123,11 @@ export default function Header({
 
         {/* Main Navigation Header */}
         <header className="glass-nav shadow-sm transition-all duration-300">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex flex-col md:flex-row items-center justify-between h-auto md:h-20 gap-3 md:gap-4 w-full">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6">
+            <div className="flex flex-col md:flex-row items-center justify-between h-auto md:h-20 py-2.5 md:py-0 gap-2.5 md:gap-4 w-full">
 
-              <div className="w-full md:w-auto flex items-center">
-                <button type="button" onClick={() => onMenuToggle && onMenuToggle()} className="hidden" aria-label="Open menu">
-                  <Menu size={20} />
-                </button>
-                <button type="button" onClick={onHomeClick} className="max-md:hidden flex items-center gap-3 group text-left transition-transform active:scale-98">
+              <div className="hidden md:flex items-center">
+                <button type="button" onClick={onHomeClick} className="flex items-center gap-3 group text-left transition-transform active:scale-98">
                   <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-brand-gold-border bg-white flex items-center justify-center p-0.5 group-hover:border-brand-gold group-hover:shadow-luxury transition-all">
                     <img src="/logo.jpg" alt="PherMono PhM Logo" className="w-full h-full object-contain" />
                   </div>
@@ -143,40 +140,84 @@ export default function Header({
                 </button>
               </div>
 
-              <div className="w-full md:flex-1 md:max-w-lg mt-2 md:mt-0 order-3 md:order-2">
-                <div className="relative group">
-                  <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
-                  <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" style={{ fontSize: '16px' }} />
-                  {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400"><X size={15} /></button>}
+              <div className="w-full md:flex-1 md:max-w-lg order-3 md:order-2">
+                <div className="flex items-center gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => onMenuToggle && onMenuToggle()}
+                    className="md:hidden flex shrink-0 items-center justify-center w-10 h-10 rounded-full bg-brand-cream/80 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 transition-colors cursor-pointer touch-target shadow-inner"
+                    aria-label="Open categories menu"
+                  >
+                    <Menu size={18} />
+                  </button>
+                  <div className="relative group flex-1 min-w-0">
+                    <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
+                    <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" style={{ fontSize: '16px' }} />
+                    {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400"><X size={15} /></button>}
+                  </div>
                 </div>
               </div>
 
-              <div className="order-2 flex w-full flex-row items-center justify-between gap-1 overflow-visible md:order-3 md:w-auto md:justify-end">
-                <button type="button" onClick={onWishlistOpen} className={`header-wishlist-btn relative inline-flex w-auto items-center justify-center gap-2 rounded-full bg-brand-black px-3 py-1 text-[9px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all group cursor-pointer touch-target md:px-3 md:py-1.5 ${activeCategory === "favorites" ? "active" : ""}`} aria-label="Favorite List" data-active={activeCategory === "favorites"}>
-                  <div className="inline-flex items-center gap-2"><Heart size={12} className="text-brand-gold transition-colors pointer-events-none" /><span className="text-[9px] md:text-sm">Favorites</span></div>
+              <div className="order-2 grid grid-cols-4 gap-1.5 w-full md:flex md:w-auto md:items-center md:justify-end md:gap-2">
+                <button
+                  type="button"
+                  onClick={onWishlistOpen}
+                  className={`header-wishlist-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
+                    activeCategory === "favorites" ? "active" : ""
+                  }`}
+                  aria-label="Favorite List"
+                  data-active={activeCategory === "favorites"}
+                >
+                  <Heart size={12} className="text-brand-gold transition-colors pointer-events-none shrink-0" />
+                  <span className="truncate pointer-events-none">Favorites</span>
                 </button>
 
-                <button type="button" onClick={onCartOpen} className={`header-cart-btn relative inline-flex w-auto items-center justify-center gap-2 bg-brand-black text-white px-3 py-1 text-[9px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 ${(activeCategory === 'cart' || cartOpen) ? 'active' : ''}`} data-active={activeCategory === 'cart' || cartOpen} aria-label="Bag">
-                  <div className="relative pointer-events-none">
-                    <ShoppingBag size={11} className="text-brand-gold group-hover:scale-110 transition-transform" />
-                    {cartCount > 0 && (<span className="absolute -top-2 -right-2 min-w-[14px] h-[14px] bg-brand-gold text-brand-black text-[8px] font-extrabold rounded-full flex items-center justify-center px-0.5">{cartCount}</span>)}
+                <button
+                  type="button"
+                  onClick={onCartOpen}
+                  className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
+                    (activeCategory === 'cart' || cartOpen) ? 'active' : ''
+                  }`}
+                  data-active={activeCategory === 'cart' || cartOpen}
+                  aria-label="Bag"
+                >
+                  <div className="relative pointer-events-none shrink-0 flex items-center">
+                    <ShoppingBag size={12} className="text-brand-gold group-hover:scale-110 transition-transform" />
+                    {cartCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-brand-gold text-brand-black text-[8px] font-extrabold rounded-full flex items-center justify-center px-0.5 shadow-sm">
+                        {cartCount}
+                      </span>
+                    )}
                   </div>
-                  <span className="uppercase tracking-wider pointer-events-none text-[9px] md:text-sm">Bag</span>
+                  <span className="uppercase tracking-wider pointer-events-none">Bag</span>
                 </button>
 
-                <button type="button" onClick={()=>onTrackOpen && onTrackOpen(true)} className={`header-track-btn inline-flex w-auto items-center justify-center gap-2 rounded-full bg-brand-black px-3 py-1 text-[9px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all cursor-pointer touch-target md:px-3 md:py-1.5 ${activeCategory === "tracking" ? "active" : ""}`} aria-label="Track Orders" data-active={activeCategory === "tracking"}>
-                  <Truck size={12} className="text-brand-gold pointer-events-none" />
-                  <span className="text-[9px] md:text-sm">Tracking</span>
+                <button
+                  type="button"
+                  onClick={() => onTrackOpen && onTrackOpen(true)}
+                  className={`header-track-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
+                    activeCategory === "tracking" ? "active" : ""
+                  }`}
+                  aria-label="Track Orders"
+                  data-active={activeCategory === "tracking"}
+                >
+                  <Truck size={12} className="text-brand-gold pointer-events-none shrink-0" />
+                  <span className="truncate pointer-events-none">Tracking</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={onAssistantOpen}
-                  className="header-assistant-btn inline-flex w-auto items-center justify-center gap-2 whitespace-nowrap rounded-full bg-brand-black px-3 py-1 text-[9px] font-semibold tracking-wide text-white shadow-luxury transition hover:bg-brand-charcoal hover:shadow-luxury-hover focus:outline-none focus:ring-2 focus:ring-brand-gold/40 md:px-4 md:py-1.5 md:text-sm"
+                  className={`header-assistant-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold tracking-wide text-white shadow-luxury transition hover:bg-brand-charcoal hover:shadow-luxury-hover focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer touch-target md:px-4 md:py-1.5 md:text-sm min-w-0 ${
+                    activeCategory === "assistant" ? "active" : ""
+                  }`}
                   aria-label="Your Assistant"
+                  data-active={activeCategory === "assistant"}
                 >
-                  <Bot size={12} className="text-brand-gold" />
-                  <span className="text-white text-[9px] md:text-sm">Your Assistant</span>
+                  <Bot size={12} className="text-brand-gold shrink-0" />
+                  <span className="truncate pointer-events-none">
+                    <span className="hidden sm:inline">Your </span>Assistant
+                  </span>
                 </button>
               </div>
             </div>
