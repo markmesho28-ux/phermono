@@ -165,6 +165,7 @@ export default function Header({
                   className={`header-wishlist-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "favorites" ? "active" : ""
                   }`}
+                  data-no-fast-touch
                   aria-label="Favorite List"
                   data-active={activeCategory === "favorites"}
                 >
@@ -178,6 +179,7 @@ export default function Header({
                   className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active' : ''
                   }`}
+                  data-no-fast-touch
                   data-active={activeCategory === 'cart' || cartOpen}
                   aria-label="Bag"
                 >
@@ -198,6 +200,7 @@ export default function Header({
                   className={`header-track-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "tracking" ? "active" : ""
                   }`}
+                  data-no-fast-touch
                   aria-label="Track Orders"
                   data-active={activeCategory === "tracking"}
                 >
@@ -211,6 +214,7 @@ export default function Header({
                   className={`header-assistant-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold tracking-wide text-white shadow-luxury transition hover:bg-brand-charcoal hover:shadow-luxury-hover focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer touch-target md:px-4 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "assistant" ? "active" : ""
                   }`}
+                  data-no-fast-touch
                   aria-label="Your Assistant"
                   data-active={activeCategory === "assistant"}
                 >

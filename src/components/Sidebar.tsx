@@ -211,7 +211,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile off-canvas drawer — starts exactly at the bottom edge of the sticky header */}
       <aside
         className={`fixed left-0 w-[290px] sm:w-[320px] max-w-[85vw] bg-white z-[85] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
+          mobileOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}
         style={{
           top: 'var(--header-height, 0px)',
