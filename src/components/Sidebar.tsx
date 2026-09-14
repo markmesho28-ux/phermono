@@ -114,7 +114,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <button
               type="button"
               onClick={openAddModal}
-              className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center"
+              className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center touch-target"
               title="Add Category"
             >
               <div className="pointer-events-none flex items-center justify-center">
@@ -170,7 +170,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   <button
                     type="button"
                     onClick={(e) => openEditModal(e, cat)}
-                    className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center"
+                    className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
                     <Edit2 size={13} />
@@ -178,7 +178,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   <button
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }}
-                    className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center"
+                    className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
                   >
                     <Trash2 size={13} />
@@ -224,7 +224,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           <button
             type="button"
             onClick={() => onClose && onClose()}
-            className="p-1.5 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
             aria-label="Close menu"
           >
             <X size={18} />
@@ -281,9 +281,9 @@ function CategoryForm({ initial, onClose, mode }: CategoryFormProps){
   return (
     <div className="space-y-3">
       <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Category Name" className="w-full p-2 border rounded" />
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm cursor-pointer pointer-events-auto">Cancel</button>
-        <button type="button" onClick={submit} className="px-3 py-2 bg-black text-white rounded text-sm cursor-pointer pointer-events-auto">Save</button>
+        <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm cursor-pointer pointer-events-auto touch-target">Cancel</button>
+        <button type="button" onClick={submit} className="px-3 py-2 bg-black text-white rounded text-sm cursor-pointer pointer-events-auto touch-target">Save</button>
       </div>
     </div>
   );

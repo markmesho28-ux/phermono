@@ -4,7 +4,7 @@
 
 type MaybeElement = HTMLElement | null;
 
-export function initFastTouch(selector = ".touch-target") {
+export function initFastTouch(selector = ".touch-target, button, a[href], [role=\"button\"]") {
   if (typeof window === "undefined" || !("ontouchstart" in window)) return;
 
   let startX = 0;
@@ -12,10 +12,17 @@ export function initFastTouch(selector = ".touch-target") {
   let startTarget: MaybeElement = null;
   const MOVE_THRESHOLD = 10; // px
 
+  const recentFastClick = new WeakMap<HTMLElement, number>();
+  const RECENT_MS = 800;
+
   function findTarget(t: EventTarget | null): MaybeElement {
     try {
       const el = t as HTMLElement | null;
-      return el ? el.closest(selector) as HTMLElement : null;
+      const candidate = el ? (el.closest(selector) as HTMLElement) : null;
+      if (!candidate) return null;
+      // Allow opt-out per-element
+      if (candidate.hasAttribute("data-no-fast-touch")) return null;
+      return candidate;
     } catch (err) {
       return null;
     }
@@ -25,7 +32,7 @@ export function initFastTouch(selector = ".touch-target") {
     const touch = e.touches && e.touches[0];
     if (!touch) return;
     const el = findTarget(e.target);
-    if (!el) return;
+    if (!el) { startTarget = null; return; }
     startX = touch.clientX;
     startY = touch.clientY;
     startTarget = el;
@@ -42,6 +49,27 @@ export function initFastTouch(selector = ".touch-target") {
     }
   }
 
+  // Capture native clicks and suppress them if we already triggered
+  // a programmatic click for the same target recently. This prevents
+  // double-invocation while leaving desktop mouse clicks untouched.
+  function onDocumentClickCapture(e: MouseEvent) {
+    try {
+      const el = findTarget(e.target);
+      if (!el) return;
+      const ts = recentFastClick.get(el as HTMLElement);
+      if (!ts) return;
+      const now = Date.now();
+      if (now - ts <= RECENT_MS && e.isTrusted) {
+        // Native click following our touch — prevent duplicate.
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        recentFastClick.delete(el as HTMLElement);
+      }
+    } catch (err) {
+      // noop
+    }
+  }
+
   function onTouchEnd(e: TouchEvent) {
     if (!startTarget) return;
     const touch = e.changedTouches && e.changedTouches[0];
@@ -50,31 +78,40 @@ export function initFastTouch(selector = ".touch-target") {
     const dy = Math.abs(touch.clientY - startY);
     if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) { startTarget = null; return; }
 
-    // Prevent the synthetic mouse events that follow a touch sequence
-    // and immediately trigger a click on the target so handlers run without delay.
-    e.preventDefault();
-
+    // Programmatically trigger activation on the target so React handlers run.
     try {
-      // focus for accessibility
-      (startTarget as HTMLElement).focus?.();
+      (startTarget as HTMLElement).focus?.({ preventScroll: true } as any);
     } catch {}
 
-    const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, view: window });
-    startTarget.dispatchEvent(clickEvent);
+    try {
+      // Use the built-in click() to better emulate a user activation.
+      (startTarget as HTMLElement).click();
+    } catch (err) {
+      // Fallback to dispatching a synthetic event
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, view: window });
+      startTarget.dispatchEvent(clickEvent);
+    }
+
+    // Mark this element so the following native click can be ignored.
+    recentFastClick.set(startTarget as HTMLElement, Date.now());
 
     // clear
     startTarget = null;
   }
 
-  document.addEventListener("touchstart", onTouchStart, { passive: false });
+  document.addEventListener("touchstart", onTouchStart, { passive: true });
   document.addEventListener("touchmove", onTouchMove, { passive: true });
-  document.addEventListener("touchend", onTouchEnd, { passive: false });
+  document.addEventListener("touchend", onTouchEnd, { passive: true });
+
+  // capture native clicks so we can suppress duplicates only when needed
+  document.addEventListener("click", onDocumentClickCapture, true);
 
   // Return a cleanup function in case the app wants to remove listeners later.
   return function destroy() {
     document.removeEventListener("touchstart", onTouchStart as EventListener);
     document.removeEventListener("touchmove", onTouchMove as EventListener);
     document.removeEventListener("touchend", onTouchEnd as EventListener);
+    document.removeEventListener("click", onDocumentClickCapture as EventListener, true as any);
   };
 }
 
