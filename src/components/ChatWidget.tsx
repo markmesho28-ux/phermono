@@ -806,7 +806,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={!input.trim() || isLoading}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-gold text-brand-black shadow-sm transition hover:bg-brand-gold-hover disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-gold text-brand-black shadow-sm transition hover:bg-brand-gold-hover disabled:cursor-not-allowed disabled:opacity-50 touch-target"
                 aria-label="Send message"
               >
                 <SendHorizonal size={16} />
@@ -841,7 +841,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
               type="button"
               aria-label="Close chat"
               onClick={() => setIsOpen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-stone-200 transition hover:bg-white/20 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-stone-200 transition hover:bg-white/20 hover:text-white touch-target"
             >
               <X size={16} />
             </button>
@@ -927,7 +927,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
         data-chat-toggle
         onClick={() => setIsOpen((prev) => !prev)}
         aria-label={isOpen ? "Close chat" : "Open chat"}
-        className="group relative z-[110] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto max-md:h-14 max-md:w-14"
+        className="group relative z-[110] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto max-md:h-14 max-md:w-14 touch-target"
       >
         <span className="absolute inset-0 rounded-full animate-pulse bg-brand-gold/30" />
         <span className="absolute inset-1 rounded-full border border-brand-black/10 bg-white/10" />

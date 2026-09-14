@@ -19,7 +19,7 @@ export default function CategoryBar({ categories, activeId = null, isAdmin = fal
           <button
             type="button"
             onClick={() => onAddCategory && onAddCategory()}
-            className="flex items-center gap-2 px-3 py-2 rounded-full bg-brand-black text-white text-sm font-semibold shadow-sm hover:bg-brand-charcoal transition-colors whitespace-nowrap"
+            className="flex items-center gap-2 px-3 py-2 rounded-full bg-brand-black text-white text-sm font-semibold shadow-sm hover:bg-brand-charcoal transition-colors whitespace-nowrap touch-target"
             aria-label="Add category"
           >
             + إضافة فئة
@@ -33,11 +33,11 @@ export default function CategoryBar({ categories, activeId = null, isAdmin = fal
           {categories.map((c) => {
             const active = c.id === activeId;
             return (
-              <button
+                <button
                 key={c.id}
                 type="button"
                 onClick={() => onSelect && onSelect(c.id)}
-                className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                  className={`flex-shrink-0 px-3 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap touch-target ${
                   active ? 'bg-brand-gold text-black' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                 }`}
                 aria-pressed={active}

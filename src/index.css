@@ -147,3 +147,25 @@ textarea,
 .drawer-backdrop {
   touch-action: manipulation;
 }
+
+/* Prevent hover/transition flicker on touch-only devices for elements marked .touch-target */
+@media (hover: none), (pointer: coarse) {
+  .touch-target {
+    transition: none !important;
+    -webkit-transition: none !important;
+    will-change: auto !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .touch-target:active,
+  .touch-target:focus {
+    transform: none !important;
+    -webkit-transform: none !important;
+  }
+
+  /* Also neutralize group hover/active effects that may be applied via parent selectors */
+  .touch-target[class*="hover"],
+  .touch-target[class*="active"] {
+    transition: none !important;
+  }
+}

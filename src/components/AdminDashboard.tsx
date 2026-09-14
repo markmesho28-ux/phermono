@@ -120,11 +120,11 @@ export default function AdminDashboard() {
               placeholder="Category name"
               className="flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-brand-black outline-none focus:border-brand-gold"
             />
-            <button
-              type="button"
-              onClick={handleAddCategory}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white"
-            >
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white touch-target"
+              >
               <PlusCircle size={16} /> Add
             </button>
           </div>
@@ -133,13 +133,13 @@ export default function AdminDashboard() {
             {categories.map((category) => (
               <div key={category.id} className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
                 <span className="text-sm font-medium text-brand-black">{category.label}</span>
-                <button
-                  type="button"
-                  onClick={() => actions.deleteCategory(category.id)}
-                  className="rounded-full p-1.5 text-red-500 hover:bg-red-50"
-                  title="Delete category"
-                  aria-label={`Delete ${category.label}`}
-                >
+                  <button
+                    type="button"
+                    onClick={() => actions.deleteCategory(category.id)}
+                    className="rounded-full p-1.5 text-red-500 hover:bg-red-50 touch-target"
+                    title="Delete category"
+                    aria-label={`Delete ${category.label}`}
+                  >
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -169,13 +169,13 @@ export default function AdminDashboard() {
             {products.slice(0, 6).map((product) => (
               <div key={product.id} className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
                 <span className="text-sm font-medium text-brand-black">{product.name}</span>
-                <button
-                  type="button"
-                  onClick={() => actions.deleteProduct(product.id)}
-                  className="rounded-full p-1.5 text-red-500 hover:bg-red-50"
-                  title="Delete product"
-                  aria-label={`Delete ${product.name}`}
-                >
+                  <button
+                    type="button"
+                    onClick={() => actions.deleteProduct(product.id)}
+                    className="rounded-full p-1.5 text-red-500 hover:bg-red-50 touch-target"
+                    title="Delete product"
+                    aria-label={`Delete ${product.name}`}
+                  >
                   <Trash2 size={14} />
                 </button>
               </div>

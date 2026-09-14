@@ -9,8 +9,8 @@ export default function ConfirmModal({ open, message, onConfirm, onCancel }: { o
         <h3 className="text-lg font-semibold mb-2">Confirm action</h3>
         <div className="text-sm text-stone-600 mb-4">{message}</div>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="px-4 py-2 bg-stone-100 text-stone-700 rounded">Cancel</button>
-          <button onClick={onConfirm} className="px-4 py-2 bg-red-600 text-white rounded">Delete</button>
+          <button onClick={onCancel} className="px-4 py-2 bg-stone-100 text-stone-700 rounded touch-target">Cancel</button>
+          <button onClick={onConfirm} className="px-4 py-2 bg-red-600 text-white rounded touch-target">Delete</button>
         </div>
       </div>
     </div>

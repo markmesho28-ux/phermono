@@ -67,7 +67,7 @@ export function CartDrawer({
       <button
         type="button"
         onClick={() => onBackToBag && onBackToBag()}
-        className="px-3 py-2 text-xs font-semibold text-stone-600 hover:text-brand-black"
+        className="px-3 py-2 text-xs font-semibold text-stone-600 hover:text-brand-black touch-target"
       >
         ← Back to Bag
       </button>
@@ -165,7 +165,7 @@ export function CartDrawer({
                   <button
                     type="button"
                     onClick={() => onBackToBag && onBackToBag()}
-                    className="flex-1 rounded-full border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700"
+                    className="flex-1 rounded-full border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700 touch-target"
                   >
                     Back
                   </button>
@@ -196,7 +196,7 @@ export function CartDrawer({
                       };
                       onPlaceOrder(order);
                     }}
-                    className="flex-1 rounded-full bg-brand-black px-4 py-3 text-sm font-semibold text-white shadow-lg"
+                    className="flex-1 rounded-full bg-brand-black px-4 py-3 text-sm font-semibold text-white shadow-lg touch-target"
                   >
                     Place Order
                   </button>
@@ -220,7 +220,7 @@ export function CartDrawer({
                   </p>
                   <button
                     onClick={onClose}
-                    className="px-6 py-3 bg-brand-black text-brand-gold text-xs font-bold uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md"
+                    className="px-6 py-3 bg-brand-black text-brand-gold text-xs font-bold uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md touch-target"
                   >
                     Start Shopping
                   </button>
@@ -256,7 +256,7 @@ export function CartDrawer({
 
                 <button
                   onClick={() => onCheckout && onCheckout()}
-                  className="w-full py-4 bg-brand-black hover:bg-brand-gold hover:text-brand-black text-brand-gold rounded-full font-bold text-xs uppercase tracking-widest shadow-luxury transition-all duration-300 flex items-center justify-center gap-2 group"
+                  className="w-full py-4 bg-brand-black hover:bg-brand-gold hover:text-brand-black text-brand-gold rounded-full font-bold text-xs uppercase tracking-widest shadow-luxury transition-all duration-300 flex items-center justify-center gap-2 group touch-target"
                 >
                   <span>Checkout Order</span>
                   <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
@@ -386,7 +386,7 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black"
+                  className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black touch-target"
                 >
                   <X size={20} />
                 </button>
@@ -433,7 +433,7 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
                     onAddToCart(product);
                     onClose();
                   }}
-                  className="flex-1 py-3.5 bg-brand-black hover:bg-brand-gold hover:text-brand-black text-brand-gold rounded-full font-bold text-xs uppercase tracking-wider shadow-luxury transition-all flex items-center justify-center gap-2"
+                  className="flex-1 py-3.5 bg-brand-black hover:bg-brand-gold hover:text-brand-black text-brand-gold rounded-full font-bold text-xs uppercase tracking-wider shadow-luxury transition-all flex items-center justify-center gap-2 touch-target"
                 >
                   <ShoppingBag size={15} />
                   <span>Add to Bag</span>
@@ -441,7 +441,7 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
 
                 <button
                   onClick={() => onWishlist(product)}
-                  className={`p-3.5 rounded-full border transition-all ${
+                  className={`p-3.5 rounded-full border transition-all touch-target ${
                     isWishlisted
                       ? "bg-red-50 text-red-500 border-red-200"
                       : "border-stone-200 text-stone-400 hover:text-red-500 hover:bg-red-50"

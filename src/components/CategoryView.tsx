@@ -144,7 +144,7 @@ export default function CategoryView({
             <Tag size={14} className="text-brand-gold" />
             <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Sub-Categories Breakdown</span>
             {user && user.role === 'admin' && (
-              <button type="button" onClick={openAddSub} className="ml-2 text-brand-gold cursor-pointer">
+              <button type="button" onClick={openAddSub} className="ml-2 text-brand-gold cursor-pointer touch-target">
                 <PlusCircle size={14} />
               </button>
             )}
@@ -170,8 +170,8 @@ export default function CategoryView({
                 </button>
                 {user && user.role==='admin' && sub.id !== 'all' && (
                   <div className="absolute -right-2 top-0 flex flex-col gap-1">
-                    <button type="button" onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="p-1 bg-white rounded-full shadow cursor-pointer"><Edit2 size={12} /></button>
-                    <button type="button" onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer"><Trash2 size={12} /></button>
+                    <button type="button" onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="p-1 bg-white rounded-full shadow cursor-pointer touch-target"><Edit2 size={12} /></button>
+                    <button type="button" onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer touch-target"><Trash2 size={12} /></button>
                   </div>
                 )}
               </div>
@@ -187,7 +187,7 @@ export default function CategoryView({
             <Tag size={14} className="text-brand-gold" />
             <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Filter by Brand</span>
             {user && user.role === 'admin' && (
-              <button type="button" onClick={openAddBrand} className="ml-2 text-brand-gold cursor-pointer" aria-label="Add Brand">
+              <button type="button" onClick={openAddBrand} className="ml-2 text-brand-gold cursor-pointer touch-target" aria-label="Add Brand">
                 <PlusCircle size={14} />
               </button>
             )}
@@ -195,7 +195,7 @@ export default function CategoryView({
           <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
             <span className="inline-flex min-w-0 justify-end">
               {selectedBrand !== "all" ? (
-                <button type="button" onClick={()=>setSelectedBrand('all')} className="flex items-center gap-1 text-xs font-bold text-stone-500 transition-colors hover:text-red-500">
+                <button type="button" onClick={()=>setSelectedBrand('all')} className="flex items-center gap-1 text-xs font-bold text-stone-500 transition-colors hover:text-red-500 touch-target">
                   <X size={12} /> Reset Brand
                 </button>
               ) : (
@@ -203,7 +203,7 @@ export default function CategoryView({
               )}
             </span>
             {availableBrands.length > 8 ? (
-              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-xs font-bold text-brand-gold-dark transition-colors hover:text-brand-black">
+              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-xs font-bold text-brand-gold-dark transition-colors hover:text-brand-black touch-target">
                 {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
               </button>
             ) : (
@@ -240,8 +240,8 @@ export default function CategoryView({
                 </button>
                 {user && user.role==='admin' && (
                   <div className="absolute -right-2 top-0 flex flex-col gap-1">
-                    <button type="button" onClick={()=>openEditBrand(brand)} className="p-1 bg-white rounded-full shadow cursor-pointer"><Edit2 size={12} /></button>
-                    <button type="button" onClick={()=>actions.deleteBrand(brand)} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer"><Trash2 size={12} /></button>
+                    <button type="button" onClick={()=>openEditBrand(brand)} className="p-1 bg-white rounded-full shadow cursor-pointer touch-target"><Edit2 size={12} /></button>
+                    <button type="button" onClick={()=>actions.deleteBrand(brand)} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer touch-target"><Trash2 size={12} /></button>
                   </div>
                 )}
               </div>
@@ -259,7 +259,7 @@ export default function CategoryView({
           <div className="flex min-w-0 items-center gap-2">
             <span className="inline-flex min-w-0">
               {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') ? (
-                <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer">
+                <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer touch-target">
                   <X size={13} /> Clear All Filters
                 </button>
               ) : (
@@ -283,7 +283,7 @@ export default function CategoryView({
 
       {user && user.role === 'admin' && (
         <div className="flex w-full justify-end pb-2">
-          <button type="button" onClick={openAddProduct} className="inline-flex items-center gap-2 rounded-full bg-brand-black px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-brand-gold shadow-sm transition-all hover:bg-brand-charcoal">
+          <button type="button" onClick={openAddProduct} className="inline-flex items-center gap-2 rounded-full bg-brand-black px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-brand-gold shadow-sm transition-all hover:bg-brand-charcoal touch-target">
             <PlusCircle size={14} /> Add Product
           </button>
         </div>
@@ -319,7 +319,7 @@ export default function CategoryView({
           <div className="w-16 h-16 rounded-full bg-brand-gold-light text-brand-gold-dark flex items-center justify-center mx-auto mb-4 border border-brand-gold/30"><Filter size={24} /></div>
           <h3 className="font-serif-luxury text-2xl font-bold text-brand-black mb-2">No Products Found</h3>
           <p className="text-sm text-stone-500 mb-6">There are no products matching this combination of sub-category and brand filters.</p>
-          <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="px-6 py-3 bg-brand-black text-brand-gold font-bold text-xs uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md cursor-pointer">Reset All Filters</button>
+          <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="px-6 py-3 bg-brand-black text-brand-gold font-bold text-xs uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md cursor-pointer touch-target">Reset All Filters</button>
         </div>
       )}
 

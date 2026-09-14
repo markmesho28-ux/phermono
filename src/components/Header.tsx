@@ -127,7 +127,7 @@ export default function Header({
             <div className="flex flex-col md:flex-row items-center justify-between h-auto md:h-20 py-2.5 md:py-0 gap-2.5 md:gap-4 w-full">
 
               <div className="hidden md:flex items-center">
-                <button type="button" onClick={onHomeClick} className="flex items-center gap-3 group text-left transition-transform active:scale-98">
+                <button type="button" onClick={onHomeClick} className="flex items-center gap-3 group text-left transition-transform active:scale-98 touch-target">
                   <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-brand-gold-border bg-white flex items-center justify-center p-0.5 group-hover:border-brand-gold group-hover:shadow-luxury transition-all">
                     <img src="/logo.jpg" alt="PherMono PhM Logo" className="w-full h-full object-contain" />
                   </div>
@@ -153,7 +153,7 @@ export default function Header({
                   <div className="relative group flex-1 min-w-0">
                     <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
                     <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" style={{ fontSize: '16px' }} />
-                    {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400"><X size={15} /></button>}
+                    {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 touch-target"><X size={15} /></button>}
                   </div>
                 </div>
               </div>

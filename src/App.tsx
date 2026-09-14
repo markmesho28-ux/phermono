@@ -191,7 +191,7 @@ function AccountProfile(){
         </div>
 
         <div className="flex gap-2 justify-end">
-          <button onClick={saveProfile} disabled={saving} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto">{saving ? 'Saving...' : 'Save Profile'}</button>
+          <button onClick={saveProfile} disabled={saving} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto touch-target">{saving ? 'Saving...' : 'Save Profile'}</button>
         </div>
 
         <hr className="my-3" />
@@ -212,7 +212,7 @@ function AccountProfile(){
             <input id="confirm-password" aria-label="Confirm new password" type="password" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={passState.confirm} onChange={e=>setPassState(s=>({...s,confirm:e.target.value}))} />
           </div>
           <div className="flex justify-end pb-6">
-            <button onClick={changePass} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto">Update Password</button>
+            <button onClick={changePass} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto touch-target">Update Password</button>
           </div>
         </div>
 

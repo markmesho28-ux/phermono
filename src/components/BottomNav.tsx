@@ -33,7 +33,7 @@ export default function BottomNav({
           <button
             type="button"
             onClick={() => onSelect("home")}
-            className={`bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer ${
+            className={`bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer touch-target ${
               String(activeCategory) === "home" ? "active text-brand-black" : "text-stone-400 hover:text-stone-700"
             }`}
             data-active={String(activeCategory) === "home"}
@@ -56,7 +56,7 @@ export default function BottomNav({
           <button
             type="button"
             onClick={() => onOpenCategories && onOpenCategories()}
-            className={`bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer ${
+            className={`bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer touch-target ${
               isCategoriesActive ? "active text-brand-black" : "text-stone-400 hover:text-stone-700"
             }`}
             data-active={isCategoriesActive}
@@ -83,7 +83,7 @@ export default function BottomNav({
               key="add-category"
               type="button"
               onClick={() => onAddCategory && onAddCategory()}
-              className="bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer text-stone-400 hover:text-stone-700"
+              className="bottom-nav-item flex flex-col items-center justify-center py-1 relative transition-colors cursor-pointer text-stone-400 hover:text-stone-700 touch-target"
               aria-label="Add category"
               data-active={false}
             >

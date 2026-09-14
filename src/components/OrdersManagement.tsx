@@ -66,7 +66,7 @@ export default function OrdersManagement(){
                       <button
                         key={s}
                         onClick={() => actions.updateOrder(order.id, { status: s })}
-                        className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
+                        className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors touch-target ${
                           order.status === s
                             ? 'bg-brand-gold text-black shadow-sm'
                             : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -85,7 +85,7 @@ export default function OrdersManagement(){
                       console.error('OrdersManagement: Error while deleting order:', err);
                     }
                   }}
-                  className="sm:ml-auto px-3 py-1 bg-stone-200 hover:bg-red-100 hover:text-red-600 rounded text-xs font-medium transition-colors self-start sm:self-auto"
+                  className="sm:ml-auto px-3 py-1 bg-stone-200 hover:bg-red-100 hover:text-red-600 rounded text-xs font-medium transition-colors self-start sm:self-auto touch-target"
                 >
                   Delete
                 </button>

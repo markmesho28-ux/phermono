@@ -64,7 +64,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black transition-colors"
+            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black transition-colors touch-target"
             aria-label="Close"
           >
             <X size={18} />
@@ -76,7 +76,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={() => { setMode('signin'); setError(null); }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target ${
               mode === 'signin'
                 ? 'bg-brand-black text-white shadow-sm'
                 : 'text-stone-600 hover:text-brand-black'
@@ -87,7 +87,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={() => { setMode('signup'); setError(null); }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target ${
               mode === 'signup'
                 ? 'bg-brand-black text-white shadow-sm'
                 : 'text-stone-600 hover:text-brand-black'
@@ -200,21 +200,21 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-semibold text-stone-600 hover:text-brand-black rounded-xl transition-colors"
+              className="px-4 py-2 text-sm font-semibold text-stone-600 hover:text-brand-black rounded-xl transition-colors touch-target"
             >
               Cancel
             </button>
             {mode === 'signin' ? (
               <button
                 type="submit"
-                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98"
+                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 touch-target"
               >
                 Sign In
               </button>
             ) : (
               <button
                 type="submit"
-                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98"
+                className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 touch-target"
               >
                 Create Account
               </button>
