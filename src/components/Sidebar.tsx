@@ -50,26 +50,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     }
   }, [mobileOpen, onClose]);
 
-  // Helper to run an action immediately on touchend without affecting mouse behavior
-  // Also blurs the touched element to prevent a stuck/focused "half-click" state.
-  const handleTouchActivate = (fn: () => void) => (e: React.TouchEvent) => {
-    try {
-      e.preventDefault();
-      e.stopPropagation();
-    } catch {}
-    // blur the element to remove any focus/active styling that can get stuck
-    try {
-      const el = e.currentTarget as HTMLElement | null;
-      if (el) {
-        // run the action immediately, then remove focus on the next frame
-        fn();
-        requestAnimationFrame(() => { try { el.blur(); } catch {} });
-        return;
-      }
-    } catch {}
-    fn();
-  };
-
   const openAddModal = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -91,9 +71,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); onSelect("home"); if(onClose) onClose(); }}
-        onTouchEnd={handleTouchActivate(()=>{ onSelect("home"); if(onClose) onClose?.(); })}
-        data-no-fast-touch="true"
+        onClick={() => { onSelect("home"); if (onClose) onClose(); }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
         }`}
@@ -112,9 +90,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {user && user.role === 'admin' && (
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); onSelect('orders'); if(onClose) onClose(); }}
-          onTouchEnd={handleTouchActivate(()=>{ onSelect('orders'); if(onClose) onClose?.(); })}
-          data-no-fast-touch="true"
+          onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
           }`}
@@ -138,8 +114,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <button
               type="button"
               onClick={openAddModal}
-              onTouchEnd={handleTouchActivate(()=>{ setMode('add'); setEditingCat(null); setModalOpen(true); })}
-              data-no-fast-touch="true"
               className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center touch-target"
               title="Add Category"
             >
@@ -162,9 +136,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); onSelect(cat.id); if(onClose) onClose(); }}
-                onTouchEnd={handleTouchActivate(()=>{ onSelect(cat.id); if(onClose) onClose?.(); })}
-                data-no-fast-touch="true"
+                onClick={() => { onSelect(cat.id); if (onClose) onClose(); }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -198,8 +170,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   <button
                     type="button"
                     onClick={(e) => openEditModal(e, cat)}
-                    onTouchEnd={handleTouchActivate(()=>{ setMode('edit'); setEditingCat(cat); setModalOpen(true); })}
-                    data-no-fast-touch="true"
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
@@ -207,9 +177,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); actions.deleteCategory(cat.id); }}
-                    onTouchEnd={handleTouchActivate(()=>{ actions.deleteCategory(cat.id); })}
-                    data-no-fast-touch="true"
+                    onClick={(e) => { e.stopPropagation(); actions.deleteCategory(cat.id); }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
                   >
@@ -257,8 +225,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             type="button"
             onClick={() => onClose && onClose()}
             className="p-1.5 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
-            onTouchEnd={handleTouchActivate(()=>onClose && onClose())}
-            data-no-fast-touch="true"
             aria-label="Close menu"
           >
             <X size={18} />
@@ -315,9 +281,9 @@ function CategoryForm({ initial, onClose, mode }: CategoryFormProps){
   return (
     <div className="space-y-3">
       <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Category Name" className="w-full p-2 border rounded" />
-        <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} onTouchEnd={(e)=>{ e.preventDefault(); e.stopPropagation(); onClose(); }} className="px-3 py-1.5 text-sm cursor-pointer pointer-events-auto touch-target" data-no-fast-touch="true">Cancel</button>
-        <button type="button" onClick={submit} onTouchEnd={(e)=>{ e.preventDefault(); e.stopPropagation(); submit(); }} className="px-3 py-2 bg-black text-white rounded text-sm cursor-pointer pointer-events-auto touch-target" data-no-fast-touch="true">Save</button>
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="px-3 py-1.5 text-sm cursor-pointer pointer-events-auto touch-target">Cancel</button>
+        <button type="button" onClick={submit} className="px-3 py-2 bg-black text-white rounded text-sm cursor-pointer pointer-events-auto touch-target">Save</button>
       </div>
     </div>
   );

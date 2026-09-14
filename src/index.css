@@ -123,49 +123,33 @@ textarea {
   scrollbar-width: none;
 }
 
-/* Touch target utilities for better mobile responsiveness */
-.touch-target,
-.touch-target * {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  -ms-touch-action: manipulation;
-  -webkit-touch-callout: none;
-}
-
-/* Ensure common interactive elements respond immediately on touch */
+/* Mobile touch responsiveness and fast-tap standardization */
+html,
+body,
 button,
 a,
 input,
+select,
 textarea,
-.sidebar-nav-item {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-/* Make sure backdrops/dialog overlays accept touch normally */
+[role="button"],
+.touch-target,
+.sidebar-nav-item,
+.product-card,
+.category-filter-tab,
 .backdrop,
 .drawer-backdrop {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Prevent hover/transition flicker on touch-only devices for elements marked .touch-target */
-@media (hover: none), (pointer: coarse) {
-  .touch-target {
-    transition: none !important;
-    -webkit-transition: none !important;
-    will-change: auto !important;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .touch-target:active,
-  .touch-target:focus {
-    transform: none !important;
-    -webkit-transform: none !important;
-  }
-
-  /* Also neutralize group hover/active effects that may be applied via parent selectors */
-  .touch-target[class*="hover"],
-  .touch-target[class*="active"] {
-    transition: none !important;
+/* Eliminate persistent focus rings/outlines and sticky hover states on touchscreens */
+@media (hover: none) and (pointer: coarse) {
+  button:focus:not(:focus-visible),
+  a:focus:not(:focus-visible),
+  [role="button"]:focus:not(:focus-visible),
+  .touch-target:focus:not(:focus-visible),
+  .sidebar-nav-item:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
   }
 }
