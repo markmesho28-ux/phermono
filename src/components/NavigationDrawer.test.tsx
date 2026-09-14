@@ -65,7 +65,10 @@ describe('Sidebar Mobile Drawer', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('renders Orders Management button and navigates on click', () => {
+  it('renders Orders Management button for admin users and navigates on click', () => {
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { id: 'admin1', name: 'Admin User', role: 'admin' },
+    });
     const handleClose = jest.fn();
     const handleSelect = jest.fn();
     render(
@@ -77,12 +80,27 @@ describe('Sidebar Mobile Drawer', () => {
       />
     );
 
-    // Orders Management should always be present regardless of role
     const ordersBtn = screen.getAllByText('Orders Management')[0];
     expect(ordersBtn).toBeInTheDocument();
     fireEvent.click(ordersBtn);
     expect(handleSelect).toHaveBeenCalledWith('orders');
     expect(handleClose).toHaveBeenCalled();
+  });
+
+  it('does NOT render Orders Management button for regular users', () => {
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { id: 'user1', name: 'Regular User', role: 'customer' },
+    });
+
+    render(
+      <Sidebar
+        activeCategory="home"
+        onSelect={jest.fn()}
+        mobileOpen={true}
+      />
+    );
+
+    expect(screen.queryByText('Orders Management')).not.toBeInTheDocument();
   });
 
   it('selects a department category and triggers onClose', () => {

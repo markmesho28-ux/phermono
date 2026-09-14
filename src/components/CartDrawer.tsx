@@ -177,7 +177,18 @@ export function CartDrawer({
                         phone: user.phone,
                         governorate: user.governorate,
                         address: user.address || '',
-                        items: cartItems.map((item) => ({ id: item.id, name: item.name, qty: item.qty, price: item.price })),
+                        items: cartItems.map((item) => {
+                          const itemPrice = Number(item.price) || 0;
+                          const itemQty = Number(item.qty) || 1;
+                          return {
+                            id: item.id,
+                            name: item.name,
+                            qty: itemQty,
+                            price: itemPrice,
+                            unit_price: itemPrice,
+                            total_price: +(itemPrice * itemQty).toFixed(2),
+                          };
+                        }),
                         total,
                         shipping: shippingFee,
                         status: 'confirmed',

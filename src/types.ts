@@ -49,6 +49,8 @@ export interface OrderItem {
   name: string;
   qty: number;
   price: number;
+  unit_price?: number;
+  total_price?: number;
 }
 
 export interface Order {

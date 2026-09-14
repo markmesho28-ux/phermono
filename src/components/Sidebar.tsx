@@ -86,23 +86,25 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         </div>
       </button>
 
-      {/* Orders Management */}
-      <button
-        type="button"
-        onClick={(e) => { e.preventDefault(); onSelect('orders'); if(onClose) onClose(); }}
-        className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto ${
-          String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
-        }`}
-        data-active={String(activeCategory) === 'orders'}
-      >
-        <div className="flex items-center justify-between w-full pointer-events-none">
-          <div className="flex items-center gap-3 pointer-events-none">
-            <ClipboardList size={18} className={`pointer-events-none ${String(activeCategory) === 'orders' ? 'text-brand-gold' : 'text-stone-400'}`} />
-            <span className="pointer-events-none">Orders Management</span>
+      {/* Orders Management (Admin only) */}
+      {user && user.role === 'admin' && (
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); onSelect('orders'); if(onClose) onClose(); }}
+          className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto ${
+            String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
+          }`}
+          data-active={String(activeCategory) === 'orders'}
+        >
+          <div className="flex items-center justify-between w-full pointer-events-none">
+            <div className="flex items-center gap-3 pointer-events-none">
+              <ClipboardList size={18} className={`pointer-events-none ${String(activeCategory) === 'orders' ? 'text-brand-gold' : 'text-stone-400'}`} />
+              <span className="pointer-events-none">Orders Management</span>
+            </div>
+            {String(activeCategory) === 'orders' && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
           </div>
-          {String(activeCategory) === 'orders' && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
-        </div>
-      </button>
+        </button>
+      )}
 
       {/* Departments Label */}
       <div className="flex items-center justify-between px-3 mt-5 mb-3">

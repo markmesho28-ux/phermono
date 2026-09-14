@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import ConfirmModal from '../components/ConfirmModal';
 import supabase, { SUPABASE_URL } from '../lib/supabase';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
+import { normalizeOrderItems } from '../utils/orderPrice';
 
 const DataContext = createContext<DataContextValue | null>(null);
 const STORAGE_KEY = 'phermono_data_v1';
@@ -511,10 +512,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: [] } as any)));
         }
         if (Array.isArray(ordersData)) {
-          setOrders(ordersData.map((row: any) => ({
-            ...row,
-            createdAt: row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString(),
-          })) as any);
+          setOrders(ordersData.map((row: any) => {
+            const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
+            // Normalize items against the freshly fetched product catalog so UI state always has unit_price/total_price
+            const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], products);
+            const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
+            return {
+              ...row,
+              createdAt,
+              items: itemsNormalized,
+              total: persistedTotal,
+            };
+          }) as any);
         }
         setRemoteError(null);
         setLoading(false);
@@ -1937,7 +1946,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addOrder = (order: Omit<Order, 'id' | 'createdAt'> & { createdAt?: number | string }) => {
     const id = Date.now();
     const createdAt = (order as any).createdAt || (order as any).created_at || (order as any).date || (order as any).order_date || new Date().toISOString();
-    const o: Order = { ...order, id, createdAt, status: order.status || 'pending' } as Order;
+    // Normalize items immediately for local state so UI shows prices right away
+    const itemsNormalizedLocal = normalizeOrderItems(Array.isArray((order as any).items) ? (order as any).items : [], products || []);
+    const o: Order = { ...order, id, createdAt, status: order.status || 'pending', items: itemsNormalizedLocal } as Order;
     setOrders(prev => [...prev, o]);
     // Persist order to Supabase (best-effort) with proper mapping
     try {
@@ -1945,14 +1956,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         (async () => {
           try {
             // Do NOT send a client-generated `id` to Supabase. Let the DB generate UUID via default.
+            // Normalize items to ensure unit_price and total_price are persisted (use different keys than `price`)
+            const itemsNormalized = normalizeOrderItems(Array.isArray(o.items) ? o.items : [], products);
+            const itemsForPersist = (itemsNormalized || []).map((it: any) => {
+              const qty = Number(it.qty) || 1;
+              const unit = Number(it.unit_price ?? it.unitPrice ?? it.price) || 0;
+              const totalP = Number(it.total_price ?? it.totalPrice) || +(unit * qty).toFixed(2);
+              // Keep item identifiers and metadata but persist explicit unit_price and total_price keys
+              const { price, unitPrice, totalPrice, total_price, ...rest } = it as any;
+              return {
+                ...rest,
+                unit_price: unit,
+                total_price: totalP,
+              };
+            });
+
             const payload = {
               name: o.name,
               phone: o.phone,
               governorate: o.governorate || null,
               address: o.address || null,
-                    // Ensure we never send a top-level or nested `price` property to the DB
-                    items: removePriceKeys(o.items || []),
-              total: o.total,
+              items: removePriceKeys(itemsForPersist),
+              total: Number(o.total) || (itemsNormalized || []).reduce((s: number, it: any) => s + Number(it.total_price || 0), 0),
               shipping: (o as any).shipping ?? 0,
               status: o.status || 'pending',
               created_at: new Date().toISOString(),
@@ -1987,9 +2012,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (supabase) {
         (async () => {
           try {
-            // Remove any `price` keys from updates.items before sending to Supabase
+            // Normalize any provided items and persist explicit unit_price/total_price keys; never send `price`.
             const cleaned = { ...updates } as any;
-            if (cleaned.items) cleaned.items = removePriceKeys(cleaned.items);
+            if (cleaned.items) {
+              const normalized = normalizeOrderItems(Array.isArray(cleaned.items) ? cleaned.items : [], products || []);
+              cleaned.items = (normalized || []).map((it: any) => {
+                const qty = Number(it.qty) || 1;
+                const unit = Number(it.unit_price ?? it.unitPrice ?? it.price) || 0;
+                const totalP = Number(it.total_price ?? it.totalPrice) || +(unit * qty).toFixed(2);
+                const { price, unitPrice, totalPrice, total_price, ...rest } = it as any;
+                return {
+                  ...rest,
+                  unit_price: unit,
+                  total_price: totalP,
+                };
+              });
+              cleaned.items = removePriceKeys(cleaned.items);
+            }
             await supabase.from('orders').update(cleaned).eq('id', id);
           } catch (e) {
             console.warn('Supabase order update failed', e);

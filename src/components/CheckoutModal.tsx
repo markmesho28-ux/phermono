@@ -40,8 +40,28 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
   const submit = ()=>{
     if(!validate()) return;
     const shipping = (getShippingCost && typeof getShippingCost === 'function') ? getShippingCost(form.governorate) : 50;
-    const total = +(subtotal + shipping).toFixed(2);
-    const order: OrderInput = { name: form.name.trim(), phone: form.phone.trim(), governorate: form.governorate, address: form.address.trim(), items: cartItems.map(i=>({ id: i.id, name: i.name, qty: i.qty, price: i.price })), total, shipping, status: 'pending' };
+    const total = subtotal + shipping;
+    const order: OrderInput = {
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      governorate: form.governorate,
+      address: form.address.trim(),
+      items: cartItems.map(i => {
+        const itemPrice = Number(i.price) || 0;
+        const itemQty = Number(i.qty) || 1;
+        return {
+          id: i.id,
+          name: i.name,
+          qty: itemQty,
+          price: itemPrice,
+          unit_price: itemPrice,
+          total_price: +(itemPrice * itemQty).toFixed(2),
+        };
+      }),
+      total,
+      shipping,
+      status: 'pending'
+    };
     actions.addOrder(order);
     if(onConfirm) onConfirm(order);
     onClose();
