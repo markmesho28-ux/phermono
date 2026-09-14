@@ -122,3 +122,28 @@ textarea {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Touch target utilities for better mobile responsiveness */
+.touch-target,
+.touch-target * {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -ms-touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+/* Ensure common interactive elements respond immediately on touch */
+button,
+a,
+input,
+textarea,
+.sidebar-nav-item {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Make sure backdrops/dialog overlays accept touch normally */
+.backdrop,
+.drawer-backdrop {
+  touch-action: manipulation;
+}
