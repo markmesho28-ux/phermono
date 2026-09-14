@@ -4,7 +4,7 @@
 
 type MaybeElement = HTMLElement | null;
 
-export function initFastTouch(selector = ".touch-target, button, a[href], [role=\"button\"]") {
+export function initFastTouch(selector = ".touch-target") {
   if (typeof window === "undefined" || !("ontouchstart" in window)) return;
 
   let startX = 0;
