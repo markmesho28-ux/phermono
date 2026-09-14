@@ -536,7 +536,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     void fetchRemote();
     return () => { mounted = false; };
-  }, [productSubcategoryColumn]);
+  }, [productSubcategoryColumn, products]);
 
   // In-app confirmation modal state and helper
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; resolve?: (v: boolean) => void }>({ open: false, message: '' });
