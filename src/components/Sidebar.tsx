@@ -162,10 +162,10 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                     <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "text-brand-gold translate-x-0.5 opacity-100" : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"}`} />
                   </div>
                 </div>
-              <button
+              </button>
 
               {/* Admin edit/delete buttons outside the nav button */}
-                className="text-brand-gold cursor-pointer pointer-events-auto touch-target p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center"
+              {user && user.role === 'admin' && (
                 <div className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10">
                   <button
                     type="button"
