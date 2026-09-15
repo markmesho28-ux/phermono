@@ -124,6 +124,12 @@ textarea {
 }
 
 /* Mobile touch responsiveness and fast-tap standardization */
+*,
+*::before,
+*::after {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body,
 button,
@@ -136,10 +142,10 @@ textarea,
 .sidebar-nav-item,
 .product-card,
 .category-filter-tab,
+.card-add-btn,
 .backdrop,
 .drawer-backdrop {
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 /* Eliminate persistent focus rings/outlines and sticky hover states on touchscreens */
