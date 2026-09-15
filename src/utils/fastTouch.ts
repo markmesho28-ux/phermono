@@ -1,11 +1,11 @@
 /**
- * Fast Touch & 0ms Tap Dispatcher
+ * Direct Fast Touch Event Listener
  *
- * Implements an immediate, native touchstart/pointerdown activation mechanism
- * on mobile touchscreens to bypass mobile browser tap delays and double-tap wait times,
- * ensuring every single interactive element executes instantly on the very first touch contact (0ms).
+ * Directly intercepts touch contact on interactive elements via pointerdown / touchstart
+ * and immediately triggers the action handler (.click()) on the very first touch contact (0ms delay),
+ * completely bypassing browser tap wait times, double-tap delays, and dropped touches.
  *
- * Desktop mouse clicks and keyboard interactions remain 100% untouched.
+ * Desktop mouse clicks and form inputs remain 100% untouched.
  */
 
 let initialized = false;
@@ -15,26 +15,19 @@ export function initFastTouch() {
   if (typeof window === "undefined") return () => {};
   if (initialized && cleanupFn) return cleanupFn;
 
-  let lastFastTarget: HTMLElement | null = null;
-  let lastFastTime = 0;
-
-  // Track pointer movement to differentiate between tap and scroll
-  let startX = 0;
-  let startY = 0;
-  let pendingScrollTarget: HTMLElement | null = null;
-  let isScroll = false;
-  const MOVE_THRESHOLD = 8; // px
+  let lastFiredTarget: HTMLElement | null = null;
+  let lastFiredTime = 0;
 
   function getInteractiveTarget(target: EventTarget | null): HTMLElement | null {
     if (!target || !(target instanceof Element)) return null;
 
-    // Never fast-activate text inputs, textareas, selects, or editable fields
+    // Never fast-activate form inputs or editable fields so users can focus and type
     if (target.closest('input, textarea, select, [contenteditable="true"]')) {
       return null;
     }
 
     const el = target.closest<HTMLElement>(
-      'button, a, [role="button"], .touch-target, .sidebar-nav-item, .category-filter-tab, .card-add-btn, .header-wishlist-btn, .header-cart-btn, .header-track-btn, .header-assistant-btn'
+      'button, a, [role="button"], .touch-target, .sidebar-nav-item, .category-filter-tab, .card-add-btn, .header-wishlist-btn, .header-cart-btn, .header-track-btn, .header-assistant-btn, .header-auth-btn, [data-clickable="true"]'
     );
 
     if (!el || el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true") {
@@ -44,27 +37,20 @@ export function initFastTouch() {
     return el;
   }
 
-  function isInsideScrollable(el: HTMLElement): boolean {
-    let parent: HTMLElement | null = el.parentElement;
-    while (parent && parent !== document.body && parent !== document.documentElement) {
-      const style = window.getComputedStyle(parent);
-      const overflowX = style.overflowX;
-      const overflowY = style.overflowY;
-      if (
-        (overflowX === "auto" || overflowX === "scroll" || overflowY === "auto" || overflowY === "scroll") &&
-        (parent.scrollWidth > parent.clientWidth + 10 || parent.scrollHeight > parent.clientHeight + 10)
-      ) {
-        return true;
-      }
-      parent = parent.parentElement;
+  function handleDirectTouch(target: EventTarget | null) {
+    const el = getInteractiveTarget(target);
+    if (!el) return;
+
+    // Avoid double-firing on the exact same touch down within 250ms
+    const now = Date.now();
+    if (lastFiredTarget === el && now - lastFiredTime < 250) {
+      return;
     }
-    return false;
-  }
 
-  function triggerAction(el: HTMLElement) {
-    lastFastTarget = el;
-    lastFastTime = Date.now();
+    lastFiredTarget = el;
+    lastFiredTime = now;
 
+    // Execute immediately on the very first touch contact (0ms delay)
     try {
       el.click();
     } catch {
@@ -72,7 +58,7 @@ export function initFastTouch() {
       el.dispatchEvent(evt);
     }
 
-    // Clean up focus state on the next frame to prevent sticky focus outline/frame
+    // Clean up focus state on next animation frame after click has executed
     requestAnimationFrame(() => {
       try {
         const active = document.activeElement;
@@ -88,128 +74,43 @@ export function initFastTouch() {
     });
   }
 
+  // Pointerdown handler (fires on first finger touch contact)
   function onPointerDown(e: PointerEvent) {
-    // Strictly handle touch events only — desktop mouse and pen are completely untouched
+    // Strictly touch pointer only — desktop mouse and pen are completely untouched
     if (e.pointerType !== "touch") return;
-
-    const el = getInteractiveTarget(e.target);
-    if (!el) return;
-
-    // If the element is inside a scrollable container (e.g. scrollable category tabs, horizontal carousels),
-    // wait for pointerup to confirm whether the user is tapping or scrolling
-    if (isInsideScrollable(el)) {
-      pendingScrollTarget = el;
-      startX = e.clientX;
-      startY = e.clientY;
-      isScroll = false;
-      return;
-    }
-
-    // For all fixed, standalone, and modal/header/sidebar controls:
-    // Execute IMMEDIATELY on touch contact (0ms delay)
-    triggerAction(el);
+    handleDirectTouch(e.target);
   }
 
-  function onPointerMove(e: PointerEvent) {
-    if (e.pointerType !== "touch" || !pendingScrollTarget) return;
-    const dx = Math.abs(e.clientX - startX);
-    const dy = Math.abs(e.clientY - startY);
-    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
-      isScroll = true;
-    }
-  }
-
-  function onPointerUp(e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
-    if (pendingScrollTarget && !isScroll) {
-      triggerAction(pendingScrollTarget);
-    }
-    pendingScrollTarget = null;
-    isScroll = false;
-  }
-
-  function onPointerCancel(e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
-    pendingScrollTarget = null;
-    isScroll = false;
-  }
-
-  // Fallback for touchstart/touchend if PointerEvent is not used
+  // Touchstart fallback for touch devices without PointerEvent touch support
   function onTouchStart(e: TouchEvent) {
-    if (window.PointerEvent) return; // PointerEvent handles this
-    if (e.touches.length !== 1) return;
-
-    const touch = e.touches[0];
-    const el = getInteractiveTarget(e.target);
-    if (!el) return;
-
-    if (isInsideScrollable(el)) {
-      pendingScrollTarget = el;
-      startX = touch.clientX;
-      startY = touch.clientY;
-      isScroll = false;
-      return;
-    }
-
-    triggerAction(el);
-  }
-
-  function onTouchMove(e: TouchEvent) {
-    if (window.PointerEvent || !pendingScrollTarget) return;
-    const touch = e.touches[0];
-    if (!touch) return;
-    const dx = Math.abs(touch.clientX - startX);
-    const dy = Math.abs(touch.clientY - startY);
-    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
-      isScroll = true;
+    if (window.PointerEvent) return; // Handled by pointerdown
+    if (e.touches && e.touches.length === 1) {
+      handleDirectTouch(e.target);
     }
   }
 
-  function onTouchEnd() {
-    if (window.PointerEvent) return;
-    if (pendingScrollTarget && !isScroll) {
-      triggerAction(pendingScrollTarget);
-    }
-    pendingScrollTarget = null;
-    isScroll = false;
-  }
-
-  // Suppress duplicate browser-generated native click events following fast taps
+  // Capture phase listener to suppress duplicate browser-synthesized native clicks
   function onDocumentClickCapture(e: MouseEvent) {
-    // Only intercept trusted browser-generated clicks, not our programmatic click()
+    // Allow non-trusted programmatic clicks through
     if (!e.isTrusted && !(e as any).__isMockTrusted) return;
 
-    if (lastFastTarget && Date.now() - lastFastTime < 600) {
+    if (lastFiredTarget && Date.now() - lastFiredTime < 500) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      lastFastTarget = null;
+      lastFiredTarget = null;
     }
   }
 
-  window.addEventListener("pointerdown", onPointerDown, { passive: true });
-  window.addEventListener("pointermove", onPointerMove, { passive: true });
-  window.addEventListener("pointerup", onPointerUp, { passive: true });
-  window.addEventListener("pointercancel", onPointerCancel, { passive: true });
-
-  window.addEventListener("touchstart", onTouchStart, { passive: true });
-  window.addEventListener("touchmove", onTouchMove, { passive: true });
-  window.addEventListener("touchend", onTouchEnd, { passive: true });
-
+  window.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
+  window.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
   document.addEventListener("click", onDocumentClickCapture, true);
 
   initialized = true;
 
   cleanupFn = function destroy() {
-    window.removeEventListener("pointerdown", onPointerDown);
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("pointercancel", onPointerCancel);
-
-    window.removeEventListener("touchstart", onTouchStart);
-    window.removeEventListener("touchmove", onTouchMove);
-    window.removeEventListener("touchend", onTouchEnd);
-
+    window.removeEventListener("pointerdown", onPointerDown, true);
+    window.removeEventListener("touchstart", onTouchStart, true);
     document.removeEventListener("click", onDocumentClickCapture, true);
     initialized = false;
     cleanupFn = null;

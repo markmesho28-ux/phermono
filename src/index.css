@@ -131,21 +131,27 @@ textarea {
 }
 
 html,
-body,
+body {
+  touch-action: manipulation;
+}
+
+/* Ensure all interactive elements have explicit touch-action and pointer-events */
 button,
 a,
-input,
-select,
-textarea,
 [role="button"],
 .touch-target,
 .sidebar-nav-item,
-.product-card,
+.header-wishlist-btn,
+.header-cart-btn,
+.header-track-btn,
+.header-assistant-btn,
+.header-auth-btn,
 .category-filter-tab,
 .card-add-btn,
-.backdrop,
-.drawer-backdrop {
-  touch-action: manipulation;
+.product-card {
+  touch-action: manipulation !important;
+  pointer-events: auto !important;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Eliminate persistent focus rings/outlines and sticky hover states on touchscreens */
