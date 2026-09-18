@@ -109,9 +109,21 @@ export default function Homepage({
           badge: nextBadge,
         },
       });
+
+      // Immediately update local UI with the returned canonical banner
       setBannerConfig(next);
+      setTextDraft(next.content);
       setTextEditorOpen(false);
       setTextError('');
+
+      // In background, re-fetch authoritative banner state to guard against RLS/caching races
+      fetchPromoBannerConfig().then((refreshed) => {
+        setBannerConfig(refreshed);
+        setTextDraft(refreshed.content);
+      }).catch((bgErr) => {
+        // Keep UI as-is but surface a console warning for diagnostics
+        console.warn('Background refresh failed after saving promo text:', bgErr);
+      });
     } catch (error: any) {
       setTextError(error?.message || 'Failed to save banner text.');
     }
@@ -144,10 +156,19 @@ export default function Homepage({
         fileDataUrl: imageDraft || null,
         alt: product?.alt || `Promotional product ${imageEditorIndex + 1}`,
       });
+
+      // Apply returned banner state immediately so UI updates without a hard refresh
       setBannerConfig(next);
       setImageEditorIndex(null);
       setImageDraft('');
       setImageError('');
+
+      // Also kick off a background authoritative re-fetch to ensure eventual consistency
+      fetchPromoBannerConfig().then((refreshed) => {
+        setBannerConfig(refreshed);
+      }).catch((bgErr) => {
+        console.warn('Background refresh failed after saving promo image:', bgErr);
+      });
     } catch (error: any) {
       setImageError(error?.message || 'Failed to save the product image.');
     }
@@ -160,6 +181,11 @@ export default function Homepage({
       const product = bannerConfig.products[index];
       const next = await deletePromoBannerProductImage(product?.id, bannerConfig.bannerId);
       setBannerConfig(next);
+
+      // Background refresh to ensure DB is reflected in UI
+      fetchPromoBannerConfig().then((refreshed) => setBannerConfig(refreshed)).catch((bgErr) => {
+        console.warn('Background refresh failed after deleting promo image:', bgErr);
+      });
     } catch (error: any) {
       setImageError(error?.message || 'Failed to remove the product image.');
     }
