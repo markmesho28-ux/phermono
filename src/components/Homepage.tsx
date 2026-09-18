@@ -7,8 +7,10 @@ import { useAuth } from "../contexts/AuthContext";
 import type { Product } from "../types";
 import {
   DEFAULT_PROMO_BANNER,
-  getPromoBannerConfig,
-  savePromoBannerConfig,
+  deletePromoBannerProductImage,
+  fetchPromoBannerConfig,
+  savePromoBannerContent,
+  savePromoBannerProductImage,
   type PromoBannerConfig,
 } from "../utils/promoBanner";
 
@@ -46,13 +48,29 @@ export default function Homepage({
 
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(() => getPromoBannerConfig());
-  const [textDraft, setTextDraft] = useState(() => bannerConfig.content);
+  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(DEFAULT_PROMO_BANNER);
+  const [textDraft, setTextDraft] = useState(DEFAULT_PROMO_BANNER.content);
   const [textEditorOpen, setTextEditorOpen] = useState(false);
   const [imageEditorIndex, setImageEditorIndex] = useState<number | null>(null);
   const [imageDraft, setImageDraft] = useState('');
   const [imageError, setImageError] = useState('');
   const [textError, setTextError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBanner = async () => {
+      const next = await fetchPromoBannerConfig();
+      if (!isMounted) return;
+      setBannerConfig(next);
+      setTextDraft(next.content);
+    };
+
+    loadBanner();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     setTextDraft(bannerConfig.content);
@@ -64,7 +82,7 @@ export default function Homepage({
     { className: 'absolute right-[10%] bottom-[2px] h-[72px] w-[56px] -rotate-[10deg]', sizeClass: 'object-cover' },
   ], []);
 
-  const saveTextValues = () => {
+  const saveTextValues = async () => {
     const nextCampaign = textDraft.campaignLabel.trim() || DEFAULT_PROMO_BANNER.content.campaignLabel;
     const nextHeadline = textDraft.headline.trim() || DEFAULT_PROMO_BANNER.content.headline;
     const nextBadge = textDraft.badge.trim() || DEFAULT_PROMO_BANNER.content.badge;
@@ -82,17 +100,21 @@ export default function Homepage({
       return;
     }
 
-    const next = savePromoBannerConfig({
-      ...bannerConfig,
-      content: {
-        campaignLabel: nextCampaign,
-        headline: nextHeadline,
-        badge: nextBadge,
-      },
-    });
-    setBannerConfig(next);
-    setTextEditorOpen(false);
-    setTextError('');
+    try {
+      const next = await savePromoBannerContent({
+        ...bannerConfig,
+        content: {
+          campaignLabel: nextCampaign,
+          headline: nextHeadline,
+          badge: nextBadge,
+        },
+      });
+      setBannerConfig(next);
+      setTextEditorOpen(false);
+      setTextError('');
+    } catch (error: any) {
+      setTextError(error?.message || 'Failed to save banner text.');
+    }
   };
 
   const handleImageUpload = (file: File | null) => {
@@ -110,28 +132,37 @@ export default function Homepage({
     reader.readAsDataURL(file);
   };
 
-  const saveImageValue = () => {
+  const saveImageValue = async () => {
     if (imageEditorIndex === null) return;
-    const nextProducts = bannerConfig.products.map((product, index) => {
-      if (index !== imageEditorIndex) return product;
-      if (!imageDraft) {
-        return { ...product, image: '', enabled: false };
-      }
-      return { ...product, image: imageDraft, enabled: true };
-    });
 
-    const next = savePromoBannerConfig({ ...bannerConfig, products: nextProducts });
-    setBannerConfig(next);
-    setImageEditorIndex(null);
-    setImageDraft('');
-    setImageError('');
+    try {
+      const product = bannerConfig.products[imageEditorIndex];
+      const next = await savePromoBannerProductImage({
+        bannerId: bannerConfig.bannerId,
+        productId: product?.id,
+        position: imageEditorIndex + 1,
+        fileDataUrl: imageDraft || null,
+        alt: product?.alt || `Promotional product ${imageEditorIndex + 1}`,
+      });
+      setBannerConfig(next);
+      setImageEditorIndex(null);
+      setImageDraft('');
+      setImageError('');
+    } catch (error: any) {
+      setImageError(error?.message || 'Failed to save the product image.');
+    }
   };
 
-  const deleteImageValue = (index: number) => {
+  const deleteImageValue = async (index: number) => {
     if (!window.confirm('Remove this product image from the banner?')) return;
-    const nextProducts = bannerConfig.products.map((product, productIndex) => productIndex === index ? { ...product, image: '', enabled: false } : product);
-    const next = savePromoBannerConfig({ ...bannerConfig, products: nextProducts });
-    setBannerConfig(next);
+
+    try {
+      const product = bannerConfig.products[index];
+      const next = await deletePromoBannerProductImage(product?.id, bannerConfig.bannerId);
+      setBannerConfig(next);
+    } catch (error: any) {
+      setImageError(error?.message || 'Failed to remove the product image.');
+    }
   };
 
   return (
