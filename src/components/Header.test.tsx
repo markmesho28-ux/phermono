@@ -66,8 +66,9 @@ describe('Header Action Buttons', () => {
     expect(defaultProps.onAssistantOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers onMenuToggle when mobile menu button is clicked', () => {
+  it('triggers onMenuToggle when mobile menu button is tapped/clicked', () => {
     render(<Header {...defaultProps} />);
+    // Button handles both onPointerDown (real devices) and onClick (test/fallback).
     fireEvent.click(screen.getByLabelText('Open categories menu'));
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
   });

@@ -229,28 +229,23 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
   return (
     <>
-      {/* Mobile drawer backdrop — covers only below the sticky site header */}
+      {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         onClick={onClose}
-        className={`fixed left-0 right-0 bottom-0 bg-brand-black/60 backdrop-blur-sm z-[80] transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[80] transition-opacity duration-300 md:hidden ${
           mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
-        style={{ top: 'var(--header-height, 0px)' }}
         aria-hidden="true"
       />
 
-      {/* Mobile off-canvas drawer — starts exactly at the bottom edge of the sticky header */}
+      {/* Mobile off-canvas drawer — full viewport height from top to bottom */}
       <aside
-        className={`fixed left-0 w-[290px] sm:w-[320px] max-w-[85vw] bg-white z-[85] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
+        className={`fixed left-0 top-0 w-[290px] sm:w-[320px] max-w-[85vw] h-full bg-white z-[85] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           mobileOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}
-        style={{
-          top: 'var(--header-height, 0px)',
-          height: 'calc(100dvh - var(--header-height, 0px))',
-        }}
         aria-label="Mobile categories navigation"
       >
-        {/* Close button row */}
+        {/* Close button row — pinned at top of the drawer */}
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/80">
           <button
             type="button"
