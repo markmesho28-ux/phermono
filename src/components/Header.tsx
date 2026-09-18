@@ -17,6 +17,7 @@ interface HeaderProps {
   onHomeClick: () => void;
   onAuthOpen?: (open: boolean) => void;
   onMenuToggle?: () => void;
+  isMenuOpen?: boolean;
   activeCategory?: string;
 }
 
@@ -33,11 +34,13 @@ export default function Header({
   onHomeClick,
   onAuthOpen,
   onMenuToggle,
+  isMenuOpen,
   activeCategory,
 }: HeaderProps) {
   // Keep header layout identical across viewports (no mobile-specific stacking)
   const { user, logout } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
+  const lastTouchTimeRef = useRef(0);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -50,6 +53,35 @@ export default function Header({
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
+
+  const handleToggleTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
+    // Prevent the touch event from bubbling to document-level listeners
+    e.preventDefault();
+    e.stopPropagation();
+
+    const now = Date.now();
+    lastTouchTimeRef.current = now;
+    if (onMenuToggle) onMenuToggle();
+  };
+
+  const handleToggleTouchEnd = (e: React.TouchEvent<HTMLButtonElement>) => {
+    // Prevent the touchend from causing a bubbling click to close the sidebar elsewhere
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleToggleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevent the click from bubbling to document listeners
+    e.preventDefault();
+    e.stopPropagation();
+
+    const now = Date.now();
+    // If a touchstart occurred within the last 500ms, ignore this ghost click to prevent double toggling
+    if (now - lastTouchTimeRef.current < 500) {
+      return;
+    }
+    if (onMenuToggle) onMenuToggle();
+  };
 
   return (
     <>
@@ -144,13 +176,12 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onMenuToggle && onMenuToggle();
-                    }}
+                    onTouchStart={handleToggleTouchStart}
+                    onTouchEnd={handleToggleTouchEnd}
+                    onClick={handleToggleClick}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
+                    aria-expanded={isMenuOpen}
                   >
                     <Menu size={20} className="pointer-events-none" />
                   </button>

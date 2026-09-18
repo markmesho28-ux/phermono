@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   Wind,
@@ -37,22 +37,46 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit'>('add');
   const [editingCat, setEditingCat] = useState<Category | null>(null);
+  const [isOpen, setIsOpen] = useState<boolean>(mobileOpen);
+  const openedAtRef = useRef<number>(0);
+
+  // Open when parent signals opening; parent toggles should only open the drawer.
+  // Record the open timestamp so the backdrop can't capture the opening click immediately.
+  useEffect(() => {
+    if (mobileOpen && !isOpen) {
+      setIsOpen(true);
+    }
+  }, [mobileOpen, isOpen]);
 
   useEffect(() => {
-    if (mobileOpen) {
-      document.body.style.overflow = 'hidden';
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape' && onClose) onClose();
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => {
-        document.body.style.overflow = '';
-        window.removeEventListener('keydown', handleKeyDown);
-      };
-    } else {
-      document.body.style.overflow = '';
+    if (isOpen) {
+      openedAtRef.current = Date.now();
     }
-  }, [mobileOpen, onClose]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+    // Ensure body overflow is restored when closed
+    document.body.style.overflow = '';
+    return () => {};
+  }, [isOpen]);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // If the click occurs too soon after opening (within 100ms), ignore it to avoid
+    // capturing the same opening interaction. Otherwise, treat backdrop click as explicit close.
+    if (Date.now() - openedAtRef.current < 100) {
+      return;
+    }
+
+    setIsOpen(false);
+    if (onClose) onClose();
+  };
 
   const openAddModal = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -75,7 +99,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onClick={() => { onSelect("home"); if (onClose) onClose(); }}
+        onClick={() => { onSelect("home"); setIsOpen(false); if (onClose) onClose(); }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
         }`}
@@ -94,7 +118,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
+          onClick={() => { onSelect('orders'); setIsOpen(false); if (onClose) onClose(); }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
           }`}
@@ -140,7 +164,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onClick={() => { onSelect(cat.id); if (onClose) onClose(); }}
+                onClick={() => { onSelect(cat.id); setIsOpen(false); if (onClose) onClose(); }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -198,7 +222,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onClick={() => { onSelect("about"); if (onClose) onClose(); }}
+          onClick={() => { onSelect("about"); setIsOpen(false); if (onClose) onClose(); }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
               ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold"
@@ -233,17 +257,19 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     <>
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
-        onClick={onClose}
+        onClick={handleBackdropClick}
+        data-testid="sidebar-backdrop"
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
-          mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         aria-hidden="true"
       />
 
       {/* Mobile off-canvas drawer — full viewport height taking up 80% screen width up to max-w-sm */}
       <aside
+        onClick={(e) => e.stopPropagation()}
         className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
-          mobileOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
+          isOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}
         aria-label="Mobile categories navigation"
       >
@@ -251,7 +277,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onClick={() => onClose && onClose()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsOpen(false);
+              if (onClose) onClose();
+            }}
             className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
             aria-label="Close menu"
           >

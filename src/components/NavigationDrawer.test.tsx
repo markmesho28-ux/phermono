@@ -173,5 +173,50 @@ describe('Sidebar Mobile Drawer', () => {
     expect(screen.queryByTitle('Edit')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
   });
+
+  it('does NOT trigger onClose when backdrop is clicked immediately upon opening (debounce guard)', () => {
+    const handleClose = jest.fn();
+    render(
+      <Sidebar
+        activeCategory="home"
+        onSelect={jest.fn()}
+        mobileOpen={true}
+        onClose={handleClose}
+      />
+    );
+
+    const backdrop = screen.getByTestId('sidebar-backdrop');
+    // Immediate click right after opening
+    fireEvent.click(backdrop);
+    expect(handleClose).not.toHaveBeenCalled();
+  });
+
+  it('triggers onClose when backdrop is clicked after the debounce period', () => {
+    const handleClose = jest.fn();
+    const realDateNow = Date.now;
+    let mockTime = 1000000;
+    jest.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+    try {
+      render(
+        <Sidebar
+          activeCategory="home"
+          onSelect={jest.fn()}
+          mobileOpen={true}
+          onClose={handleClose}
+        />
+      );
+
+      const backdrop = screen.getByTestId('sidebar-backdrop');
+
+      // Fast-forward mock time beyond the 600ms debounce
+      mockTime += 700;
+
+      fireEvent.click(backdrop);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
 });
 

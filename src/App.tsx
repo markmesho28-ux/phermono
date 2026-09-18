@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import Sidebar from "./components/Sidebar";
@@ -363,8 +363,42 @@ export default function App(){
   const [toast, setToast] = useState<ToastProps>({ message: '', visible: false });
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  // wishlist is rendered as a dedicated page via `activeCategory === 'favorites'`
+  const MOBILE_MENU_KEY = 'ui:mobileMenuOpen';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(() => {
+    try {
+      const stored = sessionStorage.getItem(MOBILE_MENU_KEY);
+      return stored === 'true';
+    } catch (err) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(MOBILE_MENU_KEY, mobileMenuOpen ? 'true' : 'false');
+    } catch (err) {
+      // ignore storage errors
+    }
+  }, [mobileMenuOpen]);
+  const sidebarOpenTimestampRef = useRef<number>(0);
+
+  const handleMenuToggle = useCallback(() => {
+    setMobileMenuOpen(prev => {
+      const next = !prev;
+      if (next) {
+        sidebarOpenTimestampRef.current = Date.now();
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSidebarClose = useCallback(() => {
+    // State toggle isolation: debounce to prevent conflict right after opening
+    if (Date.now() - sidebarOpenTimestampRef.current < 600) {
+      return;
+    }
+    setMobileMenuOpen(false);
+  }, []);
 
   const { products, actions } = useData();
   const { user } = useAuth();
@@ -572,7 +606,8 @@ export default function App(){
           setAuthIntent(null);
           setAuthOpen(!!v);
         }}
-        onMenuToggle={() => setMobileMenuOpen(prev => !prev)}
+        onMenuToggle={handleMenuToggle}
+        isMenuOpen={mobileMenuOpen}
       />
 
       {activeCategory === 'assistant' ? (
@@ -583,7 +618,7 @@ export default function App(){
               activeCategory={activeCategory}
               onSelect={handleCategorySelect}
               mobileOpen={mobileMenuOpen}
-              onClose={() => setMobileMenuOpen(false)}
+              onClose={handleSidebarClose}
             />
 
           <main className="flex-1 min-w-0 px-2 sm:px-4">

@@ -68,8 +68,21 @@ describe('Header Action Buttons', () => {
 
   it('triggers onMenuToggle when mobile menu button is tapped/clicked', () => {
     render(<Header {...defaultProps} />);
-    // Button handles both onPointerDown (real devices) and onClick (test/fallback).
     fireEvent.click(screen.getByLabelText('Open categories menu'));
+    expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('triggers onMenuToggle on touchStart and suppresses subsequent ghost click', () => {
+    render(<Header {...defaultProps} />);
+    const menuBtn = screen.getByLabelText('Open categories menu');
+
+    // 1. Initial touch on mobile
+    fireEvent.touchStart(menuBtn);
+    expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
+
+    // 2. Synthetic delayed ghost click dispatched by browser ~300ms after touch
+    fireEvent.click(menuBtn);
+    // Should still be called only 1 time (ghost click ignored)
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
   });
 });
