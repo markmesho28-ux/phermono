@@ -14,6 +14,7 @@ interface ChatMessage {
 interface ChatWidgetProps {
   products?: Product[];
   mode?: "floating" | "page";
+  sidebarOpen?: boolean;
 }
 
 const defaultMessages: ChatMessage[] = [
@@ -491,7 +492,7 @@ export const formatBotText = (text: string, fallbackText?: string): string => {
   );
 };
 
-export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetProps) {
+export default function ChatWidget({ products = [], mode = "page", sidebarOpen = false }: ChatWidgetProps) {
   const { user } = useAuth();
   const isPageMode = mode === "page";
   const [isOpen, setIsOpen] = useState(isPageMode);
@@ -732,8 +733,8 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
 
   if (mode === "page") {
     return (
-      <div className="w-full bg-brand-cream px-4 py-6 pb-20">
-        <div className="mx-auto w-full max-w-3xl rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl overflow-hidden flex flex-col" style={{ minHeight: "calc(100dvh - 160px)" }}>
+      <div className={`w-full bg-brand-cream px-4 py-6 pb-20 ${sidebarOpen ? "pointer-events-none" : "pointer-events-auto"}`}>
+        <div className={`mx-auto w-full max-w-3xl rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl overflow-hidden flex flex-col ${sidebarOpen ? "pointer-events-none" : "pointer-events-auto"}`} style={{ minHeight: "calc(100dvh - 160px)" }}>
           <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-4 py-3 text-white">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-gold/20 text-brand-gold ring-1 ring-brand-gold/40">

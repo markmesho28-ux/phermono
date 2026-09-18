@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import Sidebar from "./components/Sidebar";
@@ -15,8 +15,8 @@ import ChatWidget from "./components/ChatWidget";
 import { formatOrderDate } from "./utils/orderDate";
 import type { CartItem, OrderInput, Product } from "./types";
 
-function AssistantPage({ products }: { products: Product[] }) {
-  return <ChatWidget products={products} mode="page" />;
+function AssistantPage({ products, sidebarOpen = false }: { products: Product[]; sidebarOpen?: boolean }) {
+  return <ChatWidget products={products} mode="page" sidebarOpen={sidebarOpen} />;
 }
 
 interface ToastProps {
@@ -380,67 +380,14 @@ export default function App(){
       // ignore storage errors
     }
   }, [mobileMenuOpen]);
-  const sidebarOpenTimestampRef = useRef<number>(0);
-  const sidebarLockedRef = useRef<boolean>(false);
-  const sidebarLockTimerRef = useRef<number | null>(null);
-
-  const setSidebarLock = (duration = 500) => {
-    sidebarLockedRef.current = true;
-    if (sidebarLockTimerRef.current) {
-      clearTimeout(sidebarLockTimerRef.current);
-    }
-    sidebarLockTimerRef.current = window.setTimeout(() => {
-      sidebarLockedRef.current = false;
-      sidebarLockTimerRef.current = null;
-    }, duration);
-  };
-
   const handleMenuToggle = useCallback((forceOpen?: boolean) => {
     setMobileMenuOpen(prev => {
-      const next = typeof forceOpen === 'boolean' ? forceOpen : !prev;
-      if (next) {
-        sidebarOpenTimestampRef.current = Date.now();
-        setSidebarLock(500); // lock for 500ms to prevent immediate closes
-      }
-      return next;
+      if (typeof forceOpen === 'boolean') return forceOpen;
+      return !prev;
     });
   }, []);
 
-  // Listen for a global custom event as a resilient fallback (Header will dispatch this
-  // when it needs to toggle the sidebar). This prevents the toggle being lost if a
-  // prop becomes stale or if the Header instance is detached for any reason.
-  useEffect(() => {
-    const handler = () => {
-      setMobileMenuOpen(prev => {
-        const next = !prev;
-        if (next) {
-          sidebarOpenTimestampRef.current = Date.now();
-          setSidebarLock(500);
-        }
-        return next;
-      });
-    };
-    document.addEventListener('phermono:toggleSidebar', handler as EventListener);
-    return () => document.removeEventListener('phermono:toggleSidebar', handler as EventListener);
-  }, []);
-
-  // Ensure we clear any timers on unmount
-  useEffect(() => {
-    return () => {
-      if (sidebarLockTimerRef.current) {
-        clearTimeout(sidebarLockTimerRef.current);
-        sidebarLockTimerRef.current = null;
-      }
-    };
-  }, []);
-
   const handleSidebarClose = useCallback(() => {
-    // Prevent closing if within lock period
-    if (sidebarLockedRef.current) return;
-    // State toggle isolation: debounce to prevent conflict right after opening
-    if (Date.now() - sidebarOpenTimestampRef.current < 500) {
-      return;
-    }
     setMobileMenuOpen(false);
   }, []);
 
@@ -659,7 +606,6 @@ export default function App(){
           activeCategory={activeCategory}
           onSelect={handleCategorySelect}
           mobileOpen={mobileMenuOpen}
-          openSince={sidebarOpenTimestampRef.current}
           onClose={handleSidebarClose}
         />
 
@@ -667,7 +613,7 @@ export default function App(){
           {searchQuery && String(searchQuery).trim() !== '' ? (
             <SearchResults results={searchResults} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
           ) : activeCategory === 'assistant' ? (
-            <AssistantPage products={products} />
+            <AssistantPage products={products} sidebarOpen={mobileMenuOpen} />
           ) : activeCategory === 'home' ? (
             <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
           ) : activeCategory === 'about' ? (

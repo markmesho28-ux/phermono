@@ -27,11 +27,10 @@ interface SidebarProps {
   activeCategory: string;
   onSelect: (id: string) => void;
   mobileOpen?: boolean;
-  openSince?: number; // timestamp (ms) when parent opened the sidebar
   onClose?: () => void;
 }
 
-export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, openSince, onClose }: SidebarProps) {
+export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, onClose }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = Boolean(user && checkIsAdminRole(user));
   const { categories: CATEGORIES, actions } = useData();

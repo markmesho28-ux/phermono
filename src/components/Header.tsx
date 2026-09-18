@@ -41,8 +41,6 @@ export default function Header({
   // Keep header layout identical across viewports (no mobile-specific stacking)
   const { user, logout } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
-  const lastTouchTimeRef = useRef(0);
-  const lastToggleTimeRef = useRef(0);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -56,44 +54,12 @@ export default function Header({
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
 
-  const handleToggleTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
-    // Prevent the touch event from bubbling to document-level listeners
+  const handleMenuButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     e.stopPropagation();
-
-    const now = Date.now();
-    // Debounce duplicate activations within 300ms
-    if (now - lastToggleTimeRef.current < 300) return;
-    lastToggleTimeRef.current = now;
-    lastTouchTimeRef.current = now;
 
     if (onMenuToggle) {
-      // Explicitly open when currently closed to avoid blind toggling
-      if (!isMenuOpen) onMenuToggle(true);
-      else onMenuToggle();
-    }
-  };
-
-  const handleToggleTouchEnd = (e: React.TouchEvent<HTMLButtonElement>) => {
-    // Prevent the touchend from causing a bubbling click to close the sidebar elsewhere
-    e.stopPropagation();
-  };
-
-  const handleToggleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Prevent the click from bubbling to document listeners
-    e.stopPropagation();
-
-    const now = Date.now();
-    // If a touchstart occurred within the last 500ms, ignore this ghost click to prevent double toggling
-    if (now - lastTouchTimeRef.current < 500) {
-      return;
-    }
-    // Also ignore duplicate pointerdown/click within 300ms
-    if (now - lastToggleTimeRef.current < 300) return;
-    lastToggleTimeRef.current = now;
-
-    if (onMenuToggle) {
-      if (!isMenuOpen) onMenuToggle(true);
-      else onMenuToggle();
+      onMenuToggle(true);
     }
   };
 
@@ -190,20 +156,7 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
-                    onPointerDown={(e) => {
-                      const now = Date.now();
-                      if (now - lastToggleTimeRef.current < 300) { e.stopPropagation(); return; }
-                      lastToggleTimeRef.current = now;
-                      e.stopPropagation();
-                      /* dispatch global toggle as resilient fallback */
-                      try { document.dispatchEvent(new CustomEvent('phermono:toggleSidebar')); } catch (err) {}
-                      if (onMenuToggle) {
-                        if (!isMenuOpen) onMenuToggle(true); else onMenuToggle();
-                      }
-                    }}
-                    onTouchStart={handleToggleTouchStart}
-                    onTouchEnd={handleToggleTouchEnd}
-                    onClick={handleToggleClick}
+                    onClick={handleMenuButtonClick}
                     style={{ touchAction: 'manipulation' }}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
@@ -237,8 +190,11 @@ export default function Header({
 
                 <button
                   type="button"
-                  onPointerDown={(e)=>{ e.stopPropagation(); if (onCartOpen) onCartOpen(); }}
-                  onClick={onCartOpen}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onCartOpen) onCartOpen();
+                  }}
                   style={{ touchAction: 'manipulation' }}
                   className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active' : ''
