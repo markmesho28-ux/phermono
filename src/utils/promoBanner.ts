@@ -420,7 +420,7 @@ export const deletePromoBannerProductImage = async (productId?: string, bannerId
     targetQuery = targetQuery.eq('banner_id', activeBannerId);
   }
 
-  const { data, error } = await targetQuery.select().maybeSingle();
+  const { error } = await targetQuery.select().maybeSingle();
   if (error) {
     throw new Error(formatPromoBannerError(error));
   }
