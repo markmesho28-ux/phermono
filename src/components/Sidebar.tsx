@@ -65,7 +65,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   }, [isOpen]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
-    e.preventDefault();
+    // Stop propagation so the click doesn't bubble to document listeners, but do not prevent default
+    // which can block the browser's native touch->click behavior on some devices.
     e.stopPropagation();
 
     // If the click occurs too soon after opening (within 100ms), ignore it to avoid
@@ -79,7 +80,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   };
 
   const openAddModal = (e: React.MouseEvent) => {
-    e.preventDefault();
+    // Only stop propagation; avoid preventDefault to allow instant touch-to-click conversion
     e.stopPropagation();
     setMode('add');
     setEditingCat(null);
@@ -87,7 +88,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   };
 
   const openEditModal = (e: React.MouseEvent, cat: Category) => {
-    e.preventDefault();
     e.stopPropagation();
     setMode('edit');
     setEditingCat(cat);
@@ -278,7 +278,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           <button
             type="button"
             onClick={(e) => {
-              e.preventDefault();
               e.stopPropagation();
               setIsOpen(false);
               if (onClose) onClose();

@@ -56,7 +56,6 @@ export default function Header({
 
   const handleToggleTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
     // Prevent the touch event from bubbling to document-level listeners
-    e.preventDefault();
     e.stopPropagation();
 
     const now = Date.now();
@@ -66,13 +65,11 @@ export default function Header({
 
   const handleToggleTouchEnd = (e: React.TouchEvent<HTMLButtonElement>) => {
     // Prevent the touchend from causing a bubbling click to close the sidebar elsewhere
-    e.preventDefault();
     e.stopPropagation();
   };
 
   const handleToggleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     // Prevent the click from bubbling to document listeners
-    e.preventDefault();
     e.stopPropagation();
 
     const now = Date.now();
