@@ -820,12 +820,12 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
   }
 
   return (
-    <div data-chat-widget className="fixed bottom-6 left-6 z-[90] pointer-events-none max-md:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] max-md:left-3 max-md:right-auto">
-      <div data-chat-panel-wrapper className={`pointer-events-none transition-all duration-300 ${isOpen ? "pointer-events-auto opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"}`}>
+    <div data-chat-widget className="fixed bottom-6 left-6 z-[30] pointer-events-none max-md:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] max-md:left-3 max-md:right-auto">
+      <div data-chat-panel-wrapper className={`pointer-events-none transition-all duration-300 ${isOpen ? "pointer-events-auto opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"} z-[30]`}>
         <div
           data-chat-panel
-          className="mb-4 w-[22rem] max-md:fixed max-md:top-[calc(0.75rem+env(safe-area-inset-top))] max-md:right-3 max-md:left-auto max-md:w-[min(270px,calc(100vw-24px))] max-md:max-w-[calc(100vw-24px)] max-md:max-h-[calc(100dvh-104px)] max-md:overflow-hidden overflow-hidden rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:w-[24rem] max-md:rounded-[22px] max-md:flex max-md:flex-col"
-          style={{ maxHeight: "calc(100dvh - 104px)" }}
+          className="mb-4 w-[22rem] max-md:fixed max-md:top-[calc(var(--header-height,64px)+0.5rem)] max-md:right-3 max-md:left-auto max-md:w-[min(270px,calc(100vw-24px))] max-md:max-w-[calc(100vw-24px)] max-md:max-h-[calc(100dvh-104px)] max-md:overflow-hidden overflow-hidden rounded-[28px] border border-stone-200 bg-white/95 shadow-[0_25px_60px_-18px_rgba(15,23,42,0.35)] backdrop-blur-xl sm:w-[24rem] max-md:rounded-[22px] max-md:flex max-md:flex-col"
+          style={{ maxHeight: "calc(100dvh - 104px)", top: "calc(var(--header-height,64px) + 0.5rem)" }}
         >
           <header className="flex shrink-0 items-center justify-between border-b border-stone-200 bg-gradient-to-r from-brand-black via-brand-charcoal to-stone-900 px-3 py-2.5 text-white max-md:px-3 max-md:py-2.5">
             <div className="flex items-center gap-3">
@@ -928,7 +928,7 @@ export default function ChatWidget({ products = [], mode = "page" }: ChatWidgetP
         data-chat-toggle
         onClick={() => setIsOpen((prev) => !prev)}
         aria-label={isOpen ? "Close chat" : "Open chat"}
-        className="group relative z-[110] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto max-md:h-14 max-md:w-14 touch-target"
+        className="group relative z-[40] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-brand-gold via-amber-400 to-yellow-500 text-brand-black shadow-[0_18px_40px_-12px_rgba(234,179,8,0.75)] transition-all duration-300 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-gold/30 pointer-events-auto max-md:h-14 max-md:w-14 touch-target"
       >
         <span className="absolute inset-0 rounded-full animate-pulse bg-brand-gold/30" />
         <span className="absolute inset-1 rounded-full border border-brand-black/10 bg-white/10" />

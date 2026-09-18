@@ -381,20 +381,64 @@ export default function App(){
     }
   }, [mobileMenuOpen]);
   const sidebarOpenTimestampRef = useRef<number>(0);
+  const sidebarLockedRef = useRef<boolean>(false);
+  const sidebarLockTimerRef = useRef<number | null>(null);
 
-  const handleMenuToggle = useCallback(() => {
+  const setSidebarLock = (duration = 500) => {
+    sidebarLockedRef.current = true;
+    if (sidebarLockTimerRef.current) {
+      clearTimeout(sidebarLockTimerRef.current);
+    }
+    sidebarLockTimerRef.current = window.setTimeout(() => {
+      sidebarLockedRef.current = false;
+      sidebarLockTimerRef.current = null;
+    }, duration);
+  };
+
+  const handleMenuToggle = useCallback((forceOpen?: boolean) => {
     setMobileMenuOpen(prev => {
-      const next = !prev;
+      const next = typeof forceOpen === 'boolean' ? forceOpen : !prev;
       if (next) {
         sidebarOpenTimestampRef.current = Date.now();
+        setSidebarLock(500); // lock for 500ms to prevent immediate closes
       }
       return next;
     });
   }, []);
 
+  // Listen for a global custom event as a resilient fallback (Header will dispatch this
+  // when it needs to toggle the sidebar). This prevents the toggle being lost if a
+  // prop becomes stale or if the Header instance is detached for any reason.
+  useEffect(() => {
+    const handler = () => {
+      setMobileMenuOpen(prev => {
+        const next = !prev;
+        if (next) {
+          sidebarOpenTimestampRef.current = Date.now();
+          setSidebarLock(500);
+        }
+        return next;
+      });
+    };
+    document.addEventListener('phermono:toggleSidebar', handler as EventListener);
+    return () => document.removeEventListener('phermono:toggleSidebar', handler as EventListener);
+  }, []);
+
+  // Ensure we clear any timers on unmount
+  useEffect(() => {
+    return () => {
+      if (sidebarLockTimerRef.current) {
+        clearTimeout(sidebarLockTimerRef.current);
+        sidebarLockTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleSidebarClose = useCallback(() => {
+    // Prevent closing if within lock period
+    if (sidebarLockedRef.current) return;
     // State toggle isolation: debounce to prevent conflict right after opening
-    if (Date.now() - sidebarOpenTimestampRef.current < 600) {
+    if (Date.now() - sidebarOpenTimestampRef.current < 500) {
       return;
     }
     setMobileMenuOpen(false);
@@ -610,55 +654,54 @@ export default function App(){
         isMenuOpen={mobileMenuOpen}
       />
 
-      {activeCategory === 'assistant' ? (
-        <AssistantPage products={products} />
-      ) : (
-        <div className="flex-1 flex max-w-7xl mx-auto w-full relative pointer-events-auto">
-          <Sidebar
-              activeCategory={activeCategory}
-              onSelect={handleCategorySelect}
-              mobileOpen={mobileMenuOpen}
-              onClose={handleSidebarClose}
+      <div className="flex-1 flex max-w-7xl mx-auto w-full relative pointer-events-auto">
+        <Sidebar
+          activeCategory={activeCategory}
+          onSelect={handleCategorySelect}
+          mobileOpen={mobileMenuOpen}
+          openSince={sidebarOpenTimestampRef.current}
+          onClose={handleSidebarClose}
+        />
+
+        <main className="flex-1 min-w-0 px-2 sm:px-4">
+          {searchQuery && String(searchQuery).trim() !== '' ? (
+            <SearchResults results={searchResults} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
+          ) : activeCategory === 'assistant' ? (
+            <AssistantPage products={products} />
+          ) : activeCategory === 'home' ? (
+            <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
+          ) : activeCategory === 'about' ? (
+            <AboutPage
+              onNavigateHome={() => { setActiveCategory('home'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              onNavigateAssistant={() => { setActiveCategory('assistant'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             />
-
-          <main className="flex-1 min-w-0 px-2 sm:px-4">
-            {searchQuery && String(searchQuery).trim() !== '' ? (
-              <SearchResults results={searchResults} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
-            ) : activeCategory === 'home' ? (
-              <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
-            ) : activeCategory === 'about' ? (
-              <AboutPage
-                onNavigateHome={() => { setActiveCategory('home'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                onNavigateAssistant={() => { setActiveCategory('assistant'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              />
-            ) : activeCategory === 'tracking' ? (
-              <TrackingPage />
-            ) : activeCategory === 'profile' ? (
-              <AccountProfile />
-            ) : activeCategory === 'favorites' ? (
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold">Favorite List</h2>
-                </div>
-
-                {wishlist.length === 0 ? (
-                  <div className="text-sm text-stone-500">You have no saved favorites yet.</div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {wishlist.map(p => (
-                      <ProductCard key={p.id} product={p} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} isWishlisted={true} />
-                    ))}
-                  </div>
-                )}
+          ) : activeCategory === 'tracking' ? (
+            <TrackingPage />
+          ) : activeCategory === 'profile' ? (
+            <AccountProfile />
+          ) : activeCategory === 'favorites' ? (
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Favorite List</h2>
               </div>
-            ) : activeCategory === 'orders' ? (
-              <OrdersManagement />
-            ) : (
-              <CategoryView categoryId={activeCategory} initialBrand={selectedBrand} searchQuery={searchQuery} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
-            )}
-          </main>
-        </div>
-      )}
+
+              {wishlist.length === 0 ? (
+                <div className="text-sm text-stone-500">You have no saved favorites yet.</div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {wishlist.map(p => (
+                    <ProductCard key={p.id} product={p} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} isWishlisted={true} />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeCategory === 'orders' ? (
+            <OrdersManagement />
+          ) : (
+            <CategoryView categoryId={activeCategory} initialBrand={selectedBrand} searchQuery={searchQuery} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
+          )}
+        </main>
+      </div>
 
       <CartDrawer
         isOpen={cartOpen}

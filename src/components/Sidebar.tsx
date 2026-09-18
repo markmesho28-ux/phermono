@@ -27,57 +27,34 @@ interface SidebarProps {
   activeCategory: string;
   onSelect: (id: string) => void;
   mobileOpen?: boolean;
+  openSince?: number; // timestamp (ms) when parent opened the sidebar
   onClose?: () => void;
 }
 
-export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, openSince, onClose }: SidebarProps) {
   const { user } = useAuth();
   const isAdmin = Boolean(user && checkIsAdminRole(user));
   const { categories: CATEGORIES, actions } = useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit'>('add');
   const [editingCat, setEditingCat] = useState<Category | null>(null);
-  const [isOpen, setIsOpen] = useState<boolean>(mobileOpen);
-  const openedAtRef = useRef<number>(0);
+  // Sidebar open state is controlled by parent via `mobileOpen` prop to maintain a single source of truth.
+  // Any close actions should call onClose so the parent can update its state.
 
-  // Open when parent signals opening; parent toggles should only open the drawer.
-  // Record the open timestamp so the backdrop can't capture the opening click immediately.
-  useEffect(() => {
-    if (mobileOpen && !isOpen) {
-      setIsOpen(true);
-    }
-  }, [mobileOpen, isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      openedAtRef.current = Date.now();
-    }
-  }, [isOpen]);
+  // Sidebar open state is controlled by parent via `mobileOpen` prop to maintain a single source of truth.
+  const isOpen = Boolean(mobileOpen);
 
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = ''; };
+      return () => {
+        document.body.style.overflow = '';
+      };
     }
     // Ensure body overflow is restored when closed
     document.body.style.overflow = '';
     return () => {};
   }, [isOpen]);
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    // Stop propagation so the click doesn't bubble to document listeners, but do not prevent default
-    // which can block the browser's native touch->click behavior on some devices.
-    e.stopPropagation();
-
-    // If the click occurs too soon after opening (within 100ms), ignore it to avoid
-    // capturing the same opening interaction. Otherwise, treat backdrop click as explicit close.
-    if (Date.now() - openedAtRef.current < 100) {
-      return;
-    }
-
-    setIsOpen(false);
-    if (onClose) onClose();
-  };
 
   const openAddModal = (e: React.MouseEvent) => {
     // Only stop propagation; avoid preventDefault to allow instant touch-to-click conversion
@@ -99,8 +76,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onPointerDown={(e) => { e.stopPropagation(); onSelect("home"); setIsOpen(false); if (onClose) onClose(); }}
-        onClick={() => { onSelect("home"); setIsOpen(false); if (onClose) onClose(); }}
+        onPointerDown={(e) => { e.stopPropagation(); onSelect("home"); if (onClose) onClose(); }}
+        onClick={() => { onSelect("home"); if (onClose) onClose(); }}
         style={{ touchAction: 'manipulation' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
@@ -120,7 +97,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onClick={() => { onSelect('orders'); setIsOpen(false); if (onClose) onClose(); }}
+          onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
           }`}
@@ -166,8 +143,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onPointerDown={(e) => { e.stopPropagation(); onSelect(cat.id); setIsOpen(false); if (onClose) onClose(); }}
-                onClick={() => { onSelect(cat.id); setIsOpen(false); if (onClose) onClose(); }}
+                onPointerDown={(e) => { e.stopPropagation(); onSelect(cat.id); if (onClose) onClose(); }}
+                onClick={() => { onSelect(cat.id); if (onClose) onClose(); }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -225,8 +202,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onPointerDown={(e) => { e.stopPropagation(); onSelect("about"); setIsOpen(false); if (onClose) onClose(); }}
-          onClick={() => { onSelect("about"); setIsOpen(false); if (onClose) onClose(); }}
+          onPointerDown={(e) => { e.stopPropagation(); onSelect("about"); if (onClose) onClose(); }}
+          onClick={() => { onSelect("about"); if (onClose) onClose(); }}
           style={{ touchAction: 'manipulation' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
@@ -262,7 +239,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     <>
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
-        onClick={handleBackdropClick}
         data-testid="sidebar-backdrop"
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -282,10 +258,9 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onPointerDown={(e)=>{ e.stopPropagation(); setIsOpen(false); if (onClose) onClose(); }}
+            onPointerDown={(e)=>{ e.stopPropagation(); if (onClose) onClose(); }}
             onClick={(e) => {
               e.stopPropagation();
-              setIsOpen(false);
               if (onClose) onClose();
             }}
             className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"

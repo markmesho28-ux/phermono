@@ -16,7 +16,8 @@ interface HeaderProps {
   onSearchChange: (value: string) => void;
   onHomeClick: () => void;
   onAuthOpen?: (open: boolean) => void;
-  onMenuToggle?: () => void;
+  // Accept an optional forceOpen boolean to explicitly open the sidebar when desired
+  onMenuToggle?: (forceOpen?: boolean) => void;
   isMenuOpen?: boolean;
   activeCategory?: string;
 }
@@ -41,6 +42,7 @@ export default function Header({
   const { user, logout } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
   const lastTouchTimeRef = useRef(0);
+  const lastToggleTimeRef = useRef(0);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -59,8 +61,16 @@ export default function Header({
     e.stopPropagation();
 
     const now = Date.now();
+    // Debounce duplicate activations within 300ms
+    if (now - lastToggleTimeRef.current < 300) return;
+    lastToggleTimeRef.current = now;
     lastTouchTimeRef.current = now;
-    if (onMenuToggle) onMenuToggle();
+
+    if (onMenuToggle) {
+      // Explicitly open when currently closed to avoid blind toggling
+      if (!isMenuOpen) onMenuToggle(true);
+      else onMenuToggle();
+    }
   };
 
   const handleToggleTouchEnd = (e: React.TouchEvent<HTMLButtonElement>) => {
@@ -77,7 +87,14 @@ export default function Header({
     if (now - lastTouchTimeRef.current < 500) {
       return;
     }
-    if (onMenuToggle) onMenuToggle();
+    // Also ignore duplicate pointerdown/click within 300ms
+    if (now - lastToggleTimeRef.current < 300) return;
+    lastToggleTimeRef.current = now;
+
+    if (onMenuToggle) {
+      if (!isMenuOpen) onMenuToggle(true);
+      else onMenuToggle();
+    }
   };
 
   return (
@@ -173,7 +190,17 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
-                    onPointerDown={(e) => { e.stopPropagation(); if (onMenuToggle) onMenuToggle(); }}
+                    onPointerDown={(e) => {
+                      const now = Date.now();
+                      if (now - lastToggleTimeRef.current < 300) { e.stopPropagation(); return; }
+                      lastToggleTimeRef.current = now;
+                      e.stopPropagation();
+                      /* dispatch global toggle as resilient fallback */
+                      try { document.dispatchEvent(new CustomEvent('phermono:toggleSidebar')); } catch (err) {}
+                      if (onMenuToggle) {
+                        if (!isMenuOpen) onMenuToggle(true); else onMenuToggle();
+                      }
+                    }}
                     onTouchStart={handleToggleTouchStart}
                     onTouchEnd={handleToggleTouchEnd}
                     onClick={handleToggleClick}
