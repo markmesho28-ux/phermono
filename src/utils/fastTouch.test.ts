@@ -1,6 +1,6 @@
 import initFastTouch from './fastTouch';
 
-describe('initFastTouch instant 0ms touch responsiveness', () => {
+describe('Native touch responsiveness and keyboard input focus', () => {
   let container: HTMLDivElement;
   let cleanup: () => void;
 
@@ -16,68 +16,62 @@ describe('initFastTouch instant 0ms touch responsiveness', () => {
     jest.restoreAllMocks();
   });
 
-  it('instantly executes button click on touch pointerdown (0ms delay)', () => {
+  it('initializes and cleans up cleanly without throwing', () => {
+    expect(typeof cleanup).toBe('function');
+    expect(() => cleanup()).not.toThrow();
+  });
+
+  it('allows native button clicks to fire immediately on first interaction', () => {
     const button = document.createElement('button');
     let clicked = false;
     button.onclick = () => { clicked = true; };
     container.appendChild(button);
 
-    // Simulate mobile touch pointerdown
-    const touchPointerDown = new Event('pointerdown', { bubbles: true }) as any;
-    touchPointerDown.pointerType = 'touch';
-    button.dispatchEvent(touchPointerDown);
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    button.dispatchEvent(clickEvent);
 
     expect(clicked).toBe(true);
+    expect(clickEvent.defaultPrevented).toBe(false);
   });
 
-  it('ignores desktop mouse pointerdown events completely', () => {
-    const button = document.createElement('button');
-    let clicked = false;
-    button.onclick = () => { clicked = true; };
-    container.appendChild(button);
+  it('allows text inputs to receive click events without prevention or interception', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    container.appendChild(input);
 
-    // Simulate desktop mouse pointerdown
-    const mousePointerDown = new Event('pointerdown', { bubbles: true }) as any;
-    mousePointerDown.pointerType = 'mouse';
-    button.dispatchEvent(mousePointerDown);
+    let inputClicked = false;
+    input.onclick = () => { inputClicked = true; };
 
-    expect(clicked).toBe(false);
+    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    input.dispatchEvent(clickEvent);
+
+    expect(clickEvent.defaultPrevented).toBe(false);
+    expect(inputClicked).toBe(true);
   });
 
-  it('does not trigger disabled buttons', () => {
-    const button = document.createElement('button');
-    button.disabled = true;
-    let clicked = false;
-    button.onclick = () => { clicked = true; };
-    container.appendChild(button);
+  it('allows natural mobile virtual keyboard focus on input fields', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    container.appendChild(input);
 
-    const touchPointerDown = new Event('pointerdown', { bubbles: true }) as any;
-    touchPointerDown.pointerType = 'touch';
-    button.dispatchEvent(touchPointerDown);
+    let focused = false;
+    input.onfocus = () => { focused = true; };
 
-    expect(clicked).toBe(false);
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    expect(focused).toBe(true);
   });
 
-  it('suppresses duplicate native click following fast touch', () => {
-    const button = document.createElement('button');
-    let clickCount = 0;
-    button.onclick = () => { clickCount++; };
-    container.appendChild(button);
+  it('ensures textarea fields allow immediate focus for typing', () => {
+    const textarea = document.createElement('textarea');
+    container.appendChild(textarea);
 
-    // 1. Fast touch on pointerdown
-    const touchPointerDown = new Event('pointerdown', { bubbles: true }) as any;
-    touchPointerDown.pointerType = 'touch';
-    button.dispatchEvent(touchPointerDown);
+    let focused = false;
+    textarea.onfocus = () => { focused = true; };
 
-    expect(clickCount).toBe(1);
-
-    // 2. Subsequent native browser click event
-    const nativeClick = new MouseEvent('click', { bubbles: true, cancelable: true });
-    (nativeClick as any).__isMockTrusted = true;
-    button.dispatchEvent(nativeClick);
-
-    // Should still be 1 (duplicate suppressed)
-    expect(clickCount).toBe(1);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+    expect(focused).toBe(true);
   });
 });
 

@@ -115,15 +115,18 @@ export default function AdminDashboard() {
           <h3 className="text-lg font-bold text-brand-black mb-4">Add Category</h3>
           <div className="flex gap-2">
             <input
+              type="text"
               value={categoryName}
               onChange={(e) => setCategoryName(e.target.value)}
               placeholder="Category name"
-              className="flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-brand-black outline-none focus:border-brand-gold"
+              className="flex-1 min-h-[44px] rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-base text-brand-black outline-none focus:border-brand-gold pointer-events-auto"
+              style={{ fontSize: '16px' }}
+              autoComplete="off"
             />
               <button
                 type="button"
                 onClick={handleAddCategory}
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white touch-target"
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white touch-target cursor-pointer pointer-events-auto"
               >
               <PlusCircle size={16} /> Add
             </button>
@@ -136,7 +139,7 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => actions.deleteCategory(category.id)}
-                    className="rounded-full p-1.5 text-red-500 hover:bg-red-50 touch-target"
+                    className="rounded-full p-1.5 text-red-500 hover:bg-red-50 touch-target cursor-pointer pointer-events-auto"
                     title="Delete category"
                     aria-label={`Delete ${category.label}`}
                   >
@@ -151,15 +154,18 @@ export default function AdminDashboard() {
           <h3 className="text-lg font-bold text-brand-black mb-4">Add Product</h3>
           <div className="flex gap-2">
             <input
+              type="text"
               value={productName}
               onChange={(e) => setProductName(e.target.value)}
               placeholder="Product name"
-              className="flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-brand-black outline-none focus:border-brand-gold"
+              className="flex-1 min-h-[44px] rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-base text-brand-black outline-none focus:border-brand-gold pointer-events-auto"
+              style={{ fontSize: '16px' }}
+              autoComplete="off"
             />
             <button
               type="button"
               onClick={handleAddProduct}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-black px-3.5 py-2.5 text-sm font-semibold text-white touch-target cursor-pointer pointer-events-auto"
             >
               <PlusCircle size={16} /> Add
             </button>

@@ -11,6 +11,7 @@ export interface Category {
   icon: CategoryIcon;
   color: string;
   accent: string;
+  image?: string;
   subcategories: CategorySubcategory[];
   brands?: string[];
 }

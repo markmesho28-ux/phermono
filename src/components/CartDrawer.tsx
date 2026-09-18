@@ -8,6 +8,7 @@ import {
   Trash2,
   ShieldCheck,
   ArrowRight,
+  MapPin,
 } from "lucide-react";
 
 import type { AuthUser, CartItem, OrderInput, Product } from "../types";
@@ -54,12 +55,24 @@ export function CartDrawer({
 }: CartDrawerProps) {
   const subtotal = cartItems.reduce((s: number, i: CartItem) => s + i.price * i.qty, 0);
 
+  // Delivery address for current order only (temporary override)
+  const [orderGovernorate, setOrderGovernorate] = React.useState(user?.governorate || '');
+  const [orderAddress, setOrderAddress] = React.useState(user?.address || '');
+
+  // Keep state synced with saved profile whenever user changes or checkout opens
+  React.useEffect(() => {
+    if (user) {
+      setOrderGovernorate(user.governorate || '');
+      setOrderAddress(user.address || '');
+    }
+  }, [user, checkoutMode, isOpen]);
+
   const getShippingFee = (governorate?: string) => {
     // Flat rate of 50 for supported governorates; fallback to 50.
     return 50;
   };
 
-  const shippingFee = getShippingFee();
+  const shippingFee = getShippingFee(orderGovernorate);
   const total = subtotal + shippingFee;
 
   const headerContent = checkoutMode ? (
@@ -125,13 +138,53 @@ export function CartDrawer({
         {checkoutMode ? (
           <div className="flex-1 overflow-y-auto px-6 py-4 max-md:px-4 max-md:pb-[calc(env(safe-area-inset-bottom)+5rem)]">
             <div className="space-y-4">
-              {user && (
+              {/* Delivery Address Section (Editable for this order only) */}
+              {user ? (
+                <div className="rounded-2xl border border-stone-200 bg-white p-4 space-y-3.5 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={16} className="text-brand-gold-dark shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-brand-black">
+                      Delivery Address
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-700 mb-1">
+                        Governorate / المحافظة
+                      </label>
+                      <input
+                        type="text"
+                        value={orderGovernorate}
+                        onChange={(e) => setOrderGovernorate(e.target.value)}
+                        placeholder="e.g. أسوان / Cairo / Giza..."
+                        className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all text-brand-black"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-700 mb-1">
+                        Detailed Street Address / العنوان بالتفصيل
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={orderAddress}
+                        onChange={(e) => setOrderAddress(e.target.value)}
+                        placeholder="Street name, building number, floor, apartment..."
+                        className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all text-brand-black resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
                 <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600">
-                  <span className="font-semibold text-brand-black">Delivering to:</span> {user.name} · {user.governorate || 'No governorate selected'}
+                  Please sign in to complete your order.
                 </div>
               )}
+
+              {/* Order Summary */}
               <div className="space-y-4">
-                <div className="bg-stone-50 rounded-2xl p-4">
+                <div className="bg-stone-50 rounded-2xl p-4 border border-stone-100">
                   <div className="flex justify-between text-sm text-stone-600 mb-2">
                     <span>Subtotal</span>
                     <span className="font-semibold text-brand-black">EGP {subtotal.toFixed(2)}</span>
@@ -146,18 +199,21 @@ export function CartDrawer({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-stone-200 bg-white p-2">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500 mb-2">Checkout details</div>
-                  {user ? (
-                    <div className="space-y-2 text-sm text-stone-600">
-                      <div><span className="font-semibold text-brand-black">Name:</span> {user.name}</div>
-                      <div><span className="font-semibold text-brand-black">Phone:</span> {user.phone}</div>
-                      <div><span className="font-semibold text-brand-black">Address:</span> {user.address || 'No address set'}</div>
+                {user && (
+                  <div className="rounded-2xl border border-stone-200 bg-white p-3.5 space-y-1.5 text-xs shadow-xs">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1">
+                      Recipient Details
                     </div>
-                  ) : (
-                    <div className="text-sm text-stone-500">Please sign in to complete checkout.</div>
-                  )}
-                </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>Name:</span>
+                      <span className="font-semibold text-brand-black">{user.name}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>Phone:</span>
+                      <span className="font-semibold text-brand-black">{user.phone}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {user && onPlaceOrder && (
@@ -165,18 +221,26 @@ export function CartDrawer({
                   <button
                     type="button"
                     onClick={() => onBackToBag && onBackToBag()}
-                    className="flex-1 rounded-full border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700 touch-target"
+                    className="flex-1 rounded-full border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700 touch-target cursor-pointer hover:bg-stone-50 transition-colors"
                   >
                     Back
                   </button>
                   <button
                     type="button"
                     onClick={() => {
+                      const finalGovernorate = orderGovernorate.trim() || user.governorate || '';
+                      const finalAddress = orderAddress.trim() || user.address || '';
+
+                      if (!finalGovernorate || !finalAddress) {
+                        alert('Please provide both governorate and detailed address for delivery.');
+                        return;
+                      }
+
                       const order: OrderInput = {
                         name: user.name,
                         phone: user.phone,
-                        governorate: user.governorate,
-                        address: user.address || '',
+                        governorate: finalGovernorate,
+                        address: finalAddress,
                         items: cartItems.map((item) => {
                           const itemPrice = Number(item.price) || 0;
                           const itemQty = Number(item.qty) || 1;
@@ -196,7 +260,7 @@ export function CartDrawer({
                       };
                       onPlaceOrder(order);
                     }}
-                    className="flex-1 rounded-full bg-brand-black px-4 py-3 text-sm font-semibold text-white shadow-lg touch-target"
+                    className="flex-1 rounded-full bg-brand-black hover:bg-brand-charcoal px-4 py-3 text-sm font-semibold text-white shadow-lg touch-target cursor-pointer transition-colors"
                   >
                     Place Order
                   </button>

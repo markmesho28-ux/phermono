@@ -135,7 +135,7 @@ body {
   touch-action: manipulation;
 }
 
-/* Ensure all interactive elements have explicit touch-action and pointer-events */
+/* Ensure all interactive buttons/links have explicit touch-action and pointer-events */
 button,
 a,
 [role="button"],
@@ -152,6 +152,17 @@ a,
   touch-action: manipulation !important;
   pointer-events: auto !important;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Explicitly exempt all inputs, textareas, selects, and text fields so they natively receive touches and trigger the virtual keyboard */
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  pointer-events: auto !important;
+  touch-action: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 /* Eliminate persistent focus rings/outlines and sticky hover states on touchscreens */

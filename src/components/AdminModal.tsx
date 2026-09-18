@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AdminModalProps {
   open: boolean;
@@ -13,40 +14,50 @@ export default function AdminModal({ open, title, children, onClose }: AdminModa
   useEffect(() => {
     if (!open) return;
 
-    const frame = window.requestAnimationFrame(() => {
-      const node = scrollRef.current;
-      if (!node) return;
-      node.scrollTop = 0;
-      node.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    });
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
-    return () => window.cancelAnimationFrame(frame);
-  }, [open, title]);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [open]);
 
   if (!open) return null;
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 bg-black/40 md:inset-0 md:flex md:items-start md:justify-center md:p-4 flex items-end"
-      style={{ top: 'var(--header-height, 0px)' }}
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 pointer-events-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      role="dialog"
+      aria-modal="true"
     >
-      <div className="relative mx-auto flex w-full max-w-[420px] flex-col rounded-t-2xl border border-stone-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18)] box-border md:my-0 md:max-h-[min(90dvh,540px)] md:rounded-2xl md:h-auto md:max-w-[420px] md:w-full">
-        <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/80 px-2.5 py-1.5 sm:px-3 sm:py-2.5">
-          <h3 className="text-[10.5px] font-bold text-brand-black sm:text-xs">{title}</h3>
-          <button onClick={onClose} className="text-[10px] text-stone-600 hover:text-brand-black touch-target sm:text-[11px]">Close</button>
+      <div
+        className="relative mx-auto flex w-full max-w-[460px] flex-col rounded-t-2xl sm:rounded-2xl border border-stone-200 bg-white shadow-2xl max-h-[90dvh] overflow-hidden pointer-events-auto animate-fadeIn"
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/90 px-4 py-3 shrink-0">
+          <h3 className="text-sm font-bold text-brand-black">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-2.5 py-1 text-xs font-semibold text-stone-500 hover:text-brand-black hover:bg-stone-200/60 transition-colors touch-target cursor-pointer pointer-events-auto"
+            aria-label="Close"
+          >
+            Close
+          </button>
         </div>
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pt-3 md:px-3 md:pt-2"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 pointer-events-auto"
           style={{
             WebkitOverflowScrolling: 'touch',
-            // Use the small viewport unit to avoid mobile browser UI glitches and ensure the
-            // modal never exceeds the visible viewport. Allow the inner scroll area to
-            // reach the true bottom and leave room for the fixed bottom nav + safe-area.
-            maxHeight: 'calc(100svh - var(--header-height, 0px) - 12px)',
-            // Keep extra bottom padding so the last input / action buttons are reachable
-            // above the fixed bottom navigation and device safe area.
-            paddingBottom: 'calc(76px + env(safe-area-inset-bottom))',
+            paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
           }}
         >
           {children}
@@ -54,4 +65,10 @@ export default function AdminModal({ open, title, children, onClose }: AdminModa
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+
+  return modalContent;
 }

@@ -54,6 +54,7 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
   icon: row?.icon ?? 'Sparkles',
   color: row?.color ?? '',
   accent: row?.accent ?? '',
+  image: row?.image ? normalizeProductImage(row.image) : '',
   subcategories: (subcategoryRows || [])
     .filter((sub) => String(sub?.category_id) === String(row?.id))
     .map((sub) => ({
@@ -271,9 +272,19 @@ const persistBestSellerFlag = async (productId: number, nextValue: boolean): Pro
 
 function getInitialData() {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          ...EMPTY_DATA,
+          ...parsed,
+          categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+        };
+      }
+    }
   } catch (e) {
-    // ignore storage access issues; the app should boot empty in that case as well
+    // ignore storage access issues
   }
 
   return { ...EMPTY_DATA };
@@ -497,8 +508,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             console.debug('DataContext: debug logging failed', e);
           }
         }
-        // Supabase is the source of truth — replace local lists
-        setCategories(nextCategories);
+        // Supabase is the source of truth — replace local lists if remote data has categories
+        if (nextCategories.length > 0) {
+          setCategories(nextCategories);
+        }
         setBrands(nextBrands);
         // Determine whether brands are scoped to categories (brands have category_id)
         const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
@@ -506,10 +519,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         // Always build per-category brand lists from the fetched `brandsData` rows.
         // Categories with no brands will receive an empty array.
-        if (Array.isArray(brandsData)) {
+        if (Array.isArray(brandsData) && brandsData.length > 0) {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
-        } else {
-          setCategories(prev => prev.map(cat => ({ ...cat, brands: [] } as any)));
         }
         if (Array.isArray(ordersData)) {
           setOrders(ordersData.map((row: any) => {
@@ -578,8 +589,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      let finalImage = String(cat.image || '').trim();
+      if (finalImage && (finalImage.startsWith('data:') || finalImage.startsWith('blob:'))) {
+        try {
+          const uploaded = await uploadImageIfNeeded(finalImage);
+          if (uploaded) finalImage = uploaded;
+        } catch (err) {
+          console.warn('Category image storage upload failed, keeping inline data:', err);
+        }
+      }
+
       const slug = slugify(label);
-      const payload: any = { name: label, slug, description: '', metadata: {} };
+      const payload: any = { name: label, slug, description: '', metadata: {}, image: finalImage };
       const { data, error } = await supabase.from('categories').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase category insert failed:', error.message || error);
@@ -593,6 +614,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               icon: cat.icon || 'Sparkles',
               color: cat.color ?? '',
               accent: cat.accent ?? '',
+              image: fallback.image ? normalizeProductImage(fallback.image) : finalImage,
               subcategories: Array.isArray(cat.subcategories) ? cat.subcategories : [{ id: 'all', label: 'All' }],
               brands: Array.isArray(cat.brands) ? cat.brands : [],
             };
@@ -616,6 +638,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         icon: cat.icon || 'Sparkles',
         color: cat.color ?? '',
         accent: cat.accent ?? '',
+        image: data.image ? normalizeProductImage(data.image) : finalImage,
         subcategories: Array.isArray(cat.subcategories) ? cat.subcategories : [{ id: 'all', label: 'All' }],
         brands: Array.isArray(cat.brands) ? cat.brands : [],
       };
@@ -637,7 +660,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       if (updates.icon !== undefined) row.icon = updates.icon;
       if (updates.color !== undefined) row.color = updates.color;
-      if (updates.accent !== undefined) row.accent = updates.accent;
+      if (updates.image !== undefined) {
+        let finalImage = String(updates.image || '').trim();
+        if (finalImage && (finalImage.startsWith('data:') || finalImage.startsWith('blob:'))) {
+          try {
+            const uploaded = await uploadImageIfNeeded(finalImage);
+            if (uploaded) finalImage = uploaded;
+          } catch (err) {
+            console.warn('Category image storage upload failed, keeping inline data:', err);
+          }
+        }
+        row.image = finalImage;
+        setCategories(prev => prev.map(c => c.id === id ? { ...c, image: finalImage } : c));
+      }
 
       if (Object.keys(row).length === 0) return;
       const { error } = await supabase.from('categories').update(row).eq('id', id).select().single();

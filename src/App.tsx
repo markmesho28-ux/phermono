@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import Sidebar from "./components/Sidebar";
 import Homepage from "./components/Homepage";
 import CategoryView from "./components/CategoryView";
+import AboutPage from "./components/AboutPage";
 import { CartDrawer, QuickViewModal } from "./components/CartDrawer";
 import OrdersManagement from './components/OrdersManagement';
 import AdminDashboard from './components/AdminDashboard';
@@ -247,6 +248,37 @@ function SearchResults({ results, onAddToCart, onQuickView, onWishlist, wishlist
   );
 }
 
+const CART_STORAGE_KEY = 'phermono_cart_v1';
+
+export const getInitialCart = (): CartItem[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(CART_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter(
+          (item): item is CartItem =>
+            item !== null &&
+            typeof item === 'object' &&
+            item.id !== undefined &&
+            item.id !== null &&
+            typeof item.qty === 'number' &&
+            item.qty > 0
+        )
+        .map((item) => ({
+          ...item,
+          price: typeof item.price === 'number' ? item.price : (typeof item.sellingPrice === 'number' ? item.sellingPrice : 0),
+          qty: Math.max(1, Math.floor(item.qty)),
+        }));
+    }
+  } catch (err) {
+    console.warn('Failed to load cart from localStorage:', err);
+  }
+  return [];
+};
+
 export default function App(){
   const [activeCategory, setActiveCategory] = useState('home');
   // profile is rendered as a dedicated page via `activeCategory === 'profile'`
@@ -267,8 +299,32 @@ export default function App(){
   const { products, actions } = useData();
   const { user } = useAuth();
 
-  // sample cartItems state (could be driven by CartContext in a fuller app)
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  // cartItems state with immediate localStorage persistence across page reloads
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => getInitialCart());
+
+  // Synchronize cartItems to localStorage whenever modified (add, update qty, remove)
+  useEffect(() => {
+    try {
+      if (cartItems.length > 0) {
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+      } else {
+        localStorage.removeItem(CART_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.warn('Failed to save cart to localStorage:', err);
+    }
+  }, [cartItems]);
+
+  // Sync across tabs if user modifies cart in another window
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === CART_STORAGE_KEY) {
+        setCartItems(getInitialCart());
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToast({ message: msg, visible: true });
@@ -339,6 +395,9 @@ export default function App(){
   const handleCheckoutConfirm = useCallback((order: OrderInput) => {
     // close UI and give feedback
     setCartItems([]);
+    try {
+      localStorage.removeItem(CART_STORAGE_KEY);
+    } catch (_) {}
     setCartCheckoutMode(false);
     setCartOpen(false);
     showToast('Order placed successfully');
@@ -451,17 +510,22 @@ export default function App(){
       ) : (
         <div className="flex-1 flex max-w-7xl mx-auto w-full relative z-30 pointer-events-auto">
           <Sidebar
-            activeCategory={activeCategory}
-            onSelect={handleCategorySelect}
-            mobileOpen={mobileMenuOpen}
-            onClose={() => setMobileMenuOpen(false)}
-          />
+              activeCategory={activeCategory}
+              onSelect={handleCategorySelect}
+              mobileOpen={mobileMenuOpen}
+              onClose={() => setMobileMenuOpen(false)}
+            />
 
           <main className="flex-1 min-w-0 px-2 sm:px-4">
             {searchQuery && String(searchQuery).trim() !== '' ? (
               <SearchResults results={searchResults} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
             ) : activeCategory === 'home' ? (
               <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
+            ) : activeCategory === 'about' ? (
+              <AboutPage
+                onNavigateHome={() => { setActiveCategory('home'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onNavigateAssistant={() => { setActiveCategory('assistant'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              />
             ) : activeCategory === 'tracking' ? (
               <TrackingPage />
             ) : activeCategory === 'profile' ? (
@@ -518,23 +582,38 @@ export default function App(){
 
       {/* Add Category Modal */}
       {isAddCategoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-6 shadow-lg">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">إضافة فئة جديدة</h3>
-            <label className="text-sm text-gray-600 mb-2 block">اسم الفئة</label>
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsAddCategoryModalOpen(false);
+              setNewCategoryName('');
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="w-full max-w-md bg-white border border-stone-200 rounded-2xl p-6 shadow-2xl pointer-events-auto animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-brand-black mb-3">إضافة فئة جديدة / Add Category</h3>
+            <label className="text-xs font-semibold text-stone-700 mb-1.5 block">اسم الفئة</label>
             <input
-              autoFocus
+              type="text"
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              className="w-full px-3 py-2 mb-4 rounded-lg bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-gold/20"
+              className="w-full min-h-[44px] px-3.5 py-2.5 mb-4 rounded-xl bg-stone-50 border border-stone-200 text-base text-brand-black placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold pointer-events-auto"
+              style={{ fontSize: '16px' }}
               placeholder="مثال: المكياج"
+              autoComplete="off"
             />
 
             <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => { setIsAddCategoryModalOpen(false); setNewCategoryName(''); }}
-                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 touch-target cursor-pointer pointer-events-auto"
               >
                 إلغاء
               </button>
@@ -549,7 +628,7 @@ export default function App(){
                   setNewCategoryName('');
                   showToast('Category added');
                 }}
-                className="px-4 py-2 rounded-lg bg-brand-gold text-black font-semibold hover:brightness-95"
+                className="px-5 py-2 rounded-xl bg-brand-gold text-brand-black font-semibold hover:brightness-95 touch-target cursor-pointer pointer-events-auto shadow-sm"
               >
                 إضافة
               </button>

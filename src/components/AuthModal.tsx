@@ -47,8 +47,20 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 sm:p-7 w-full max-w-md shadow-2xl border border-stone-200/80 animate-fadeIn">
+    <div
+      className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-white rounded-2xl p-6 sm:p-7 w-full max-w-md shadow-2xl border border-stone-200/80 animate-fadeIn pointer-events-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -64,7 +76,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black transition-colors touch-target"
+            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-brand-black transition-colors touch-target cursor-pointer pointer-events-auto"
             aria-label="Close"
           >
             <X size={18} />
@@ -76,7 +88,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={() => { setMode('signin'); setError(null); }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target cursor-pointer pointer-events-auto ${
               mode === 'signin'
                 ? 'bg-brand-black text-white shadow-sm'
                 : 'text-stone-600 hover:text-brand-black'
@@ -87,7 +99,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
           <button
             type="button"
             onClick={() => { setMode('signup'); setError(null); }}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all touch-target cursor-pointer pointer-events-auto ${
               mode === 'signup'
                 ? 'bg-brand-black text-white shadow-sm'
                 : 'text-stone-600 hover:text-brand-black'
@@ -116,7 +128,9 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 placeholder="e.g. Sarah Connor"
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+                className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
+                style={{ fontSize: '16px' }}
+                autoComplete="name"
               />
             </div>
           )}
@@ -138,7 +152,9 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               placeholder={mode === 'signup' ? 'e.g. 01012345678' : 'Enter your registered phone number'}
               value={form.phone}
               onChange={e => setForm({ ...form, phone: e.target.value })}
-              className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+              className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
+              style={{ fontSize: '16px' }}
+              autoComplete="tel"
             />
           </div>
 
@@ -151,7 +167,9 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               placeholder={mode === 'signup' ? 'Create a secure password' : 'Enter your password'}
               value={form.password}
               onChange={e => setForm({ ...form, password: e.target.value })}
-              className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+              className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
+              style={{ fontSize: '16px' }}
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
             />
           </div>
 
@@ -165,7 +183,9 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 placeholder="e.g. 15 Gardenia St, Apt 4B"
                 value={form.address}
                 onChange={e => setForm({ ...form, address: e.target.value })}
-                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all"
+                className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
+                style={{ fontSize: '16px' }}
+                autoComplete="street-address"
               />
             </div>
           )}
@@ -178,7 +198,8 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               <select
                 value={form.governorate}
                 onChange={e => setForm({ ...form, governorate: e.target.value })}
-                className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold text-brand-black transition-all"
+                className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold text-brand-black pointer-events-auto"
+                style={{ fontSize: '16px' }}
               >
                 <option value="">Select your governorate</option>
                 {GOVERNORATES.map(g => (

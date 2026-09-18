@@ -1,5 +1,6 @@
 import React from "react";
 import ProductCard from "./ProductCard";
+import CategoryBar from "./CategoryBar";
 import { useData } from "../contexts/DataContext";
 import type { Product } from "../types";
 
@@ -19,7 +20,7 @@ export default function Homepage({
   wishlist,
   onCategorySelect,
 }: HomepageProps) {
-  const { products } = useData();
+  const { products, categories } = useData();
 
   // New arrivals: strictly by creation date (most recent first). Only include rows that have a valid `createdAt`.
   const sortedProductsByNewest = [...products]
@@ -38,6 +39,12 @@ export default function Homepage({
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">
       <div className="space-y-8 md:space-y-10">
+        {/* Category Cards Section — placed right below header, right above Hero (Best Sellers) section */}
+        <CategoryBar
+          categories={categories}
+          onSelect={onCategorySelect}
+        />
+
         <section className="rounded-[28px] border border-brand-gold/20 bg-gradient-to-b from-brand-black via-brand-charcoal to-brand-stone p-4 md:p-6 shadow-2xl">
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>

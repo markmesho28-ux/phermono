@@ -873,11 +873,13 @@ function ModalContent({
             {mode === 'addBrand' || mode === 'editBrand' ? 'Brand Name' : 'Subcategory Label'}
           </label>
           <input
+            type="text"
             value={simpleLabel}
             onChange={(e) => setSimpleLabel(e.target.value)}
             placeholder={mode === 'addBrand' || mode === 'editBrand' ? 'e.g. CeraVe' : 'e.g. Face Cleansers'}
-            className="w-full min-h-[34px] rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-[15px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px]"
-            autoFocus
+            className="w-full min-h-[44px] rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-base focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 pointer-events-auto sm:min-h-[44px]"
+            style={{ fontSize: '16px' }}
+            autoComplete="off"
           />
         </div>
       )}
