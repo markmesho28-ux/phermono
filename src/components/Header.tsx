@@ -173,9 +173,11 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
+                    onPointerDown={(e) => { e.stopPropagation(); if (onMenuToggle) onMenuToggle(); }}
                     onTouchStart={handleToggleTouchStart}
                     onTouchEnd={handleToggleTouchEnd}
                     onClick={handleToggleClick}
+                    style={{ touchAction: 'manipulation' }}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
                     aria-expanded={isMenuOpen}
@@ -193,7 +195,9 @@ export default function Header({
               <div className="order-2 grid grid-cols-4 gap-1.5 w-full md:flex md:w-auto md:items-center md:justify-end md:gap-2">
                 <button
                   type="button"
+                  onPointerDown={(e)=>{ e.stopPropagation(); if (onWishlistOpen) onWishlistOpen(); }}
                   onClick={onWishlistOpen}
+                  style={{ touchAction: 'manipulation' }}
                   className={`header-wishlist-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "favorites" ? "active" : ""
                   }`}
@@ -206,7 +210,9 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(e)=>{ e.stopPropagation(); if (onCartOpen) onCartOpen(); }}
                   onClick={onCartOpen}
+                  style={{ touchAction: 'manipulation' }}
                   className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active' : ''
                   }`}
@@ -226,7 +232,9 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(e)=>{ e.stopPropagation(); if (onTrackOpen) onTrackOpen(true); }}
                   onClick={() => onTrackOpen && onTrackOpen(true)}
+                  style={{ touchAction: 'manipulation' }}
                   className={`header-track-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "tracking" ? "active" : ""
                   }`}
@@ -239,7 +247,9 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(e)=>{ e.stopPropagation(); if (onAssistantOpen) onAssistantOpen(); }}
                   onClick={onAssistantOpen}
+                  style={{ touchAction: 'manipulation' }}
                   className={`header-assistant-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold tracking-wide text-white shadow-luxury transition hover:bg-brand-charcoal hover:shadow-luxury-hover focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer touch-target md:px-4 md:py-1.5 md:text-sm min-w-0 ${
                     activeCategory === "assistant" ? "active" : ""
                   }`}

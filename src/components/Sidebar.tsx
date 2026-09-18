@@ -99,7 +99,9 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
+        onPointerDown={(e) => { e.stopPropagation(); onSelect("home"); setIsOpen(false); if (onClose) onClose(); }}
         onClick={() => { onSelect("home"); setIsOpen(false); if (onClose) onClose(); }}
+        style={{ touchAction: 'manipulation' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
         }`}
@@ -164,6 +166,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
+                onPointerDown={(e) => { e.stopPropagation(); onSelect(cat.id); setIsOpen(false); if (onClose) onClose(); }}
                 onClick={() => { onSelect(cat.id); setIsOpen(false); if (onClose) onClose(); }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
@@ -222,7 +225,9 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
+          onPointerDown={(e) => { e.stopPropagation(); onSelect("about"); setIsOpen(false); if (onClose) onClose(); }}
           onClick={() => { onSelect("about"); setIsOpen(false); if (onClose) onClose(); }}
+          style={{ touchAction: 'manipulation' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
               ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold"
@@ -277,6 +282,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
+            onPointerDown={(e)=>{ e.stopPropagation(); setIsOpen(false); if (onClose) onClose(); }}
             onClick={(e) => {
               e.stopPropagation();
               setIsOpen(false);
