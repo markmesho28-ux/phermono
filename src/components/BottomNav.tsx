@@ -21,7 +21,7 @@ export default function BottomNav({
 }: BottomNavProps) {
   const { categories: CATEGORIES } = useData();
 
-  const isSpecialPage = ['home', 'favorites', 'orders', 'profile', 'admin', 'tracking', 'assistant'].includes(String(activeCategory));
+  const isSpecialPage = ['home', 'favorites', 'orders', 'profile', 'tracking', 'assistant'].includes(String(activeCategory));
   const activeCategoryObj = CATEGORIES.find(c => String(c.id) === String(activeCategory));
   const isCategoriesActive = isCategoriesOpen || (!isSpecialPage && Boolean(activeCategoryObj));
 

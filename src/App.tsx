@@ -7,7 +7,6 @@ import CategoryView from "./components/CategoryView";
 import AboutPage from "./components/AboutPage";
 import { CartDrawer, QuickViewModal } from "./components/CartDrawer";
 import OrdersManagement from './components/OrdersManagement';
-import AdminDashboard from './components/AdminDashboard';
 import { useData } from "./contexts/DataContext";
 import { useAuth } from "./contexts/AuthContext";
 import { CheckCircle2 } from "lucide-react";
@@ -115,33 +114,53 @@ function TrackingPage() {
 
 function AccountProfile(){
   const { user, updateProfile, changePassword } = useAuth();
-  const [form, setForm] = useState<{ name: string; phone: string; governorate: string; address: string }>({ name: user?.name||'', phone: user?.phone||'', governorate: user?.governorate||'', address: user?.address||'' });
+  const [form, setForm] = useState<{ name: string; phone: string; governorate: string; address: string }>({
+    name: user?.name || '',
+    phone: user?.phone || '',
+    governorate: user?.governorate || '',
+    address: user?.address || '',
+  });
   const [saving, setSaving] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [passState, setPassState] = useState({ current: '', next: '', confirm: '' });
   const [passError, setPassError] = useState('');
-  const [msg, setMsg] = useState('');
+  const [passMsg, setPassMsg] = useState('');
 
   React.useEffect(()=>{
-    setForm({ name: user?.name||'', phone: user?.phone||'', governorate: user?.governorate||'', address: user?.address||'' });
+    setForm({
+      name: user?.name || '',
+      phone: user?.phone || '',
+      governorate: user?.governorate || '',
+      address: user?.address || '',
+    });
   }, [user]);
-
-  
-
-  
-
-  
-
-  
 
   const GOVERNORATES = ['أسوان','أسيوط'];
 
   const saveProfile = async () => {
     setSaving(true);
-    const updates = { name: form.name.trim(), phone: String(form.phone).trim(), governorate: form.governorate, address: form.address.trim() };
-    const res = updateProfile ? updateProfile(updates) : { error: 'Profile update not available' };
-    if (res && res.error) setMsg(res.error); else setMsg('Profile saved');
-    setTimeout(()=>setMsg(''),2000);
-    setSaving(false);
+    setProfileFeedback(null);
+    try {
+      const updates = {
+        name: form.name.trim(),
+        phone: String(form.phone).trim(),
+        governorate: form.governorate,
+        address: form.address.trim(),
+      };
+      const res = updateProfile ? await updateProfile(updates) : { error: 'Profile update not available' };
+      if (res && res.error) {
+        setProfileFeedback({ type: 'error', message: res.error });
+      } else {
+        setProfileFeedback({ type: 'success', message: 'Profile saved successfully!' });
+      }
+    } catch (err: any) {
+      setProfileFeedback({ type: 'error', message: err?.message || 'Failed to save profile' });
+    } finally {
+      setSaving(false);
+      setTimeout(() => {
+        setProfileFeedback(null);
+      }, 4000);
+    }
   };
 
   const changePass = async () => {
@@ -152,8 +171,8 @@ function AccountProfile(){
     if(res && res.error){ setPassError(res.error); return; }
     setPassState({ current:'', next:'', confirm:'' });
     setPassError('');
-    setMsg('Password updated');
-    setTimeout(()=>setMsg(''),2000);
+    setPassMsg('Password updated successfully');
+    setTimeout(()=>setPassMsg(''), 3000);
   };
 
   if(!user) return (
@@ -173,51 +192,102 @@ function AccountProfile(){
       <div className="space-y-4">
         <div>
           <label htmlFor="profile-name" className="text-sm font-semibold text-black">Name</label>
-          <input id="profile-name" aria-label="Name" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} />
+          <input
+            id="profile-name"
+            aria-label="Name"
+            className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          />
         </div>
         <div>
           <label htmlFor="profile-phone" className="text-sm font-semibold text-black">Phone</label>
-          <input id="profile-phone" aria-label="Phone" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} />
+          <input
+            id="profile-phone"
+            aria-label="Phone"
+            className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all"
+            value={form.phone}
+            onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+          />
         </div>
         <div>
           <label htmlFor="profile-governorate" className="text-sm font-semibold text-black">Governorate</label>
-          <select id="profile-governorate" aria-label="Governorate" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={form.governorate} onChange={e=>setForm({...form,governorate:e.target.value})}>
+          <select
+            id="profile-governorate"
+            aria-label="Governorate"
+            className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all"
+            value={form.governorate}
+            onChange={e => setForm(f => ({ ...f, governorate: e.target.value }))}
+          >
             <option value="">Select governorate</option>
-            {GOVERNORATES.map(g=> <option key={g} value={g}>{g}</option>)}
+            {GOVERNORATES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </div>
         <div>
           <label htmlFor="profile-address" className="text-sm font-semibold text-black">Address</label>
-          <textarea id="profile-address" aria-label="Address" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={form.address} onChange={e=>setForm({...form,address:e.target.value})} />
+          <textarea
+            id="profile-address"
+            aria-label="Address"
+            rows={3}
+            className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all"
+            value={form.address}
+            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+          />
         </div>
 
-        <div className="flex gap-2 justify-end">
-          <button onClick={saveProfile} disabled={saving} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto touch-target">{saving ? 'Saving...' : 'Save Profile'}</button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+          {profileFeedback && (
+            <div
+              className={`flex items-center gap-2 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all ${
+                profileFeedback.type === 'success'
+                  ? 'text-emerald-800 bg-emerald-50 border border-emerald-200 shadow-sm'
+                  : 'text-red-800 bg-red-50 border border-red-200 shadow-sm'
+              }`}
+            >
+              {profileFeedback.type === 'success' ? (
+                <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+              ) : (
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+              )}
+              <span>{profileFeedback.message}</span>
+            </div>
+          )}
+          {!profileFeedback && <div className="hidden sm:block" />}
+          <button
+            type="button"
+            onClick={saveProfile}
+            disabled={saving}
+            className="px-5 py-2.5 bg-black text-white text-sm font-semibold rounded-xl w-full sm:w-auto touch-target cursor-pointer hover:bg-stone-800 transition-colors disabled:opacity-60 shadow-sm flex items-center justify-center gap-2"
+          >
+            {saving && (
+              <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            )}
+            <span>{saving ? 'Saving...' : 'Save Profile'}</span>
+          </button>
         </div>
 
-        <hr className="my-3" />
+        <hr className="my-6 border-stone-200" />
 
-        <h3 className="text-lg font-semibold">Change Password</h3>
-        {passError && <div className="text-sm text-red-700">{passError}</div>}
+        <h3 className="text-lg font-semibold text-black">Change Password</h3>
+        {passError && <div className="text-sm font-medium text-red-600 bg-red-50 border border-red-200 p-2.5 rounded-xl">{passError}</div>}
+        {passMsg && <div className="text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl flex items-center gap-2"><CheckCircle2 size={15} className="text-emerald-600 shrink-0" />{passMsg}</div>}
         <div className="mt-2 space-y-4">
           <div>
             <label htmlFor="current-password" className="text-sm font-semibold text-black">Current password</label>
-            <input id="current-password" aria-label="Current password" type="password" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={passState.current} onChange={e=>setPassState(s=>({...s,current:e.target.value}))} />
+            <input id="current-password" aria-label="Current password" type="password" className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all" value={passState.current} onChange={e=>setPassState(s=>({...s,current:e.target.value}))} />
           </div>
           <div>
             <label htmlFor="new-password" className="text-sm font-semibold text-black">New password</label>
-            <input id="new-password" aria-label="New password" type="password" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={passState.next} onChange={e=>setPassState(s=>({...s,next:e.target.value}))} />
+            <input id="new-password" aria-label="New password" type="password" className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all" value={passState.next} onChange={e=>setPassState(s=>({...s,next:e.target.value}))} />
           </div>
           <div>
             <label htmlFor="confirm-password" className="text-sm font-semibold text-black">Confirm new password</label>
-            <input id="confirm-password" aria-label="Confirm new password" type="password" className="w-full p-2 text-sm bg-white text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold" value={passState.confirm} onChange={e=>setPassState(s=>({...s,confirm:e.target.value}))} />
+            <input id="confirm-password" aria-label="Confirm new password" type="password" className="w-full p-2.5 text-sm bg-white text-black border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold transition-all" value={passState.confirm} onChange={e=>setPassState(s=>({...s,confirm:e.target.value}))} />
           </div>
           <div className="flex justify-end pb-6">
-            <button onClick={changePass} className="px-4 py-2 bg-black text-white rounded w-full sm:w-auto touch-target">Update Password</button>
+            <button type="button" onClick={changePass} className="px-5 py-2.5 bg-black text-white text-sm font-semibold rounded-xl w-full sm:w-auto touch-target cursor-pointer hover:bg-stone-800 transition-colors shadow-sm">Update Password</button>
           </div>
         </div>
-
-        {msg && <div className="text-sm text-green-600">{msg}</div>}
       </div>
     </div>
   );
@@ -508,7 +578,7 @@ export default function App(){
       {activeCategory === 'assistant' ? (
         <AssistantPage products={products} />
       ) : (
-        <div className="flex-1 flex max-w-7xl mx-auto w-full relative z-30 pointer-events-auto">
+        <div className="flex-1 flex max-w-7xl mx-auto w-full relative pointer-events-auto">
           <Sidebar
               activeCategory={activeCategory}
               onSelect={handleCategorySelect}
@@ -548,8 +618,6 @@ export default function App(){
               </div>
             ) : activeCategory === 'orders' ? (
               <OrdersManagement />
-            ) : activeCategory === 'admin' ? (
-              <AdminDashboard />
             ) : (
               <CategoryView categoryId={activeCategory} initialBrand={selectedBrand} searchQuery={searchQuery} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
             )}

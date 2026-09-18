@@ -3,6 +3,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import supabase, { SUPABASE_URL } from '../lib/supabase';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
 import { normalizeOrderItems } from '../utils/orderPrice';
+import { checkIsAdminRole, isAdminPhone } from '../utils/admin';
 
 const DataContext = createContext<DataContextValue | null>(null);
 const STORAGE_KEY = 'phermono_data_v1';
@@ -563,6 +564,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setConfirmState({ open: false, message: '' });
   };
 
+  // Helper to verify admin permissions reliably
+  const verifyAdminPermission = async (actionDesc = 'perform this action'): Promise<boolean> => {
+    // 1. Check local session
+    try {
+      const raw = localStorage.getItem('phermono_auth_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (checkIsAdminRole(parsed) || isAdminPhone(parsed?.phone)) return true;
+      }
+    } catch (_) {}
+
+    // 2. Check Supabase auth
+    if (supabase) {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const supaUser = (data as any)?.user;
+        if (supaUser) {
+          if (checkIsAdminRole(supaUser) || isAdminPhone(supaUser?.phone)) return true;
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', supaUser.id)
+            .maybeSingle();
+
+          if (profile && (checkIsAdminRole(profile) || isAdminPhone(profile?.phone))) {
+            return true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    alert(`Admin sign-in required to ${actionDesc}. Please sign in with an admin account.`);
+    return false;
+  };
+
   // Categories
   const addCategory = async (cat: Category) => {
     const label = String(cat?.label || '').trim();
@@ -570,24 +607,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     // Ensure only real authenticated admins may perform writes
     try {
-      const adminCheck = await (async () => {
-        try {
-          const { data, error } = await supabase.auth.getUser();
-          if (error) return false;
-          const supaUser = (data as any)?.user ?? null;
-          if (!supaUser) return false;
-          const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
-          if (pfErr || !profile) return false;
-          return (profile.role === 'admin' || profile.is_admin === true);
-        } catch (err) {
-          return false;
-        }
-      })();
-
-      if (!adminCheck) {
-        alert('Admin sign-in required to create categories. Please sign in with an admin account.');
-        return;
-      }
+      const isAllowed = await verifyAdminPermission('create categories');
+      if (!isAllowed) return;
 
       let finalImage = String(cat.image || '').trim();
       if (finalImage && (finalImage.startsWith('data:') || finalImage.startsWith('blob:'))) {
@@ -917,22 +938,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!label || !supabase) return;
 
     try {
-      // Gather and log authentication/session information for strict tracing
-      const sessionRes = await supabase.auth.getSession();
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      console.debug('addSubcategory: supabase.auth.getSession()', sessionRes?.data ?? sessionRes);
-      console.debug('addSubcategory: supabase.auth.getUser()', { data: authData, error: authErr });
-      if (authErr || !authData?.user) {
-        alert('Admin sign-in required to create subcategories.');
-        return;
-      }
-      const supaUser = (authData as any).user;
-      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
-      console.debug('addSubcategory: profile lookup', { profile, pfErr });
-      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
-        alert('Admin sign-in required to create subcategories.');
-        return;
-      }
+      const isAllowed = await verifyAdminPermission('create subcategories');
+      if (!isAllowed) return;
 
       // Normalize slug and check for existing subcategory within the category scope
       const slug = slugify(label);
@@ -1111,17 +1118,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!clean || !supabase) return;
 
     try {
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !authData?.user) {
-        alert('Admin sign-in required to create brands.');
-        return;
-      }
-      const supaUser = (authData as any).user;
-      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
-      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
-        alert('Admin sign-in required to create brands.');
-        return;
-      }
+      const isAllowed = await verifyAdminPermission('create brands');
+      if (!isAllowed) return;
       // Use normalized slug for lookups
       const slug = slugify(clean);
       const hasCategoryId = brandsHaveCategory;
@@ -1432,17 +1430,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!supabase) return tempId;
 
     try {
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !authData?.user) {
-        alert('Admin sign-in required to create products.');
-        return tempId;
-      }
-      const supaUser = (authData as any).user;
-      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
-      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
-        alert('Admin sign-in required to create products.');
-        return tempId;
-      }
+      const isAllowed = await verifyAdminPermission('create products');
+      if (!isAllowed) return tempId;
 
       // Prepare payload based on discovered schema (do not probe per-call)
       // Build a strict allowlist to avoid sending stale or unsupported columns to Supabase.
@@ -1675,17 +1664,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const adminClearDatabase = async () => {
     if (!supabase) return;
     try {
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !authData?.user) {
-        alert('Admin sign-in required to reset database.');
-        return;
-      }
-      const supaUser = (authData as any).user;
-      const { data: profile, error: pfErr } = await supabase.from('profiles').select('id,role,is_admin').eq('id', supaUser.id).single();
-      if (pfErr || !(profile && (profile.role === 'admin' || profile.is_admin === true))) {
-        alert('Admin sign-in required to reset database.');
-        return;
-      }
+      const isAllowed = await verifyAdminPermission('reset database');
+      if (!isAllowed) return;
 
       // WARNING: The following deletes are destructive. They remove ALL rows from the listed tables.
       const ok = await requestConfirm('WARNING: This will permanently clear core tables (products, orders, brands, subcategories, categories) and remove non-admin profiles. Proceed?');

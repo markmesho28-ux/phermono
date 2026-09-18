@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
+import { checkIsAdminRole } from "../utils/admin";
 import AdminModal from "./AdminModal";
 import type { Category } from "../types";
 
@@ -31,6 +32,7 @@ interface SidebarProps {
 
 export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, onClose }: SidebarProps) {
   const { user } = useAuth();
+  const isAdmin = Boolean(user && checkIsAdminRole(user));
   const { categories: CATEGORIES, actions } = useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit'>('add');
@@ -89,7 +91,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       </button>
 
       {/* Orders Management (Admin only) */}
-      {user && user.role === 'admin' && (
+      {isAdmin && (
         <button
           type="button"
           onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
@@ -112,7 +114,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="flex items-center justify-between px-3 mt-5 mb-3">
         <div className="flex items-center gap-3 pointer-events-none">
           <span className="text-[10px] font-bold tracking-widest text-brand-darkgray uppercase pointer-events-none">Departments</span>
-          {user && user.role === 'admin' && (
+          {isAdmin && (
             <button
               type="button"
               onClick={openAddModal}
@@ -154,7 +156,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
                 {/* Right Side — spacer + arrow */}
                 <div className="flex items-center gap-2 pointer-events-none">
-                  {user && user.role === 'admin' && (
+                  {isAdmin && (
                     <div className="flex gap-1 mr-1 invisible" aria-hidden="true">
                       <div className="p-1 w-5 h-5" />
                       <div className="p-1 w-5 h-5" />
@@ -167,7 +169,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
               </button>
 
               {/* Admin edit/delete buttons outside the nav button */}
-              {user && user.role === 'admin' && (
+              {isAdmin && (
                 <div className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10">
                   <button
                     type="button"
@@ -232,28 +234,28 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         onClick={onClose}
-        className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[80] transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
           mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         aria-hidden="true"
       />
 
-      {/* Mobile off-canvas drawer — full viewport height from top to bottom */}
+      {/* Mobile off-canvas drawer — full viewport height taking up 80% screen width up to max-w-sm */}
       <aside
-        className={`fixed left-0 top-0 w-[290px] sm:w-[320px] max-w-[85vw] h-full bg-white z-[85] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
+        className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           mobileOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}
         aria-label="Mobile categories navigation"
       >
         {/* Close button row — pinned at top of the drawer */}
-        <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/80">
+        <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
             onClick={() => onClose && onClose()}
-            className="p-1.5 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
+            className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
             aria-label="Close menu"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 

@@ -38,8 +38,6 @@ export default function Header({
   // Keep header layout identical across viewports (no mobile-specific stacking)
   const { user, logout } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
-  // Debounce lock: prevents double-fire on rapid double-taps of the hamburger button
-  const menuToggleLockRef = useRef(false);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -143,31 +141,18 @@ export default function Header({
               </div>
 
               <div className="w-full md:flex-1 md:max-w-lg order-3 md:order-2">
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
-                    onPointerDown={(e) => {
-                      // Fastest path on real touch/mouse devices — fires before click.
-                      // releasePointerCapture ensures scroll is not blocked after tap.
-                      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
-                      if (menuToggleLockRef.current) return;
-                      menuToggleLockRef.current = true;
-                      setTimeout(() => { menuToggleLockRef.current = false; }, 350);
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       onMenuToggle && onMenuToggle();
                     }}
-                    onClick={() => {
-                      // Fallback path for environments where onPointerDown doesn't fire
-                      // (e.g. jsdom in unit tests). The debounce lock prevents double-fire
-                      // when both onPointerDown AND onClick fire on the same real tap.
-                      if (menuToggleLockRef.current) return;
-                      menuToggleLockRef.current = true;
-                      setTimeout(() => { menuToggleLockRef.current = false; }, 350);
-                      onMenuToggle && onMenuToggle();
-                    }}
-                    className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-10 h-10 rounded-full bg-brand-cream/80 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
+                    className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
                   >
-                    <Menu size={18} className="pointer-events-none" />
+                    <Menu size={20} className="pointer-events-none" />
                   </button>
                   <div className="relative group flex-1 min-w-0">
                     <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />

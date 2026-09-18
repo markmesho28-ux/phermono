@@ -2,10 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Box, PlusCircle, Tag, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import { checkIsAdminRole } from '../utils/admin';
 import type { Category, Product } from '../types';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const isAdmin = Boolean(user && checkIsAdminRole(user));
   const { categories, products, actions } = useData();
   const [categoryName, setCategoryName] = useState('');
   const [productName, setProductName] = useState('');
@@ -18,7 +20,7 @@ export default function AdminDashboard() {
     [products],
   );
 
-  if (!user || user.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <div className="p-6">
         <h2 className="text-2xl font-bold mb-2">Admin Dashboard</h2>
@@ -106,7 +108,7 @@ export default function AdminDashboard() {
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
           <div className="text-sm text-stone-500">Admin</div>
-          <div className="mt-2 text-lg font-bold text-brand-black">{user.name || 'Administrator'}</div>
+          <div className="mt-2 text-lg font-bold text-brand-black">{user?.name || 'Administrator'}</div>
         </div>
       </div>
 

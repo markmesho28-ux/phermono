@@ -1,13 +1,15 @@
 import React from 'react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
+import { checkIsAdminRole } from '../utils/admin';
 import { formatOrderDate, getOrderTimestamp } from '../utils/orderDate';
 
 export default function OrdersManagement(){
   const { orders, actions } = useData();
   const { user } = useAuth();
+  const isAdmin = Boolean(user && checkIsAdminRole(user));
 
-  if(!user || user.role !== 'admin') return <div className="p-6">Access denied.</div>;
+  if(!isAdmin) return <div className="p-6">Access denied.</div>;
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-6">

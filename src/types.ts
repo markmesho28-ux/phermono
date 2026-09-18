@@ -148,6 +148,6 @@ export interface AuthContextValue {
   signup: (params: SignupParams) => Promise<{ error?: string; user?: AuthUser }>;
   login: (params: LoginParams) => Promise<{ error?: string; user?: AuthUser }>;
   logout: () => void;
-  updateProfile: (updates: ProfileUpdate) => { error?: string; user?: AuthUser };
+  updateProfile: (updates: ProfileUpdate) => Promise<{ error?: string; user?: AuthUser }>;
   changePassword: (params: { currentPassword: string; newPassword: string }) => { error?: string; ok?: boolean };
 }
