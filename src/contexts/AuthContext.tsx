@@ -241,11 +241,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isTargetAdmin = isAdminPhone(cleanPhone) || isAdminPhone(phone);
     const assignedRole = isTargetAdmin ? 'admin' : 'customer';
 
-    // Prevent duplicate local users
-    if (users.some((u) => normalizePhone(u.phone) === cleanPhone)) {
-      return { error: 'Phone already registered locally' };
-    }
-
     try {
       // Generate internal service email for Supabase using the phone number.
       const emailLocalPart = cleanPhone || String(Date.now());
@@ -274,6 +269,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (message.includes('email') && message.includes('confirm')) {
             return {
               error: 'Email confirmation is required by your Supabase project. Disable email confirmation in Supabase Auth, or confirm the email before signing in.',
+            };
+          }
+          if (message.includes('duplicate') || message.includes('already') || message.includes('exists')) {
+            return {
+              error: 'This phone number is already registered in the database. Please sign in or use a different number.',
             };
           }
           return { error: signError.message || 'Unable to create account. Please try again.' };

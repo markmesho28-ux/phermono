@@ -66,6 +66,14 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     if (onClose) onClose();
   };
 
+  const rapidSidebarTouch = (event: React.TouchEvent<HTMLElement>) => {
+    if (event.touches.length === 0) return;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true') return;
+    event.preventDefault();
+    target.click();
+  };
+
   const openAddModal = (e?: React.MouseEvent) => {
     if (e && typeof e.stopPropagation === 'function') {
       e.stopPropagation();
@@ -89,11 +97,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
+        onTouchStart={rapidSidebarTouch}
         onClick={() => {
           onSelect("home");
           if (onClose) onClose();
         }}
-        style={{ touchAction: 'manipulation' }}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
         }`}
@@ -112,11 +121,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
+          onTouchStart={rapidSidebarTouch}
           onClick={() => {
             onSelect('orders');
             if (onClose) onClose();
           }}
-          style={{ touchAction: 'manipulation' }}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
           }`}
@@ -162,10 +172,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
+                onTouchStart={rapidSidebarTouch}
                 onClick={() => {
                   onSelect(cat.id);
                   if (onClose) onClose();
                 }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -230,11 +242,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
+          onTouchStart={rapidSidebarTouch}
           onClick={() => {
             onSelect("about");
             if (onClose) onClose();
           }}
-          style={{ touchAction: 'manipulation' }}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
               ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold"
@@ -270,7 +283,14 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         data-testid="sidebar-backdrop"
+        onTouchStart={(event) => {
+          if (event.touches.length > 0) {
+            event.preventDefault();
+            handleBackdropClick(event as unknown as React.MouseEvent<HTMLDivElement>);
+          }
+        }}
         onClick={handleBackdropClick}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
@@ -279,7 +299,9 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
       {/* Mobile off-canvas drawer — full viewport height taking up 80% screen width up to max-w-sm */}
       <aside
+        onTouchStart={rapidSidebarTouch}
         onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           isOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}

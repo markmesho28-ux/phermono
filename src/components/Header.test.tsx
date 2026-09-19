@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Header from './Header';
 import { useAuth } from '../contexts/AuthContext';
+import initFastTouch from '../utils/fastTouch';
 
 jest.mock('../contexts/AuthContext');
 
@@ -100,5 +101,21 @@ describe('Header Action Buttons', () => {
 
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
     expect(defaultProps.onMenuToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('fires the touch-first activation path for a black button without waiting for a delayed click', () => {
+    const onClick = jest.fn();
+    const destroy = initFastTouch();
+
+    render(
+      <button type="button" className="bg-brand-black touch-target" onClick={onClick}>
+        Buy now
+      </button>
+    );
+
+    fireEvent.touchStart(screen.getByRole('button', { name: 'Buy now' }));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    destroy();
   });
 });
