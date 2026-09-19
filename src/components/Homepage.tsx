@@ -105,8 +105,20 @@ export default function Homepage({
       return;
     }
 
+    const previousBanner = bannerConfig;
+    const optimisticBanner = {
+      ...bannerConfig,
+      content: {
+        ...bannerConfig.content,
+        headline: nextHeadline,
+      },
+    };
+
     setTextSaving(true);
     setTextError('');
+    setBannerConfig(optimisticBanner);
+    setTextDraft(nextHeadline);
+
     try {
       const next = await savePromoBannerContent({
         ...bannerConfig,
@@ -116,19 +128,17 @@ export default function Homepage({
         },
       });
 
-      setBannerConfig(next);
-      setTextDraft(next.content.headline);
+      const refreshed = await fetchPromoBannerConfig();
+      const finalBanner = refreshed && refreshed.content.headline ? refreshed : next;
+
+      setBannerConfig(finalBanner);
+      setTextDraft(finalBanner.content.headline);
       setTextEditorOpen(false);
       setTextError('');
-
-      fetchPromoBannerConfig().then((refreshed) => {
-        setBannerConfig(refreshed);
-        setTextDraft(refreshed.content.headline);
-      }).catch((bgErr) => {
-        console.warn('Background refresh failed after saving promo text:', bgErr);
-      });
     } catch (error: any) {
       console.error('saveTextValues error:', error);
+      setBannerConfig(previousBanner);
+      setTextDraft(previousBanner.content.headline);
       setTextError(error?.message || 'Failed to save banner text.');
     } finally {
       setTextSaving(false);
@@ -322,12 +332,19 @@ export default function Homepage({
                     <button
                       type="button"
                       aria-label="Edit promotional text"
-                      onClick={() => {
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         setTextDraft(bannerConfig.content.headline);
+                        setTextError('');
                         setTextEditorOpen(true);
                       }}
                       className="promo-banner-edit"
-                      style={{ touchAction: 'manipulation' }}
+                      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     >
                       <Edit2 size={12} />
                     </button>
@@ -340,10 +357,31 @@ export default function Homepage({
 
         {imageEditorIndex !== null && isAdmin && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
-            <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+            <div
+              className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-brand-black">Edit Product Image</h3>
-                <button type="button" onClick={() => { setImageEditorIndex(null); setImageDraft(''); setImageError(''); }} className="rounded-full bg-stone-100 p-1.5 text-stone-700"><X size={14} /></button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setImageEditorIndex(null);
+                    setImageDraft('');
+                    setImageError('');
+                  }}
+                  className="rounded-full bg-stone-100 p-1.5 text-stone-700"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <X size={14} />
+                </button>
               </div>
               {imageError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{imageError}</div>}
               <div className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
@@ -363,8 +401,42 @@ export default function Homepage({
                 <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={(e) => handleImageUpload(e.target.files?.[0] || null)} />
               </label>
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => { setImageEditorIndex(null); setImageDraft(''); setImageError(''); }} className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">Cancel</button>
-                <button type="button" onClick={saveImageValue} disabled={imageSaving} aria-busy={imageSaving} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setImageEditorIndex(null);
+                    setImageDraft('');
+                    setImageError('');
+                  }}
+                  className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void saveImageValue();
+                  }}
+                  disabled={imageSaving}
+                  aria-busy={imageSaving}
+                  className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Save
+                </button>
               </div>
             </div>
           </div>
@@ -372,10 +444,30 @@ export default function Homepage({
 
         {textEditorOpen && isAdmin && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
-            <div className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl">
+            <div
+              className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-brand-black">Edit Text</h3>
-                <button type="button" onClick={() => { setTextEditorOpen(false); setTextError(''); }} className="rounded-full bg-stone-100 p-1.5 text-stone-700"><X size={14} /></button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setTextEditorOpen(false);
+                    setTextError('');
+                  }}
+                  className="rounded-full bg-stone-100 p-1.5 text-stone-700"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <X size={14} />
+                </button>
               </div>
               {textError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{textError}</div>}
               <div className="space-y-3">
@@ -385,8 +477,41 @@ export default function Homepage({
                 </div>
               </div>
               <div className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => { setTextEditorOpen(false); setTextError(''); }} className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">Cancel</button>
-                <button type="button" onClick={saveTextValues} disabled={textSaving} aria-busy={textSaving} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setTextEditorOpen(false);
+                    setTextError('');
+                  }}
+                  className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void saveTextValues();
+                  }}
+                  disabled={textSaving}
+                  aria-busy={textSaving}
+                  className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                >
+                  Save
+                </button>
               </div>
             </div>
           </div>
