@@ -24,21 +24,24 @@ export interface PromoBannerConfig {
   };
 }
 
+export const MIDDLE_PROMO_BANNER_PRODUCT_ID = '065575c0-3eee-4310-8180-c5afdbbb73c2';
+
 export const DEFAULT_PROMO_BANNER_PRODUCTS: PromoBannerProductConfig[] = [
   {
-    image: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=700&q=80',
-    alt: 'Luxury perfume bottle',
-    enabled: true,
+    image: '',
+    alt: 'Promotional product slot',
+    enabled: false,
   },
   {
-    image: 'https://images.unsplash.com/photo-1571781926291-c477ebfd024b?auto=format&fit=crop&w=700&q=80',
-    alt: 'Premium serum bottle',
-    enabled: true,
+    id: MIDDLE_PROMO_BANNER_PRODUCT_ID,
+    image: '',
+    alt: 'Promotional product slot',
+    enabled: false,
   },
   {
-    image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=700&q=80',
-    alt: 'Luxury skincare jar',
-    enabled: true,
+    image: '',
+    alt: 'Promotional product slot',
+    enabled: false,
   },
 ];
 
@@ -79,7 +82,7 @@ export const normalizePromoBannerConfig = (value: Partial<PromoBannerConfig> | n
   const products = incomingProducts.slice(0, 3).map((product, index) => sanitizeProduct(product, fallbackProducts[index] || fallbackProducts[0]));
 
   while (products.length < 3) {
-    products.push({ ...fallbackProducts[products.length], enabled: true });
+    products.push({ ...fallbackProducts[products.length], image: '', alt: 'Promotional product slot', enabled: false });
   }
 
   return {
@@ -110,26 +113,62 @@ const resolveStoragePublicUrl = (rawValue: string | null | undefined): string =>
   return `${SUPABASE_URL}/storage/v1/object/public/${normalized}`;
 };
 
+export const buildPromoBannerConfigFromRows = (rows: any[], bannerId?: string): PromoBannerConfig => {
+  const productRows = Array.isArray(rows) ? rows : [];
+  const fallback = DEFAULT_PROMO_BANNER_PRODUCTS.map((product) => ({ ...product }));
+  const orderedRows = [...productRows].sort((a: any, b: any) => {
+    const positionA = Number(a?.position ?? 0);
+    const positionB = Number(b?.position ?? 0);
+    if (positionA !== positionB) return positionA - positionB;
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+  });
+
+  const byPosition = new Map<number, any>();
+  orderedRows.forEach((row: any) => {
+    const position = Number(row?.position ?? 0);
+    if (!Number.isFinite(position) || position <= 0) return;
+    if (!byPosition.has(position)) {
+      byPosition.set(position, row);
+    }
+  });
+
+  const products = [1, 2, 3].map((position) => {
+    const row = byPosition.get(position) ?? orderedRows[position - 1] ?? null;
+    const fallbackProduct = fallback[position - 1] || fallback[0];
+
+    if (!row) {
+      return {
+        ...fallbackProduct,
+        id: position === 2 ? MIDDLE_PROMO_BANNER_PRODUCT_ID : fallbackProduct.id,
+        image: '',
+        alt: 'Promotional product slot',
+        enabled: false,
+      };
+    }
+
+    return {
+      id: typeof row?.id === 'string' ? row.id : position === 2 ? MIDDLE_PROMO_BANNER_PRODUCT_ID : undefined,
+      image: resolveStoragePublicUrl(row?.image_path),
+      alt: typeof row?.alt_text === 'string' ? row.alt_text : `Promotional product ${position}`,
+      enabled: row?.is_enabled !== false && !!row?.image_path,
+    };
+  });
+
+  return normalizePromoBannerConfig({
+    bannerId,
+    products,
+    content: DEFAULT_PROMO_BANNER.content,
+    cta: { enabled: false, text: '', url: '' },
+  });
+};
+
 const mapSupabaseBannerRow = (row: any): PromoBannerConfig => {
   const productRows = Array.isArray(row?.promotional_banner_products) ? row.promotional_banner_products : [];
-  const products = productRows
-    .sort((a: any, b: any) => Number(a?.position ?? 99) - Number(b?.position ?? 99))
-    .slice(0, 3)
-    .map((product: any) => ({
-      id: typeof product?.id === 'string' ? product.id : undefined,
-      image: resolveStoragePublicUrl(product?.image_path),
-      alt: typeof product?.alt_text === 'string' ? product.alt_text : 'Promotional product',
-      enabled: product?.is_enabled !== false && !!product?.image_path,
-    }));
-
-  const fallback = DEFAULT_PROMO_BANNER_PRODUCTS.map((product) => ({ ...product }));
-  while (products.length < 3) {
-    products.push({ ...fallback[products.length], enabled: true });
-  }
+  const config = buildPromoBannerConfigFromRows(productRows, row?.id);
 
   return normalizePromoBannerConfig({
     bannerId: row?.id,
-    products,
+    products: config.products,
     content: {
       campaignLabel: typeof row?.campaign_label === 'string' ? row.campaign_label : DEFAULT_PROMO_BANNER.content.campaignLabel,
       headline: typeof row?.headline === 'string' ? row.headline : DEFAULT_PROMO_BANNER.content.headline,
@@ -168,6 +207,7 @@ const createMissingActiveBanner = async (): Promise<string | null> => {
 
     if (!rows || rows.length === 0) {
       const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
+        ...(product.id ? { id: product.id } : {}),
         banner_id: existingBannerId,
         image_path: product.image,
         alt_text: product.alt,
@@ -204,6 +244,7 @@ const createMissingActiveBanner = async (): Promise<string | null> => {
   if (createError) throw createError;
 
   const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
+    ...(product.id ? { id: product.id } : {}),
     banner_id: created.id,
     image_path: product.image,
     alt_text: product.alt,
@@ -242,26 +283,29 @@ export const ensurePromoBannerExists = async (): Promise<string | null> => {
   return createMissingActiveBanner();
 };
 
+const fetchPromoBannerConfigById = async (bannerId: string): Promise<PromoBannerConfig> => {
+  const { data, error } = await supabase
+    .from('promotional_banners')
+    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
+    .eq('id', bannerId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  if (!data) {
+    return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+  }
+
+  return mapSupabaseBannerRow(data);
+};
+
 export const fetchPromoBannerConfig = async (): Promise<PromoBannerConfig> => {
   try {
     const bannerId = await ensurePromoBannerExists();
     if (!bannerId) return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
-
-    const { data, error } = await supabase
-      .from('promotional_banners')
-      .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
-      .eq('id', bannerId)
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      throw error;
-    }
-
-    if (!data) {
-      return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
-    }
-
-    return mapSupabaseBannerRow(data);
+    return await fetchPromoBannerConfigById(bannerId);
   } catch (error) {
     console.warn('Failed to load promo banner config from Supabase:', error);
     return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
@@ -342,70 +386,171 @@ export const savePromoBannerProductImage = async ({
   fileDataUrl: string | null;
   alt?: string;
 }): Promise<PromoBannerConfig> => {
+  const totalStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const activeBannerId = bannerId || (await ensurePromoBannerExists());
   if (!activeBannerId) {
     throw new Error('No promotional banner exists to update. Ensure a promo banner row exists and the admin session can write to it.');
   }
 
-  let resolvedStoragePath = '';
-  if (fileDataUrl && fileDataUrl.trim()) {
-    const upload = await uploadImageToSupabase(fileDataUrl);
-    resolvedStoragePath = upload.path;
-  }
+  // Use the existing promotional_banner_products.id for the middle product
+  const isMiddle = position === 2 || productId === MIDDLE_PROMO_BANNER_PRODUCT_ID;
+  const effectiveProductId = isMiddle ? (productId || MIDDLE_PROMO_BANNER_PRODUCT_ID) : productId;
 
+  let resolvedStoragePath = '';
+  const uploadStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (fileDataUrl && fileDataUrl.trim()) {
+    const trimmed = fileDataUrl.trim();
+    if (/^https?:\/\//i.test(trimmed)) {
+      // Already an uploaded HTTP/HTTPS URL — reuse directly without re-uploading
+      resolvedStoragePath = trimmed;
+    } else if (trimmed.startsWith('data:')) {
+      const upload = await uploadImageToSupabase(trimmed);
+      resolvedStoragePath = upload.publicUrl || upload.path || '';
+      if (!resolvedStoragePath) {
+        console.warn('uploadImageToSupabase returned no path or publicUrl for the uploaded image.');
+      }
+    } else {
+      resolvedStoragePath = trimmed;
+    }
+  }
+  const uploadMs = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - uploadStart);
+
+  const normalizedResolvedPath = String(resolvedStoragePath || '').replace(/^\/+/, '');
   const updatePayload: Record<string, any> = {
-    image_path: resolvedStoragePath,
+    image_path: normalizedResolvedPath,
     alt_text: typeof alt === 'string' ? alt.slice(0, 150) : '',
-    is_enabled: Boolean(resolvedStoragePath),
+    is_enabled: Boolean(normalizedResolvedPath),
   };
 
   let targetQuery = supabase
     .from('promotional_banner_products')
     .update(updatePayload);
 
-  if (productId) {
-    targetQuery = targetQuery.eq('id', productId);
+  if (effectiveProductId) {
+    targetQuery = targetQuery.eq('id', effectiveProductId);
   } else {
     targetQuery = targetQuery.eq('banner_id', activeBannerId).eq('position', position);
   }
 
-  const { data, error } = await targetQuery
-    .select('id, banner_id, image_path, alt_text, position, is_enabled, banner:banner_id (id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url)')
-    .maybeSingle();
+  const updateStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const { data: updatedRows, error: updateError } = await targetQuery
+    .select('id, banner_id, image_path, alt_text, position, is_enabled');
+  const updateMs = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - updateStart);
 
-  if (error) {
-    throw new Error(formatPromoBannerError(error));
+  if (updateError) {
+    throw new Error(formatPromoBannerError(updateError));
   }
 
-  if (!data) {
-    // Update did not return a single product row — refresh full banner config as a safe fallback
-    return fetchPromoBannerConfig();
+  if (!updatedRows || (Array.isArray(updatedRows) && updatedRows.length === 0)) {
+    const insertPayload = {
+      ...(isMiddle ? { id: MIDDLE_PROMO_BANNER_PRODUCT_ID } : {}),
+      banner_id: activeBannerId,
+      position,
+      image_path: normalizedResolvedPath,
+      alt_text: typeof alt === 'string' ? alt.slice(0, 150) : '',
+      is_enabled: Boolean(normalizedResolvedPath),
+    } as any;
+
+    const insertStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const { error: insertError } = await supabase
+      .from('promotional_banner_products')
+      .insert(insertPayload);
+    const insertMs = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - insertStart);
+
+    if (insertError) {
+      throw new Error(formatPromoBannerError(insertError));
+    }
+
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+      console.debug('[promoBanner] image insert completed', { insertMs, position, bannerId: activeBannerId });
+    }
   }
 
-  const fullBannerId = data?.banner_id || activeBannerId;
-  const { data: reloaded, error: reloadError } = await supabase
-    .from('promotional_banners')
-    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
-    .eq('id', fullBannerId)
-    .maybeSingle();
-
-  if (reloadError) {
-    throw new Error(formatPromoBannerError(reloadError));
+  const totalMs = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - totalStart);
+  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+    console.debug('[promoBanner] image save trace', {
+      totalMs,
+      uploadMs,
+      updateMs,
+      position,
+      bannerId: activeBannerId,
+      productId: effectiveProductId,
+      hasUploadedImage: Boolean(normalizedResolvedPath),
+    });
   }
 
-  if (!reloaded) {
-    return fetchPromoBannerConfig();
-  }
-
-  return mapSupabaseBannerRow(reloaded);
+  return fetchPromoBannerConfigById(activeBannerId);
 };
 
-export const deletePromoBannerProductImage = async (productId?: string, bannerId?: string): Promise<PromoBannerConfig> => {
+export const deletePromoBannerProductImage = async (productId?: string, bannerId?: string, position?: number): Promise<PromoBannerConfig> => {
   const activeBannerId = bannerId || (await ensurePromoBannerExists());
   if (!activeBannerId) {
     throw new Error('No promotional banner exists to update. Ensure a promo banner row exists and the admin session can write to it.');
   }
 
+  // Use the existing promotional_banner_products.id for the middle product
+  const isMiddle = position === 2 || productId === MIDDLE_PROMO_BANNER_PRODUCT_ID;
+  const effectiveProductId = isMiddle ? (productId || MIDDLE_PROMO_BANNER_PRODUCT_ID) : productId;
+  const effectivePosition = isMiddle ? 2 : (position ?? 1);
+
+  // Read existing row to determine if a storage object should be removed
+  const lookupQuery = effectiveProductId
+    ? supabase.from('promotional_banner_products').select('id, banner_id, image_path, alt_text, position, is_enabled').eq('id', effectiveProductId).maybeSingle()
+    : supabase.from('promotional_banner_products').select('id, banner_id, image_path, alt_text, position, is_enabled').eq('banner_id', activeBannerId).eq('position', effectivePosition).maybeSingle();
+
+  const { data: existingRow, error: lookupErr } = await lookupQuery;
+  if (lookupErr) {
+    throw new Error('Failed to lookup promo product for deletion: ' + formatPromoBannerError(lookupErr));
+  }
+
+  // Attempt to remove the storage object if the path appears to be a Supabase storage public URL or storage path
+  try {
+    const rawPath = String(existingRow?.image_path || '').trim();
+    if (rawPath) {
+      // If it's a public URL, derive the storage path after /storage/v1/object/public/
+      let bucket: string | null = null;
+      let objectPath: string | null = null;
+
+      if (/^https?:\/\//i.test(rawPath)) {
+        try {
+          const u = new URL(rawPath);
+          const marker = '/storage/v1/object/public/';
+          const idx = u.pathname.indexOf(marker);
+          if (idx !== -1) {
+            const remainder = u.pathname.slice(idx + marker.length).replace(/^\/+/, '');
+            // remainder starts with bucket/... or just path depending on URL shape
+            const parts = remainder.split('/');
+            if (parts.length > 1) {
+              bucket = parts.shift() || null;
+              objectPath = parts.join('/');
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      } else if (/^[^/]+\/.+/.test(rawPath)) {
+        // format like 'bucket/path/to/object'
+        const parts = rawPath.replace(/^\/+/, '').split('/');
+        if (parts.length > 1) {
+          bucket = parts.shift() || null;
+          objectPath = parts.join('/');
+        }
+      }
+
+      if (bucket && objectPath) {
+        try {
+          await supabase.storage.from(bucket).remove([objectPath]);
+        } catch (remErr) {
+          // Do not fail the whole operation if storage deletion fails; just log
+          console.warn('Failed to remove storage object for promo product image:', remErr);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error while attempting to remove promo product storage object:', e);
+  }
+
+  // Now clear the DB row's image fields
   let targetQuery = supabase
     .from('promotional_banner_products')
     .update({
@@ -414,10 +559,10 @@ export const deletePromoBannerProductImage = async (productId?: string, bannerId
       is_enabled: false,
     });
 
-  if (productId) {
-    targetQuery = targetQuery.eq('id', productId);
+  if (effectiveProductId) {
+    targetQuery = targetQuery.eq('id', effectiveProductId);
   } else {
-    targetQuery = targetQuery.eq('banner_id', activeBannerId);
+    targetQuery = targetQuery.eq('banner_id', activeBannerId).eq('position', effectivePosition);
   }
 
   const { error } = await targetQuery.select().maybeSingle();
@@ -425,8 +570,8 @@ export const deletePromoBannerProductImage = async (productId?: string, bannerId
     throw new Error(formatPromoBannerError(error));
   }
 
-  // If the update affected no rows, still reload the config to reflect DB state
-  return fetchPromoBannerConfig();
+  // Return refreshed canonical banner config
+  return fetchPromoBannerConfigById(activeBannerId);
 };
 
 export const resetPromoBannerConfig = async (): Promise<PromoBannerConfig> => {
@@ -461,6 +606,7 @@ export const resetPromoBannerConfig = async (): Promise<PromoBannerConfig> => {
   }
 
   const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
+    ...(product.id ? { id: product.id } : {}),
     banner_id: bannerId,
     image_path: product.image,
     alt_text: product.alt,

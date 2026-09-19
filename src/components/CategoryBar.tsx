@@ -234,7 +234,7 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
   // Clean skeleton loading state: eliminates temporary placeholder flicker on initial boot
   if (!hasCategories) {
     return (
-      <section className="w-full mb-6 sm:mb-8 select-none" aria-label="Categories">
+      <section id="our-departments" className="w-full mb-6 sm:mb-8 select-none scroll-mt-12" aria-label="Categories">
         <div className="flex items-end justify-between gap-4 mb-4 px-1">
           <div>
             <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.28em] text-brand-gold-dark">
@@ -257,7 +257,7 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
   const activeCategoryIndex = ((currentIndex % baseCount) + baseCount) % baseCount;
 
   return (
-    <section className="w-full mb-6 sm:mb-8 select-none" aria-label="Categories">
+    <section id="our-departments" className="w-full mb-6 sm:mb-8 select-none scroll-mt-12" aria-label="Categories">
       {/* Header with section title, dot indicators, and scroll arrows */}
       <div className="flex items-end justify-between gap-4 mb-4 px-1">
         <div>

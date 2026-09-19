@@ -174,6 +174,81 @@ describe('Sidebar Mobile Drawer', () => {
     expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
   });
 
+  it('selects a category without opening edit or delete actions', () => {
+    const handleSelect = jest.fn();
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { id: 'admin1', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+    });
+
+    render(
+      <Sidebar
+        activeCategory="home"
+        onSelect={handleSelect}
+        mobileOpen={true}
+      />
+    );
+
+    fireEvent.click(screen.getAllByText('Skincare')[0]);
+
+    expect(handleSelect).toHaveBeenCalledTimes(1);
+    expect(handleSelect).toHaveBeenCalledWith('skincare');
+    expect(screen.queryByText('Edit Category')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+  });
+
+  it('clicking Edit opens only the edit form and not the category selection', () => {
+    const handleSelect = jest.fn();
+    const deleteCategory = jest.fn();
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { id: 'admin1', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+    });
+    (useData as jest.Mock).mockReturnValue({
+      categories: mockCategories,
+      actions: { deleteCategory, addCategory: jest.fn(), updateCategory: jest.fn() },
+    });
+
+    render(
+      <Sidebar
+        activeCategory="home"
+        onSelect={handleSelect}
+        mobileOpen={true}
+      />
+    );
+
+    fireEvent.click(screen.getAllByTitle('Edit')[0]);
+
+    expect(handleSelect).not.toHaveBeenCalled();
+    expect(deleteCategory).not.toHaveBeenCalled();
+    expect(screen.getByText('Edit Category')).toBeInTheDocument();
+  });
+
+  it('clicking Delete only triggers the category delete flow and not selection', () => {
+    const handleSelect = jest.fn();
+    const deleteCategory = jest.fn();
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { id: 'admin1', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+    });
+    (useData as jest.Mock).mockReturnValue({
+      categories: mockCategories,
+      actions: { deleteCategory, addCategory: jest.fn(), updateCategory: jest.fn() },
+    });
+
+    render(
+      <Sidebar
+        activeCategory="home"
+        onSelect={handleSelect}
+        mobileOpen={true}
+      />
+    );
+
+    fireEvent.click(screen.getAllByTitle('Delete')[0]);
+
+    expect(handleSelect).not.toHaveBeenCalled();
+    expect(deleteCategory).toHaveBeenCalledTimes(1);
+    expect(deleteCategory).toHaveBeenCalledWith('skincare');
+    expect(screen.queryByText('Edit Category')).not.toBeInTheDocument();
+  });
+
   it('does NOT trigger onClose when backdrop is clicked immediately upon opening (debounce guard)', () => {
     const handleClose = jest.fn();
     render(

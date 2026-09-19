@@ -45,6 +45,317 @@ object {
   max-width: 100%;
 }
 
+.promo-banner-shell {
+  position: relative;
+  background: linear-gradient(90deg, #f9f2ea 0%, #f4e3d4 42%, #f8f3ee 100%);
+  border: 1px solid rgba(68, 51, 43, 0.12);
+  box-shadow: 0 18px 30px rgba(33, 23, 18, 0.08);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.promo-banner-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 104px;
+  padding: 0.7rem 0.8rem 0.7rem 0.9rem;
+}
+
+.promo-banner-bg-sketches {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.promo-banner-bg-sketch {
+  position: absolute;
+  display: block;
+  transform-origin: center center;
+  opacity: 0.12;
+}
+
+.promo-banner-bg-sketch--a { left: 5%; top: 12%; transform: rotate(-12deg); }
+.promo-banner-bg-sketch--b { left: 18%; top: 32%; transform: rotate(10deg); }
+.promo-banner-bg-sketch--c { left: 32%; top: 9%; transform: rotate(-8deg); }
+.promo-banner-bg-sketch--d { left: 48%; top: 38%; transform: rotate(12deg); }
+.promo-banner-bg-sketch--e { left: 64%; top: 16%; transform: rotate(-9deg); }
+.promo-banner-bg-sketch--f { left: 77%; top: 52%; transform: rotate(12deg); }
+.promo-banner-bg-sketch--g { left: 11%; bottom: 18%; transform: rotate(-15deg); }
+.promo-banner-bg-sketch--h { left: 25%; bottom: 27%; transform: rotate(9deg); }
+.promo-banner-bg-sketch--i { left: 41%; bottom: 14%; transform: rotate(-10deg); }
+.promo-banner-bg-sketch--j { left: 58%; bottom: 32%; transform: rotate(14deg); }
+.promo-banner-bg-sketch--k { right: 11%; top: 33%; transform: rotate(-10deg); }
+.promo-banner-bg-sketch--l { right: 25%; bottom: 16%; transform: rotate(10deg); }
+.promo-banner-bg-sketch--m { right: 38%; top: 12%; transform: rotate(15deg); }
+.promo-banner-bg-sketch--n { right: 8%; bottom: 7%; transform: rotate(-8deg); }
+
+.promo-banner-bg-sketch--perfume { width: 68px; height: 68px; }
+.promo-banner-bg-sketch--lipstick { width: 52px; height: 52px; }
+.promo-banner-bg-sketch--brush { width: 76px; height: 58px; }
+.promo-banner-bg-sketch--tube { width: 54px; height: 66px; }
+.promo-banner-bg-sketch--jar { width: 58px; height: 62px; }
+.promo-banner-bg-sketch--compact { width: 50px; height: 50px; }
+
+.promo-banner-sketches {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  width: 220px;
+  min-width: 160px;
+  height: 78px;
+  opacity: 0.96;
+}
+
+.promo-banner-sketches--left {
+  margin-right: 0.1rem;
+}
+
+.promo-banner-sketch {
+  display: block;
+  height: 100%;
+  width: auto;
+}
+
+.promo-banner-sketch--perfume {
+  width: 104px;
+}
+
+.promo-banner-sketch--lipstick {
+  width: 52px;
+}
+
+.promo-banner-sketch--brush {
+  width: 52px;
+}
+
+.promo-banner-copy-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.promo-banner-text-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: calc(100% - 9.5rem);
+}
+
+.promo-banner-headline {
+  margin: 0;
+  color: #1d1815;
+  font-size: clamp(0.82rem, 1.8vw, 2.8rem);
+  line-height: 0.92;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+  max-width: 100%;
+  display: block;
+  width: min(100%, 34rem);
+}
+
+.promo-banner-subheadline {
+  margin: 0;
+  color: rgba(29, 24, 21, 0.78);
+  font-size: clamp(0.68rem, 0.9vw, 1rem);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.promo-banner-cta {
+  border: none;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #1a1715 0%, #2d2521 100%);
+  color: #f8f1ea;
+  padding: 0.8rem 1.3rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 10px 18px rgba(26, 23, 21, 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.promo-banner-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(26, 23, 21, 0.18);
+}
+
+.promo-banner-edit,
+.promo-banner-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(24, 19, 15, 0.12);
+  background: rgba(255,255,255,0.92);
+  color: #1a120d;
+  box-shadow: 0 8px 16px rgba(26, 18, 12, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.promo-banner-edit {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.promo-banner-icon-button {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 9999px;
+}
+
+.promo-banner-icon-button--danger {
+  color: #b91c1c;
+}
+
+.promo-banner-product-actions {
+  position: absolute;
+  left: 0.1rem;
+  top: -0.2rem;
+  z-index: 20;
+  display: flex;
+  gap: 0.25rem;
+}
+
+@media (max-width: 860px) {
+  .promo-banner-inner {
+    gap: 0.5rem;
+    min-height: 92px;
+    padding: 0.7rem 0.7rem 0.7rem 0.8rem;
+  }
+
+  .promo-banner-sketches {
+    width: 180px;
+    min-width: 130px;
+    height: 64px;
+  }
+
+  .promo-banner-sketch--perfume {
+    width: 78px;
+  }
+
+  .promo-banner-sketch--lipstick {
+    width: 40px;
+  }
+
+  .promo-banner-sketch--brush {
+    width: 40px;
+  }
+
+  .promo-banner-copy-group {
+    gap: 0.55rem;
+  }
+
+  .promo-banner-text-group {
+    gap: 0.35rem;
+    max-width: calc(100% - 8.5rem);
+  }
+
+  .promo-banner-headline {
+    font-size: clamp(0.75rem, 2.4vw, 2rem);
+  }
+
+  .promo-banner-subheadline {
+    font-size: 0.6rem;
+  }
+
+  .promo-banner-cta {
+    padding: 0.7rem 1rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+  }
+}
+
+@media (max-width: 640px) {
+  .promo-banner-inner {
+    gap: 0.25rem;
+    min-height: 70px;
+    padding: 0.5rem 0.55rem 0.5rem 0.6rem;
+    overflow: hidden;
+  }
+
+  .promo-banner-sketches {
+    width: 118px;
+    min-width: 92px;
+    height: 48px;
+    gap: 0.05rem;
+  }
+
+  .promo-banner-sketch--perfume {
+    width: 54px;
+  }
+
+  .promo-banner-sketch--lipstick {
+    width: 26px;
+  }
+
+  .promo-banner-sketch--brush {
+    width: 26px;
+  }
+
+  .promo-banner-copy-group {
+    gap: 0.25rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .promo-banner-text-group {
+    gap: 0.18rem;
+    min-width: 0;
+    max-width: calc(100% - 5.8rem);
+  }
+
+  .promo-banner-headline {
+    font-size: clamp(0.72rem, 4vw, 1.25rem);
+    letter-spacing: -0.05em;
+    max-width: 100%;
+  }
+
+  .promo-banner-subheadline {
+    font-size: 0.42rem;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .promo-banner-cta {
+    padding: 0.52rem 0.7rem;
+    font-size: 0.48rem;
+    letter-spacing: 0.08em;
+  }
+
+  .promo-banner-edit,
+  .promo-banner-icon-button {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+}
+
 button,
 input,
 select,

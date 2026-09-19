@@ -25,11 +25,13 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
     if (submittingRef.current) return;
     submittingRef.current = true;
     setError(null);
+
     if (!form.phone || !form.password) {
       setError('Phone and password are required');
       submittingRef.current = false;
       return;
     }
+
     try {
       const res = await login({ phone: form.phone, password: form.password });
       if (res.error) {
@@ -49,22 +51,33 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
     if (submittingRef.current) return;
     submittingRef.current = true;
     setError(null);
+
     if (!form.phone || !form.password || !form.name) {
       setError('Name, phone and password are required');
       submittingRef.current = false;
       return;
     }
+
     if (!form.governorate) {
       setError('Please select your governorate');
       submittingRef.current = false;
       return;
     }
+
     try {
-      const res = await signup({ name: form.name, phone: form.phone, address: form.address, governorate: form.governorate, password: form.password });
+      const res = await signup({
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        governorate: form.governorate,
+        password: form.password,
+      });
+
       if (res.error) {
         setError(res.error);
         return;
       }
+
       if (onSuccess) onSuccess(res.user);
       onClose();
     } catch (err: any) {
@@ -264,7 +277,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             {mode === 'signin' ? (
               <button
                 type="submit"
-                onPointerDown={(e)=>{ e.stopPropagation(); handleSignIn(); }}
                 className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 touch-target"
               >
                 Sign In
@@ -272,7 +284,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             ) : (
               <button
                 type="submit"
-                onPointerDown={(e)=>{ e.stopPropagation(); handleSignUp(); }}
                 className="px-5 py-2.5 text-sm font-semibold bg-brand-black text-white rounded-xl shadow-luxury hover:bg-brand-charcoal transition-all active:scale-98 touch-target"
               >
                 Create Account

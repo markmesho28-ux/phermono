@@ -83,7 +83,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  const syncUsersFromProfiles = async () => {
+    if (!supabase) return;
+
+    try {
+      const { data, error } = await supabase.from('profiles').select('*');
+      if (error) {
+        console.error('Failed to fetch profiles from Supabase:', error);
+        return;
+      }
+
+      const profileUsers = (Array.isArray(data) ? data : [])
+        .map((row: any) => {
+          const phone = normalizePhone(row?.phone || '');
+          if (!phone) return null;
+
+          const name = String(row?.name || row?.full_name || 'User').trim() || 'User';
+          const isAdminRole = Boolean(row?.is_admin) || String(row?.role || '').toLowerCase() === 'admin' || isAdminPhone(phone);
+          const finalName = isAdminRole && isAdminPhone(phone) ? 'wassef' : name;
+
+          return {
+            name: finalName,
+            phone,
+            address: row?.address || '',
+            governorate: row?.governorate || '',
+            password: '',
+            role: isAdminRole ? 'admin' : 'customer',
+          } as AuthUserWithPassword;
+        })
+        .filter(Boolean) as AuthUserWithPassword[];
+
+      setUsers((prev) => {
+        const merged = new Map<string, AuthUserWithPassword>();
+
+        prev.forEach((existing) => {
+          const key = normalizePhone(existing.phone || '');
+          if (key) merged.set(key, existing);
+        });
+
+        profileUsers.forEach((profileUser) => {
+          const key = normalizePhone(profileUser.phone || '');
+          if (!key) return;
+          const existing = merged.get(key);
+          merged.set(key, {
+            ...existing,
+            ...profileUser,
+            password: existing?.password || profileUser.password || '',
+            role: profileUser.role || existing?.role || 'customer',
+          });
+        });
+
+        const nextUsers = Array.from(merged.values());
+        try {
+          localStorage.setItem(USERS_KEY, JSON.stringify(nextUsers));
+        } catch (_) {}
+        return nextUsers;
+      });
+    } catch (err) {
+      console.error('Profile sync failed:', err);
+    }
+  };
+
   // On mount, check Supabase auth and synchronize profile / role safely
+  useEffect(() => {
+    void syncUsersFromProfiles();
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -168,7 +233,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signup = async ({ name, phone, address, governorate, password }: SignupParams) => {
     const cleanPhone = normalizePhone(phone);
-    if (!cleanPhone || !password) return { error: 'Phone and password required' };
+    const trimmedName = String(name || '').trim();
+    if (!cleanPhone || !password || !trimmedName) {
+      return { error: 'Name, phone and password are required' };
+    }
 
     const isTargetAdmin = isAdminPhone(cleanPhone) || isAdminPhone(phone);
     const assignedRole = isTargetAdmin ? 'admin' : 'customer';
@@ -179,61 +247,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // Generate internal service email for Supabase using the phone number
+      // Generate internal service email for Supabase using the phone number.
       const emailLocalPart = cleanPhone || String(Date.now());
       const dummyEmail = `${emailLocalPart}@phermono.local`;
 
-      // Sign up via Supabase Auth
       let userId: string | null = null;
+      let signUpWarning: string | null = null;
       if (supabase) {
-        try {
-          const { data: signData, error: signError } = await supabase.auth.signUp({
-            email: dummyEmail,
-            password,
-            options: {
-              data: {
-                phone: cleanPhone,
-                role: assignedRole,
-                is_admin: isTargetAdmin,
-                full_name: name || '',
-              },
+        const { data: signData, error: signError } = await supabase.auth.signUp({
+          email: dummyEmail,
+          password,
+          options: {
+            data: {
+              phone: cleanPhone,
+              role: assignedRole,
+              is_admin: isTargetAdmin,
+              full_name: trimmedName,
+              name: trimmedName,
             },
-          });
+          },
+        });
 
-          if (!signError && signData?.user) {
-            userId = signData.user.id;
+        if (signError) {
+          console.error('Supabase auth.signUp failed:', signError);
+          const message = String(signError.message || '').toLowerCase();
+          if (message.includes('email') && message.includes('confirm')) {
+            return {
+              error: 'Email confirmation is required by your Supabase project. Disable email confirmation in Supabase Auth, or confirm the email before signing in.',
+            };
           }
-        } catch (supaErr) {
-          console.warn('Supabase auth.signUp non-fatal error:', supaErr);
+          return { error: signError.message || 'Unable to create account. Please try again.' };
+        }
+
+        if (!signData?.user?.id) {
+          console.error('Supabase auth.signUp returned no user:', signData);
+          return { error: 'Account creation did not return a user. Please try again.' };
+        }
+
+        userId = signData.user.id;
+
+        if (!signData.session && signData.user.email_confirmed_at === null) {
+          signUpWarning = 'Supabase created the account but email confirmation is required before the user can sign in.';
+          console.warn(signUpWarning);
         }
       }
 
-      // Upsert profile record if userId is available
       if (userId && supabase) {
-        try {
-          const profileName = isTargetAdmin ? 'wassef' : (name || null);
-          const profileRow = {
-            id: userId,
-            email: dummyEmail,
-            role: assignedRole,
-            is_admin: isTargetAdmin,
-            name: profileName,
-            full_name: profileName,
-            phone: cleanPhone,
-            address: address || null,
-            governorate: governorate || null,
-            created_at: new Date().toISOString(),
-          };
+        const profileName = isTargetAdmin ? 'wassef' : trimmedName;
+        const profileRow = {
+          id: userId,
+          email: dummyEmail,
+          role: assignedRole,
+          is_admin: isTargetAdmin,
+          name: profileName,
+          full_name: profileName,
+          phone: cleanPhone,
+          address: address || null,
+          governorate: governorate || null,
+          created_at: new Date().toISOString(),
+        };
 
-          await supabase.from('profiles').upsert([profileRow], { onConflict: 'id' });
-        } catch (e) {
-          console.warn('Profiles upsert exception:', e);
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert([profileRow], { onConflict: 'id' });
+
+        if (profileError) {
+          console.error('Public profiles upsert failed after signup:', profileError);
+          const cause = profileError.message || 'Unknown profile save failure';
+          return {
+            error: `Account creation reached Supabase Auth, but the profile record could not be saved: ${cause}`,
+          };
         }
       }
 
-      // Maintain local users list
       const newUser: AuthUserWithPassword = {
-        name: isTargetAdmin ? 'wassef' : (name || ''),
+        name: isTargetAdmin ? 'wassef' : trimmedName,
         phone: cleanPhone,
         address: address || '',
         governorate: governorate || '',
@@ -241,7 +329,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: assignedRole,
       };
 
-      setUsers((prev) => [...prev, newUser]);
+      setUsers((prev) => {
+        const next = [...prev, newUser];
+        try {
+          localStorage.setItem(USERS_KEY, JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+
+      await syncUsersFromProfiles();
+
       const userSession: AuthUser = {
         name: newUser.name,
         phone: newUser.phone,
@@ -253,7 +350,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userSession);
       return { user: userSession };
     } catch (err: any) {
-      return { error: err?.message || String(err) };
+      console.error('Signup failed:', err);
+      return { error: err?.message || 'Failed to create account.' };
     }
   };
 

@@ -7,6 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 import type { Product } from "../types";
 import {
   DEFAULT_PROMO_BANNER,
+  MIDDLE_PROMO_BANNER_PRODUCT_ID,
   deletePromoBannerProductImage,
   fetchPromoBannerConfig,
   savePromoBannerContent,
@@ -48,22 +49,41 @@ export default function Homepage({
 
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(DEFAULT_PROMO_BANNER);
-  const [textDraft, setTextDraft] = useState(DEFAULT_PROMO_BANNER.content);
+  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig | null>(null);
+  const [textDraft, setTextDraft] = useState('');
   const [textEditorOpen, setTextEditorOpen] = useState(false);
   const [imageEditorIndex, setImageEditorIndex] = useState<number | null>(null);
+  // Keep the exact promotional_banner_products.id for the image being edited to avoid index races
+  const [imageEditorProductId, setImageEditorProductId] = useState<string | null>(null);
   const [imageDraft, setImageDraft] = useState('');
   const [imageError, setImageError] = useState('');
   const [textError, setTextError] = useState('');
+  const [textSaving, setTextSaving] = useState(false);
+  const [imageSaving, setImageSaving] = useState(false);
+  const [bannerLoading, setBannerLoading] = useState(true);
+  // version map to force image re-render (cache-busting) when a product image is updated
+  const [imageVersions, setImageVersions] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let isMounted = true;
 
     const loadBanner = async () => {
-      const next = await fetchPromoBannerConfig();
-      if (!isMounted) return;
-      setBannerConfig(next);
-      setTextDraft(next.content);
+      setBannerLoading(true);
+      try {
+        const next = await fetchPromoBannerConfig();
+        if (!isMounted) return;
+        setBannerConfig(next);
+        setTextDraft(next.content.headline);
+      } catch (error) {
+        if (!isMounted) return;
+        setBannerConfig(null);
+        setTextDraft('');
+        console.warn('Failed to load promo banner config:', error);
+      } finally {
+        if (isMounted) {
+          setBannerLoading(false);
+        }
+      }
     };
 
     loadBanner();
@@ -73,59 +93,54 @@ export default function Homepage({
   }, []);
 
   useEffect(() => {
-    setTextDraft(bannerConfig.content);
+    if (bannerConfig) {
+      setTextDraft(bannerConfig.content.headline);
+    }
   }, [bannerConfig]);
 
   const productSlots = useMemo(() => [
-    { className: 'absolute left-[6%] bottom-[4px] h-[62px] w-[52px] -rotate-[12deg]', sizeClass: 'object-cover' },
-    { className: 'absolute left-[29%] bottom-[6px] h-[68px] w-[52px] rotate-[8deg]', sizeClass: 'object-cover' },
-    { className: 'absolute right-[10%] bottom-[2px] h-[72px] w-[56px] -rotate-[10deg]', sizeClass: 'object-cover' },
+    { className: 'promo-product-slot promo-product-slot-left', sizeClass: 'promo-product-image' },
+    { className: 'promo-product-slot promo-product-slot-middle', sizeClass: 'promo-product-image' },
+    { className: 'promo-product-slot promo-product-slot-right', sizeClass: 'promo-product-image' },
   ], []);
 
   const saveTextValues = async () => {
-    const nextCampaign = textDraft.campaignLabel.trim() || DEFAULT_PROMO_BANNER.content.campaignLabel;
-    const nextHeadline = textDraft.headline.trim() || DEFAULT_PROMO_BANNER.content.headline;
-    const nextBadge = textDraft.badge.trim() || DEFAULT_PROMO_BANNER.content.badge;
+    if (!bannerConfig) return;
 
-    if (nextCampaign.length > 30) {
-      setTextError('Campaign label must be 30 characters or less.');
-      return;
-    }
+    const nextHeadline = textDraft.trim() || bannerConfig.content.headline || DEFAULT_PROMO_BANNER.content.headline;
+
     if (nextHeadline.length > 80) {
       setTextError('Main message must be 80 characters or less.');
       return;
     }
-    if (nextBadge.length > 25) {
-      setTextError('Badge must be 25 characters or less.');
-      return;
-    }
 
+    setTextSaving(true);
+    setTextError('');
     try {
       const next = await savePromoBannerContent({
         ...bannerConfig,
         content: {
-          campaignLabel: nextCampaign,
+          ...bannerConfig.content,
           headline: nextHeadline,
-          badge: nextBadge,
         },
       });
 
-      // Immediately update local UI with the returned canonical banner
       setBannerConfig(next);
-      setTextDraft(next.content);
+      setTextDraft(next.content.headline);
       setTextEditorOpen(false);
       setTextError('');
 
-      // In background, re-fetch authoritative banner state to guard against RLS/caching races
       fetchPromoBannerConfig().then((refreshed) => {
         setBannerConfig(refreshed);
-        setTextDraft(refreshed.content);
+        setTextDraft(refreshed.content.headline);
       }).catch((bgErr) => {
-        // Keep UI as-is but surface a console warning for diagnostics
         console.warn('Background refresh failed after saving promo text:', bgErr);
       });
     } catch (error: any) {
+      console.error('saveTextValues error:', error);
       setTextError(error?.message || 'Failed to save banner text.');
+    } finally {
+      setTextSaving(false);
     }
   };
 
@@ -145,41 +160,57 @@ export default function Homepage({
   };
 
   const saveImageValue = async () => {
-    if (imageEditorIndex === null) return;
+    if (imageEditorIndex === null || !bannerConfig) return;
 
+    setImageSaving(true);
+    setImageError('');
     try {
-      const product = bannerConfig.products[imageEditorIndex];
+      // Prefer using the stored product id to avoid index races
+      const productFromIndex = bannerConfig.products[imageEditorIndex];
+      const positionToUse = imageEditorIndex + 1;
+      const productIdToUse = imageEditorIndex === 1
+        ? (imageEditorProductId || productFromIndex?.id || MIDDLE_PROMO_BANNER_PRODUCT_ID)
+        : (imageEditorProductId ?? productFromIndex?.id);
+
+      const saveStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const next = await savePromoBannerProductImage({
         bannerId: bannerConfig.bannerId,
-        productId: product?.id,
-        position: imageEditorIndex + 1,
+        productId: productIdToUse ?? undefined,
+        position: positionToUse,
         fileDataUrl: imageDraft || null,
-        alt: product?.alt || `Promotional product ${imageEditorIndex + 1}`,
+        alt: productFromIndex?.alt || `Promotional product ${positionToUse}`,
       });
+
+      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+        const saveMs = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - saveStartedAt);
+        console.debug('[Homepage] image save completed', { saveMs, position: positionToUse, bannerId: bannerConfig.bannerId });
+      }
 
       // Apply returned banner state immediately so UI updates without a hard refresh
       setBannerConfig(next);
       setImageEditorIndex(null);
+      setImageEditorProductId(null);
       setImageDraft('');
       setImageError('');
 
-      // Also kick off a background authoritative re-fetch to ensure eventual consistency
-      fetchPromoBannerConfig().then((refreshed) => {
-        setBannerConfig(refreshed);
-      }).catch((bgErr) => {
-        console.warn('Background refresh failed after saving promo image:', bgErr);
-      });
+      // Force a cache-bust for the updated product image so the <img> updates immediately
+      const productKey = productIdToUse ?? `pos-${imageEditorIndex}`;
+      setImageVersions((prev) => ({ ...prev, [productKey]: (prev[productKey] || 0) + 1 }));
     } catch (error: any) {
+      console.error('saveImageValue error:', error);
       setImageError(error?.message || 'Failed to save the product image.');
-    }
-  };
+    } finally {
+      setImageSaving(false);
+    };  };
 
   const deleteImageValue = async (index: number) => {
-    if (!window.confirm('Remove this product image from the banner?')) return;
+    if (!bannerConfig || !window.confirm('Remove this product image from the banner?')) return;
 
     try {
       const product = bannerConfig.products[index];
-      const next = await deletePromoBannerProductImage(product?.id, bannerConfig.bannerId);
+      const targetId = index === 1 ? (product?.id || MIDDLE_PROMO_BANNER_PRODUCT_ID) : product?.id;
+      const targetPosition = index + 1;
+      const next = await deletePromoBannerProductImage(targetId, bannerConfig.bannerId, targetPosition);
       setBannerConfig(next);
 
       // Background refresh to ensure DB is reflected in UI
@@ -187,6 +218,7 @@ export default function Homepage({
         console.warn('Background refresh failed after deleting promo image:', bgErr);
       });
     } catch (error: any) {
+      console.error('deleteImageValue error:', error);
       setImageError(error?.message || 'Failed to remove the product image.');
     }
   };
@@ -194,93 +226,149 @@ export default function Homepage({
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">
       <div className="space-y-8 md:space-y-10">
-        <div className="relative isolate w-full overflow-hidden rounded-2xl border border-brand-gold/30 bg-[#f5efe7] shadow-[0_16px_36px_rgba(60,47,27,0.08)]">
-          <div
-            aria-hidden="true"
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(circle at 30% 55%, rgba(217,182,118,0.18), rgba(245,239,231,0) 32%), linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%)',
-            }}
-          />
+        {!bannerLoading && bannerConfig && (
+          <div className="relative isolate w-full overflow-hidden rounded-2xl border border-brand-gold/30 bg-[#f5efe7] shadow-[0_16px_36px_rgba(60,47,27,0.08)]">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0"
+              style={{
+                background: 'radial-gradient(circle at 30% 55%, rgba(217,182,118,0.18), rgba(245,239,231,0) 32%), linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%)',
+              }}
+            />
 
-          <div className="relative z-10 flex min-h-[84px] w-full flex-col gap-2 px-3 py-2 text-brand-black sm:min-h-[88px] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-1.5 md:min-h-[88px]">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-              <div className="relative flex h-[72px] w-[34%] shrink-0 items-end justify-center sm:h-[76px] sm:w-[28%] md:h-[82px] lg:w-[30%]">
-                {productSlots.map((slot, index) => {
-                  const product = bannerConfig.products[index] || { image: '', alt: `Promotional product ${index + 1}`, enabled: true };
-                  const showImage = product.enabled && Boolean(product.image);
+            <div className="promo-banner-shell relative z-10 w-full overflow-hidden rounded-[18px] text-brand-black">
+              <div className="promo-banner-bg-sketches" aria-hidden="true">
+              <svg viewBox="0 0 100 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--perfume promo-banner-bg-sketch--a">
+                <path d="M30 24h26v10H30zm4 10h18v28c0 8-6 14-14 14s-14-6-14-14V34z" fill="rgba(160,128,94,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
+                <path d="M40 16h12v10H40zm-2 40c5 5 10 7 17 10" stroke="rgba(26,23,21,0.38)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+                <path d="M28 72h30" stroke="rgba(161,121,92,0.32)" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
 
-                  return (
-                    <div key={`promo-image-${index}`} className={`${slot.className} relative`}>
-                      {showImage ? (
-                        <img
-                          src={product.image}
-                          alt={product.alt || `Promotional product ${index + 1}`}
-                          className={`h-full w-full rounded-[14px] border border-[#1b1713]/70 bg-[linear-gradient(180deg,#ffffff_0%,#f3eadc_100%)] object-cover shadow-[0_18px_22px_rgba(29,22,18,0.13)] ${slot.sizeClass}`}
-                        />
-                      ) : (
-                        <div className="h-full w-full rounded-[14px] border border-[#1b1713]/30 bg-[linear-gradient(180deg,rgba(255,255,255,0.4)_0%,rgba(233,217,195,0.4)_100%)] shadow-[0_12px_18px_rgba(29,22,18,0.08)]" />
-                      )}
+              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--lipstick promo-banner-bg-sketch--b">
+                <path d="M22 18h22l8 14v28c0 9-7 16-16 16H30c-9 0-16-7-16-16V32l8-14z" fill="rgba(205,145,126,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
+                <path d="M28 12h18v10H28z" fill="rgba(207,180,123,0.18)" />
+                <path d="M34 30v32" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M30 48c5 4 9 7 12 14" stroke="rgba(188,137,110,0.32)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+              </svg>
 
-                      {isAdmin && (
-                        <div className="absolute -left-1 top-0 z-20 flex gap-1">
-                          <button
-                            type="button"
-                            aria-label={`Edit product ${index + 1}`}
-                            onClick={(e) => { e.stopPropagation(); setImageEditorIndex(index); setImageDraft(product.image || ''); setImageError(''); }}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white/90 text-brand-black shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-brand-gold/70"
-                            style={{ touchAction: 'manipulation' }}
-                          >
-                            <Edit2 size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Delete product ${index + 1}`}
-                            onClick={(e) => { e.stopPropagation(); deleteImageValue(index); }}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white/90 text-red-500 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-brand-gold/70"
-                            style={{ touchAction: 'manipulation' }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <svg viewBox="0 0 120 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--c">
+                <path d="M18 60c10-16 25-26 42-34 7-4 15-7 23-14 8-6 21-4 27 4 5 7 3 17-2 24-8 12-17 17-28 24-10 6-16 14-26 25H26c-3-9-5-18-8-29z" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.38)" strokeWidth="1.3" />
+                <path d="M50 15c8 5 18 12 27 22" stroke="rgba(188,160,96,0.28)" strokeWidth="1.3" strokeLinecap="round" fill="none" />
+                <path d="M28 60h48" stroke="rgba(26,23,21,0.38)" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
 
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-                <span className="inline-flex shrink-0 items-center rounded-full border border-brand-black/10 bg-white/70 px-2 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-brand-black shadow-sm sm:px-2.5 sm:text-[9px] sm:tracking-[0.22em] sm:text-[10px]">
-                  {bannerConfig.content.campaignLabel}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[10px] font-bold tracking-[0.04em] text-brand-black sm:text-sm md:text-[15px]">
-                    {bannerConfig.content.headline}
-                  </p>
-                </div>
+              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--tube promo-banner-bg-sketch--d">
+                <path d="M28 16h18v16H28zm-6 16h30v24c0 10-8 18-18 18S22 66 22 56V32z" fill="rgba(255,255,255,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
+                <path d="M36 26v36" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M24 54c7 5 13 8 17 13" stroke="rgba(176,125,100,0.3)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+              </svg>
 
-                {isAdmin && (
+              <svg viewBox="0 0 100 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--e">
+                <path d="M28 28h28v20c0 14-9 24-20 24S28 62 28 48V28z" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.3" />
+                <path d="M32 20h20v12H32z" fill="rgba(207,180,123,0.14)" />
+                <path d="M32 54c10 6 18 8 24 12" stroke="rgba(26,23,21,0.34)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--compact promo-banner-bg-sketch--f">
+                <rect x="18" y="24" width="42" height="30" rx="6" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.3" />
+                <path d="M28 22h22" stroke="rgba(26,23,21,0.38)" strokeWidth="1.4" strokeLinecap="round" />
+                <path d="M39 36v13" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M33 42h12" stroke="rgba(205,145,126,0.3)" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 110 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--g">
+                <path d="M15 65c9-18 25-27 41-34 8-4 17-8 26-17 7-7 19-7 25 1 5 8 3 18-2 25-9 13-20 19-31 26-11 8-17 15-26 27H23c-2-8-5-17-8-28z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M42 18c7 5 17 12 26 22" stroke="rgba(188,160,96,0.26)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+              </svg>
+
+              <svg viewBox="0 0 84 84" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--h">
+                <path d="M26 22h24v16c0 14-8 25-18 25S26 52 26 38V22z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M30 16h18v9H30z" fill="rgba(207,180,123,0.14)" />
+                <path d="M30 48c8 5 13 7 18 11" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 96 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--tube promo-banner-bg-sketch--i">
+                <path d="M30 20h18v12H30zm-8 12h34v26c0 13-9 22-20 22S22 71 22 58V32z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M38 26v34" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M28 58c7 5 12 8 15 12" stroke="rgba(176,125,100,0.26)" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+              </svg>
+
+              <svg viewBox="0 0 88 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--compact promo-banner-bg-sketch--j">
+                <rect x="16" y="26" width="42" height="30" rx="6" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M26 22h22" stroke="rgba(26,23,21,0.32)" strokeWidth="1.3" strokeLinecap="round" />
+                <path d="M36 36v13" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M31 42h12" stroke="rgba(205,145,126,0.26)" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 98 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--perfume promo-banner-bg-sketch--k">
+                <path d="M30 22h24v10H30zm4 10h16v26c0 8-6 14-14 14s-14-6-14-14V32z" fill="rgba(160,128,94,0.05)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M42 14h10v11H42zm-4 34c6 5 11 7 16 11" stroke="rgba(26,23,21,0.3)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 92 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--lipstick promo-banner-bg-sketch--l">
+                <path d="M22 16h20l8 12v26c0 9-7 16-16 16H30c-9 0-16-7-16-16V28l8-12z" fill="rgba(205,145,126,0.05)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M28 12h16v8H28z" fill="rgba(207,180,123,0.14)" />
+                <path d="M33 28v30" stroke="rgba(26,23,21,0.3)" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 86 86" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--m">
+                <path d="M24 24h24v18c0 12-8 21-17 21S24 54 24 42V24z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M28 14h18v10H28z" fill="rgba(207,180,123,0.12)" />
+                <path d="M29 49c9 5 15 7 19 10" stroke="rgba(26,23,21,0.3)" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+              </svg>
+
+              <svg viewBox="0 0 100 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--n">
+                <path d="M18 58c10-16 25-26 41-33 9-4 17-8 25-16 8-7 20-5 26 4 5 9 2 18-4 24-8 10-17 15-28 22-10 7-16 15-27 26H27c-2-9-4-17-9-27z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
+                <path d="M45 12c7 5 16 12 25 21" stroke="rgba(188,160,96,0.24)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+              </svg>
+            </div>
+
+              <div className="promo-banner-inner">
+                <div className="promo-banner-copy-group">
+                  <div className="promo-banner-text-group">
+                    <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
+                  </div>
+
                   <button
                     type="button"
-                    aria-label="Edit promotional text"
+                    className="promo-banner-cta"
                     onClick={() => {
-                      setTextDraft({ ...bannerConfig.content });
-                      setTextEditorOpen(true);
+                      const section = document.getElementById('our-departments');
+                      if (!section) return;
+
+                      const headerHeight = Number.parseFloat(
+                        getComputedStyle(document.documentElement).getPropertyValue('--header-height') || '0'
+                      ) || 0;
+                      const top = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
+
+                      window.scrollTo({
+                        top: Math.max(0, top),
+                        behavior: 'smooth',
+                      });
                     }}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white/90 text-brand-black shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-brand-gold/70"
-                    style={{ touchAction: 'manipulation' }}
                   >
-                    <Edit2 size={12} />
+                    SHOP NOW
                   </button>
-                )}
+
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      aria-label="Edit promotional text"
+                      onClick={() => {
+                        setTextDraft(bannerConfig.content.headline);
+                        setTextEditorOpen(true);
+                      }}
+                      className="promo-banner-edit"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-
-            <div className="flex items-center justify-start sm:justify-end">
-              <span className="rounded-full bg-brand-black px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-brand-gold shadow-sm sm:text-[10px]">{bannerConfig.content.badge}</span>
-            </div>
           </div>
-        </div>
+        )}
 
         {imageEditorIndex !== null && isAdmin && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
@@ -291,11 +379,16 @@ export default function Homepage({
               </div>
               {imageError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{imageError}</div>}
               <div className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
-                {imageDraft || bannerConfig.products[imageEditorIndex]?.image ? (
-                  <img src={imageDraft || bannerConfig.products[imageEditorIndex]?.image} alt="banner product preview" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">No image</span>
-                )}
+                {(() => {
+                  const bannerProducts = bannerConfig?.products ?? DEFAULT_PROMO_BANNER.products;
+                  const currentProduct = bannerProducts.find((p) => p.id === imageEditorProductId) || bannerProducts[imageEditorIndex ?? -1] || null;
+                  const previewSrc = imageDraft || currentProduct?.image;
+                  return previewSrc ? (
+                    <img src={previewSrc} alt="banner product preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">No image</span>
+                  );
+                })()}
               </div>
               <label className="mb-4 inline-flex cursor-pointer items-center justify-center rounded-full bg-brand-black px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
                 Change Image
@@ -303,7 +396,7 @@ export default function Homepage({
               </label>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => { setImageEditorIndex(null); setImageDraft(''); setImageError(''); }} className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">Cancel</button>
-                <button type="button" onClick={saveImageValue} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
+                <button type="button" onClick={saveImageValue} disabled={imageSaving} aria-busy={imageSaving} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
               </div>
             </div>
           </div>
@@ -319,21 +412,13 @@ export default function Homepage({
               {textError && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{textError}</div>}
               <div className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600">Campaign Label</label>
-                  <input value={textDraft.campaignLabel} onChange={(e) => setTextDraft((prev) => ({ ...prev, campaignLabel: e.target.value.slice(0, 30) }))} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-brand-black outline-none focus:border-brand-gold" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600">Main Message</label>
-                  <input value={textDraft.headline} onChange={(e) => setTextDraft((prev) => ({ ...prev, headline: e.target.value.slice(0, 80) }))} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-brand-black outline-none focus:border-brand-gold" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600">Badge</label>
-                  <input value={textDraft.badge} onChange={(e) => setTextDraft((prev) => ({ ...prev, badge: e.target.value.slice(0, 25) }))} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-brand-black outline-none focus:border-brand-gold" />
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-600">Main Headline</label>
+                  <input value={textDraft} onChange={(e) => setTextDraft(e.target.value.slice(0, 80))} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-brand-black outline-none focus:border-brand-gold" />
                 </div>
               </div>
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={() => { setTextEditorOpen(false); setTextError(''); }} className="rounded-full border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700">Cancel</button>
-                <button type="button" onClick={saveTextValues} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
+                <button type="button" onClick={saveTextValues} disabled={textSaving} aria-busy={textSaving} className="rounded-full bg-brand-black px-3 py-2 text-sm font-semibold text-white">Save</button>
               </div>
             </div>
           </div>

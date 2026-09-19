@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   Wind,
@@ -37,6 +37,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit'>('add');
   const [editingCat, setEditingCat] = useState<Category | null>(null);
+  const lastBackdropClickRef = useRef(0);
   // Sidebar open state is controlled by parent via `mobileOpen` prop to maintain a single source of truth.
   // Any close actions should call onClose so the parent can update its state.
 
@@ -45,6 +46,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
   useEffect(() => {
     if (isOpen) {
+      lastBackdropClickRef.current = Date.now();
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
@@ -54,6 +56,16 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     document.body.style.overflow = '';
     return () => {};
   }, [isOpen]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - lastBackdropClickRef.current < 600) {
+      return;
+    }
+    lastBackdropClickRef.current = now;
+    if (onClose) onClose();
+  };
 
   const openAddModal = (e: React.MouseEvent) => {
     // Only stop propagation; avoid preventDefault to allow instant touch-to-click conversion
@@ -96,7 +108,9 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
+          onPointerDown={(e) => { e.stopPropagation(); onSelect('orders'); if (onClose) onClose(); }}
           onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
+          style={{ touchAction: 'manipulation' }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
           }`}
@@ -143,7 +157,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
               <button
                 type="button"
                 onPointerDown={(e) => { e.stopPropagation(); onSelect(cat.id); if (onClose) onClose(); }}
-                onClick={() => { onSelect(cat.id); if (onClose) onClose(); }}
+                onClick={(e) => { e.stopPropagation(); onSelect(cat.id); if (onClose) onClose(); }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -173,10 +187,15 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
               {/* Admin edit/delete buttons outside the nav button */}
               {isAdmin && (
-                <div className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10">
+                <div
+                  className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button
                     type="button"
-                    onClick={(e) => openEditModal(e, cat)}
+                    onPointerDown={(e) => { e.stopPropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); openEditModal(e, cat); }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
@@ -184,6 +203,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   </button>
                   <button
                     type="button"
+                    onPointerDown={(e) => { e.stopPropagation(); }}
                     onClick={(e) => { e.stopPropagation(); actions.deleteCategory(cat.id); }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
@@ -239,6 +259,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         data-testid="sidebar-backdrop"
+        onClick={handleBackdropClick}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
