@@ -9,7 +9,7 @@ import { CartDrawer, QuickViewModal } from "./components/CartDrawer";
 import OrdersManagement from './components/OrdersManagement';
 import { useData } from "./contexts/DataContext";
 import { useAuth } from "./contexts/AuthContext";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, MessageCircle, Phone, Instagram, Facebook } from "lucide-react";
 import ProductCard from "./components/ProductCard";
 import ChatWidget from "./components/ChatWidget";
 import { formatOrderDate } from "./utils/orderDate";
@@ -35,6 +35,57 @@ function Toast({ message, visible }: ToastProps) {
       <CheckCircle2 size={18} className="text-brand-gold shrink-0" />
       <span className="flex items-center justify-center text-center leading-tight max-md:whitespace-nowrap">{message}</span>
     </div>
+  );
+}
+
+function GlobalFooter() {
+  const whatsappUrl = 'https://wa.me/201010072795';
+  const telUrl = 'tel:+201010072795';
+  const instagramUrl = 'https://www.instagram.com/phermonostore3?stkn=ZmlsZ3NsZXh0cW52';
+  const facebookUrl = 'https://www.facebook.com/share/14pshxhK3vA/?mibextid=wwXIfr';
+
+  return (
+    <footer className="w-full border-t border-stone-200 bg-white">
+      <div className="mx-auto flex max-w-5xl items-center justify-center gap-4 px-3 py-5 sm:px-6 sm:py-6">
+        <a
+          href={instagramUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Instagram"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white transition-transform hover:scale-105"
+        >
+          <Instagram size={20} />
+        </a>
+
+        <a
+          href={facebookUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Facebook"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white transition-transform hover:scale-105"
+        >
+          <Facebook size={20} />
+        </a>
+
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="WhatsApp"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white transition-transform hover:scale-105"
+        >
+          <MessageCircle size={20} />
+        </a>
+
+        <a
+          href={telUrl}
+          aria-label="Call us"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-black text-brand-gold transition-transform hover:scale-105"
+        >
+          <Phone size={20} />
+        </a>
+      </div>
+    </footer>
   );
 }
 
@@ -649,6 +700,8 @@ export default function App(){
           )}
         </main>
       </div>
+
+      <GlobalFooter />
 
       <CartDrawer
         isOpen={cartOpen}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { X, ChevronDown, ChevronUp, Filter, Sparkles, ArrowUpDown, Tag, PlusCircle, Edit2, Trash2 } from "lucide-react";
 import ProductCard from "./ProductCard";
 import { useData } from "../contexts/DataContext";
@@ -437,7 +437,7 @@ function ModalContent({
     return (category.subcategories || []).filter((s) => s.id !== 'all');
   }, [category.subcategories]);
 
-  const [form, setForm] = useState<ProductFormState>(() => {
+  const buildProductFormState = useCallback((): ProductFormState => {
     if (mode === 'editProduct' && editing && 'id' in editing) {
       const sellingValue = (editing as any).sellingPrice ?? '';
       const marketValue = (editing as any).marketPrice ?? (editing as any).originalPrice ?? '';
@@ -454,6 +454,7 @@ function ModalContent({
         description: descriptionValue || '',
       };
     }
+
     return {
       name: '',
       brand: mergedBrands[0] || '',
@@ -467,48 +468,30 @@ function ModalContent({
       image: '',
       description: '',
     };
-  });
+  }, [assignableSubcategories, category?.id, category?.subcategories, editing, mergedBrands, mode]);
+
+  const [form, setForm] = useState<ProductFormState>(buildProductFormState);
+  const lastInitialisedKeyRef = useRef<string>('');
+
+  const editIdentity = (() => {
+    if (mode === 'editProduct' && editing && 'id' in editing) return `product:${String((editing as any).id ?? '')}`;
+    if (mode === 'editSub' && editing && 'sub' in editing) return `sub:${editing.sub.id}`;
+    if (mode === 'editBrand' && editing && 'brand' in editing) return `brand:${editing.brand}`;
+    return mode === 'addProduct' ? `add:${category?.id || 'new'}` : '';
+  })();
 
   useEffect(() => {
+    if (!editIdentity || lastInitialisedKeyRef.current === editIdentity) {
+      return;
+    }
+
+    lastInitialisedKeyRef.current = editIdentity;
     setSimpleLabel(
       mode === 'editSub' && editing && 'sub' in editing ? editing.sub.label || '' :
       mode === 'editBrand' && editing && 'brand' in editing ? editing.brand || '' : ''
     );
-
-    if (mode === 'editProduct' && editing && 'id' in editing) {
-      const sellingValue = (editing as any).sellingPrice ?? '';
-      const marketValue = (editing as any).marketPrice ?? (editing as any).originalPrice ?? '';
-      const adminValue = (editing as any).adminCost ?? (editing as any).cost ?? '';
-      const imageValue = (editing as any).image_url ?? (editing as any).image ?? '';
-      const descriptionValue = (editing as any).description ?? (editing as any).details ?? '';
-      const mapped: ProductFormState = {
-        ...editing,
-        subcategory: (editing as any).subcategory ?? null,
-        adminCost: adminValue !== undefined && adminValue !== null ? String(adminValue) : '',
-        marketPrice: marketValue !== undefined && marketValue !== null ? String(marketValue) : '',
-        sellingPrice: sellingValue !== undefined && sellingValue !== null ? String(sellingValue) : '',
-        image: imageValue || '',
-        description: descriptionValue || '',
-      };
-      setForm(mapped);
-    } else if (mode === 'addProduct') {
-      const defaultSub = assignableSubcategories[0]?.id || 'general';
-      const defaultBrand = mergedBrands[0] || '';
-      setForm({
-        name: '',
-        category: category?.id || '',
-        subcategory: defaultSub,
-        brand: defaultBrand,
-        adminCost: '',
-        marketPrice: '',
-        sellingPrice: '',
-        rating: 5,
-        reviews: 1,
-        image: '',
-        description: '',
-      });
-    }
-  }, [mode, editing, category, mergedBrands, assignableSubcategories]);
+    setForm(buildProductFormState());
+  }, [buildProductFormState, editIdentity, editing, mode]);
 
   // Compress image file to max 600px to avoid filling localStorage quota
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -730,7 +713,7 @@ function ModalContent({
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="Cerave Hydrating Cleanser"
               className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] text-brand-black placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
             />
@@ -743,7 +726,7 @@ function ModalContent({
               </label>
               <select
                 value={form.brand}
-                onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))}
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               >
                 <option value="">Select Brand</option>
@@ -765,7 +748,7 @@ function ModalContent({
               </label>
               <select
                 value={form.subcategory ?? ''}
-                onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, subcategory: e.target.value }))}
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               >
                 {assignableSubcategories.length > 0 ? (
@@ -790,7 +773,7 @@ function ModalContent({
                 type="text"
                 inputMode="decimal"
                 value={form.adminCost}
-                onChange={(e) => setForm({ ...form, adminCost: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, adminCost: e.target.value }))}
                 placeholder="150"
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
@@ -801,7 +784,7 @@ function ModalContent({
                 type="text"
                 inputMode="decimal"
                 value={form.marketPrice}
-                onChange={(e) => setForm({ ...form, marketPrice: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, marketPrice: e.target.value }))}
                 placeholder="280"
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
@@ -814,7 +797,7 @@ function ModalContent({
                 type="text"
                 inputMode="decimal"
                 value={form.sellingPrice}
-                onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, sellingPrice: e.target.value }))}
                 placeholder="220"
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] font-bold text-brand-black focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
@@ -834,7 +817,7 @@ function ModalContent({
                 type="text"
                 placeholder="Image URL"
                 value={form.image.startsWith('data:') ? '' : form.image}
-                onChange={(e) => setForm({ ...form, image: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, image: e.target.value }))}
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
             </div>
@@ -845,7 +828,7 @@ function ModalContent({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, image: '' })}
+                  onClick={() => setForm((prev) => ({ ...prev, image: '' }))}
                   className="text-[10px] text-red-500 hover:underline"
                 >
                   Remove
@@ -859,7 +842,7 @@ function ModalContent({
             <textarea
               rows={2}
               value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
               placeholder="Details..."
               className="w-full min-h-[64px] resize-none rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[16px] placeholder:text-stone-400 focus:border-brand-gold focus:outline-none focus:ring-2 focus:ring-brand-gold/40 sm:min-h-[72px] sm:px-2.5 sm:py-2"
             />
