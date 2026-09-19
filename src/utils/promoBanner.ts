@@ -186,6 +186,7 @@ const getLatestBannerId = async (): Promise<string | null> => {
   const { data, error } = await supabase
     .from('promotional_banners')
     .select('id')
+    .eq('is_active', true)
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -194,7 +195,20 @@ const getLatestBannerId = async (): Promise<string | null> => {
     throw error;
   }
 
-  return data?.id ?? null;
+  if (data?.id) return data.id;
+
+  const fallback = await supabase
+    .from('promotional_banners')
+    .select('id')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallback.error && fallback.error.code !== 'PGRST116') {
+    throw fallback.error;
+  }
+
+  return fallback.data?.id ?? null;
 };
 
 const createMissingActiveBanner = async (): Promise<string | null> => {
@@ -359,18 +373,14 @@ export const savePromoBannerContent = async (config: PromoBannerConfig): Promise
     })
     .eq('id', bannerId)
     .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
-    .maybeSingle();
+    .single();
 
   if (error) {
     throw new Error(formatPromoBannerError(error));
   }
 
-  if (!data) {
-    // If update didn't return a single row (unexpected), reload current banner config
-    return fetchPromoBannerConfig();
-  }
-
-  return mapSupabaseBannerRow(data);
+  const refreshed = await fetchPromoBannerConfigById(bannerId);
+  return refreshed && refreshed.content.headline ? refreshed : mapSupabaseBannerRow(data);
 };
 
 export const savePromoBannerProductImage = async ({

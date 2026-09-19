@@ -87,8 +87,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onPointerDown={(e) => { e.stopPropagation(); onSelect("home"); if (onClose) onClose(); }}
-        onClick={() => { onSelect("home"); if (onClose) onClose(); }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect("home");
+          if (onClose) onClose();
+        }}
         style={{ touchAction: 'manipulation' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
@@ -108,8 +112,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onPointerDown={(e) => { e.stopPropagation(); onSelect('orders'); if (onClose) onClose(); }}
-          onClick={() => { onSelect('orders'); if (onClose) onClose(); }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelect('orders');
+            if (onClose) onClose();
+          }}
           style={{ touchAction: 'manipulation' }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
@@ -156,8 +164,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onPointerDown={(e) => { e.stopPropagation(); onSelect(cat.id); if (onClose) onClose(); }}
-                onClick={(e) => { e.stopPropagation(); onSelect(cat.id); if (onClose) onClose(); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelect(cat.id);
+                  if (onClose) onClose();
+                }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
                 }`}
@@ -189,13 +201,15 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
               {isAdmin && (
                 <div
                   className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10"
-                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     type="button"
-                    onPointerDown={(e) => { e.stopPropagation(); }}
-                    onClick={(e) => { e.stopPropagation(); openEditModal(e, cat); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openEditModal(e, cat);
+                    }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
@@ -203,8 +217,11 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   </button>
                   <button
                     type="button"
-                    onPointerDown={(e) => { e.stopPropagation(); }}
-                    onClick={(e) => { e.stopPropagation(); actions.deleteCategory(cat.id); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      actions.deleteCategory(cat.id);
+                    }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
                   >
@@ -221,8 +238,12 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onPointerDown={(e) => { e.stopPropagation(); onSelect("about"); if (onClose) onClose(); }}
-          onClick={() => { onSelect("about"); if (onClose) onClose(); }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelect("about");
+            if (onClose) onClose();
+          }}
           style={{ touchAction: 'manipulation' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
@@ -278,8 +299,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onPointerDown={(e)=>{ e.stopPropagation(); if (onClose) onClose(); }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               if (onClose) onClose();
             }}
