@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Edit2, Trash2, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Edit2, X } from "lucide-react";
 import ProductCard from "./ProductCard";
 import CategoryBar from "./CategoryBar";
 import { useData } from "../contexts/DataContext";
@@ -8,7 +8,6 @@ import type { Product } from "../types";
 import {
   DEFAULT_PROMO_BANNER,
   MIDDLE_PROMO_BANNER_PRODUCT_ID,
-  deletePromoBannerProductImage,
   fetchPromoBannerConfig,
   savePromoBannerContent,
   savePromoBannerProductImage,
@@ -61,8 +60,6 @@ export default function Homepage({
   const [textSaving, setTextSaving] = useState(false);
   const [imageSaving, setImageSaving] = useState(false);
   const [bannerLoading, setBannerLoading] = useState(true);
-  // version map to force image re-render (cache-busting) when a product image is updated
-  const [imageVersions, setImageVersions] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -97,12 +94,6 @@ export default function Homepage({
       setTextDraft(bannerConfig.content.headline);
     }
   }, [bannerConfig]);
-
-  const productSlots = useMemo(() => [
-    { className: 'promo-product-slot promo-product-slot-left', sizeClass: 'promo-product-image' },
-    { className: 'promo-product-slot promo-product-slot-middle', sizeClass: 'promo-product-image' },
-    { className: 'promo-product-slot promo-product-slot-right', sizeClass: 'promo-product-image' },
-  ], []);
 
   const saveTextValues = async () => {
     if (!bannerConfig) return;
@@ -193,35 +184,12 @@ export default function Homepage({
       setImageDraft('');
       setImageError('');
 
-      // Force a cache-bust for the updated product image so the <img> updates immediately
-      const productKey = productIdToUse ?? `pos-${imageEditorIndex}`;
-      setImageVersions((prev) => ({ ...prev, [productKey]: (prev[productKey] || 0) + 1 }));
     } catch (error: any) {
       console.error('saveImageValue error:', error);
       setImageError(error?.message || 'Failed to save the product image.');
     } finally {
       setImageSaving(false);
     };  };
-
-  const deleteImageValue = async (index: number) => {
-    if (!bannerConfig || !window.confirm('Remove this product image from the banner?')) return;
-
-    try {
-      const product = bannerConfig.products[index];
-      const targetId = index === 1 ? (product?.id || MIDDLE_PROMO_BANNER_PRODUCT_ID) : product?.id;
-      const targetPosition = index + 1;
-      const next = await deletePromoBannerProductImage(targetId, bannerConfig.bannerId, targetPosition);
-      setBannerConfig(next);
-
-      // Background refresh to ensure DB is reflected in UI
-      fetchPromoBannerConfig().then((refreshed) => setBannerConfig(refreshed)).catch((bgErr) => {
-        console.warn('Background refresh failed after deleting promo image:', bgErr);
-      });
-    } catch (error: any) {
-      console.error('deleteImageValue error:', error);
-      setImageError(error?.message || 'Failed to remove the product image.');
-    }
-  };
 
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">
