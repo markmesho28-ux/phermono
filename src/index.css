@@ -452,6 +452,10 @@ a,
 input,
 textarea,
 select,
-[contenteditable="true"] {
+[contenteditable="true"],
+.touch-target,
+.sidebar-nav-item,
+[data-rapid-touch] {
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
