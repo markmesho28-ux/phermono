@@ -57,9 +57,11 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     return () => {};
   }, [isOpen]);
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleBackdropPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
     const now = Date.now();
-    if (now - lastBackdropClickRef.current < 600) {
+    if (now - lastBackdropClickRef.current < 800) {
       return;
     }
     lastBackdropClickRef.current = now;
@@ -89,10 +91,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onClick={() => {
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
           onSelect("home");
           if (onClose) onClose();
         }}
+        onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
@@ -112,10 +117,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onClick={() => {
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
             onSelect('orders');
             if (onClose) onClose();
           }}
+          onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
@@ -139,7 +147,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           {isAdmin && (
             <button
               type="button"
-              onClick={openAddModal}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                openAddModal();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center touch-target"
               title="Add Category"
             >
@@ -162,10 +176,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onClick={() => {
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
                   onSelect(cat.id);
                   if (onClose) onClose();
                 }}
+                onClick={(e) => e.stopPropagation()}
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
@@ -198,13 +215,18 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
               {isAdmin && (
                 <div
                   className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     type="button"
-                    onClick={() => {
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
                       openEditModal(undefined, cat);
                     }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
@@ -212,9 +234,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
                       actions.deleteCategory(cat.id);
                     }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
                   >
@@ -231,10 +257,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onClick={() => {
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
             onSelect("about");
             if (onClose) onClose();
           }}
+          onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
@@ -271,7 +300,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         data-testid="sidebar-backdrop"
-        onClick={handleBackdropClick}
+        onPointerDown={handleBackdropPointerDown}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -281,6 +310,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
       {/* Mobile off-canvas drawer — full viewport height taking up 80% screen width up to max-w-sm */}
       <aside
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
@@ -292,9 +322,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onClick={() => {
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
               if (onClose) onClose();
             }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
             className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
             aria-label="Close menu"
           >

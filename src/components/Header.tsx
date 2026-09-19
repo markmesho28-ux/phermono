@@ -166,13 +166,15 @@ export default function Header({
                   <button
                     type="button"
                     onPointerDown={(event) => {
-                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                        event.preventDefault();
-                        onMenuToggle && onMenuToggle(true);
-                      }
+                      event.stopPropagation();
+                      event.preventDefault();
+                      onMenuToggle && onMenuToggle(true);
                     }}
-                    onClick={() => onMenuToggle && onMenuToggle(true)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     aria-label="Open categories menu"
                     aria-expanded={isMenuOpen}
                   >

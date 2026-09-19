@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { ShoppingBag, Heart, Eye, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useData } from "../contexts/DataContext";
@@ -53,6 +53,23 @@ export default function ProductCard({
     setTimeout(() => setAddedAnim(false), 1200);
   };
 
+  const lastWishlistActionRef = useRef(0);
+
+  const handleWishlistToggle = (
+    e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement> | React.PointerEvent<HTMLButtonElement>
+  ) => {
+    e.stopPropagation();
+    if (typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    const now = Date.now();
+    if (now - lastWishlistActionRef.current < 400) {
+      return;
+    }
+    lastWishlistActionRef.current = now;
+    onWishlist(product);
+  };
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -95,9 +112,11 @@ export default function ProductCard({
 
         {/* Wishlist Button */}
         <button
-          onClick={() => {
-            onWishlist(product);
-          }}
+          type="button"
+          onPointerDown={handleWishlistToggle}
+          onTouchStart={handleWishlistToggle}
+          onClick={handleWishlistToggle}
+          style={{ touchAction: 'manipulation' }}
           className={`absolute top-3 right-3 w-9 h-9 md:w-11 md:h-11 rounded-full flex items-center justify-center shadow-md transition-all duration-300 z-10 touch-target ${
             isWishlisted
               ? "bg-red-50 text-red-500 scale-100 border border-red-200"
@@ -105,7 +124,7 @@ export default function ProductCard({
           }`}
           aria-label="Toggle Favorite List"
         >
-          <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} />
+          <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} className="pointer-events-none" />
         </button>
 
         {/* Quick View Button on Hover */}

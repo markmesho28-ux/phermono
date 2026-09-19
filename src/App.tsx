@@ -28,12 +28,12 @@ interface ToastProps {
 function Toast({ message, visible }: ToastProps) {
   return (
     <div
-      className={`fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-brand-black/95 text-white border border-brand-gold/40 px-6 py-3.5 rounded-full shadow-2xl text-xs sm:text-sm font-semibold tracking-wide backdrop-blur-md transition-all duration-500 max-md:whitespace-nowrap max-md:px-5 max-md:py-2.5 max-md:text-[11px] max-md:max-w-[90vw] ${
+      className={`fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center justify-center text-center gap-2.5 bg-brand-black/95 text-white border border-brand-gold/40 px-6 py-3.5 rounded-full shadow-2xl text-xs sm:text-sm font-semibold tracking-wide backdrop-blur-md transition-all duration-500 max-md:whitespace-nowrap max-md:px-5 max-md:py-2.5 max-md:text-[11px] max-md:max-w-[90vw] ${
         visible ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-6 scale-95 pointer-events-none"
       }`}
     >
       <CheckCircle2 size={18} className="text-brand-gold shrink-0" />
-      <span className="max-md:whitespace-nowrap">{message}</span>
+      <span className="flex items-center justify-center text-center leading-tight max-md:whitespace-nowrap">{message}</span>
     </div>
   );
 }
