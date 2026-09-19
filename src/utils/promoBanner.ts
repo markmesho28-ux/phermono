@@ -298,10 +298,15 @@ export const ensurePromoBannerExists = async (): Promise<string | null> => {
 };
 
 const fetchPromoBannerConfigById = async (bannerId: string): Promise<PromoBannerConfig> => {
+  if (!bannerId) {
+    return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+  }
+
   const { data, error } = await supabase
     .from('promotional_banners')
     .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
     .eq('id', bannerId)
+    .limit(1)
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') {
@@ -309,7 +314,10 @@ const fetchPromoBannerConfigById = async (bannerId: string): Promise<PromoBanner
   }
 
   if (!data) {
-    return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+    return normalizePromoBannerConfig({
+      ...DEFAULT_PROMO_BANNER,
+      bannerId: undefined,
+    });
   }
 
   return mapSupabaseBannerRow(data);
@@ -373,14 +381,22 @@ export const savePromoBannerContent = async (config: PromoBannerConfig): Promise
     })
     .eq('id', bannerId)
     .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (error) {
     throw new Error(formatPromoBannerError(error));
   }
 
-  const refreshed = await fetchPromoBannerConfigById(bannerId);
-  return refreshed && refreshed.content.headline ? refreshed : mapSupabaseBannerRow(data);
+  if (!data) {
+    const refreshed = await fetchPromoBannerConfigById(bannerId);
+    if (refreshed.content.headline) {
+      return refreshed;
+    }
+    throw new Error('No promotional banner row matched the targeted banner ID.');
+  }
+
+  return mapSupabaseBannerRow(data);
 };
 
 export const savePromoBannerProductImage = async ({
