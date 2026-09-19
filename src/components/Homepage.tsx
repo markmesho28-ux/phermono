@@ -335,8 +335,7 @@ export default function Homepage({
                     <button
                       type="button"
                       aria-label="Edit promotional text"
-                      onClick={(event) => {
-                        event.stopPropagation();
+                      onClick={() => {
                         setTextDraft(bannerConfig.content.headline);
                         setTextError('');
                         setTextEditorOpen(true);
@@ -408,8 +407,7 @@ export default function Homepage({
                 </button>
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     void saveImageValue();
                   }}
                   disabled={imageSaving}
@@ -467,8 +465,7 @@ export default function Homepage({
                 </button>
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  onClick={() => {
                     void saveTextValues();
                   }}
                   disabled={textSaving}

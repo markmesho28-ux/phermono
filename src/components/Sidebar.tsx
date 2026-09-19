@@ -58,7 +58,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
   }, [isOpen]);
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
     const now = Date.now();
     if (now - lastBackdropClickRef.current < 600) {
       return;
@@ -67,16 +66,19 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     if (onClose) onClose();
   };
 
-  const openAddModal = (e: React.MouseEvent) => {
-    // Only stop propagation; avoid preventDefault to allow instant touch-to-click conversion
-    e.stopPropagation();
+  const openAddModal = (e?: React.MouseEvent) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     setMode('add');
     setEditingCat(null);
     setModalOpen(true);
   };
 
-  const openEditModal = (e: React.MouseEvent, cat: Category) => {
-    e.stopPropagation();
+  const openEditModal = (e: React.MouseEvent | undefined, cat: Category) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     setMode('edit');
     setEditingCat(cat);
     setModalOpen(true);
@@ -87,9 +89,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
+        onClick={() => {
           onSelect("home");
           if (onClose) onClose();
         }}
@@ -112,9 +112,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+          onClick={() => {
             onSelect('orders');
             if (onClose) onClose();
           }}
@@ -164,9 +162,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
+                onClick={() => {
                   onSelect(cat.id);
                   if (onClose) onClose();
                 }}
@@ -205,10 +201,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                 >
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      openEditModal(e, cat);
+                    onClick={() => {
+                      openEditModal(undefined, cat);
                     }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
@@ -217,9 +211,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
+                    onClick={() => {
                       actions.deleteCategory(cat.id);
                     }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
@@ -238,9 +230,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+          onClick={() => {
             onSelect("about");
             if (onClose) onClose();
           }}
@@ -299,9 +289,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
+            onClick={() => {
               if (onClose) onClose();
             }}
             className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"

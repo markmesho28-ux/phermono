@@ -44,8 +44,10 @@ export default function ProductCard({
   const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
-  const handleAddClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+  const handleAddClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     onAddToCart(product);
     setAddedAnim(true);
     setTimeout(() => setAddedAnim(false), 1200);
@@ -93,8 +95,7 @@ export default function ProductCard({
 
         {/* Wishlist Button */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             onWishlist(product);
           }}
           className={`absolute top-3 right-3 w-9 h-9 md:w-11 md:h-11 rounded-full flex items-center justify-center shadow-md transition-all duration-300 z-10 touch-target ${
@@ -127,16 +128,16 @@ export default function ProductCard({
       {user && user.role === 'admin' && (
         <div className="absolute top-3 left-3 flex gap-2 z-20">
           {/* Best seller toggle */}
-          <button onClick={(e)=>{ e.stopPropagation(); actions.toggleHero(product.id); }} className={`w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow touch-target ${product.hero? 'text-yellow-500': ''}`} title={product.hero? 'Unmark Best Seller' : 'Mark Best Seller'}>
+          <button onClick={() => actions.toggleHero(product.id)} className={`w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow touch-target ${product.hero? 'text-yellow-500': ''}`} title={product.hero? 'Unmark Best Seller' : 'Mark Best Seller'}>
             <Star size={14} fill={product.hero? 'currentColor' : 'none'} />
           </button>
           {onEdit && (
-            <button onClick={(e)=>{ e.stopPropagation(); onEdit(product); }} className="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow touch-target">
+            <button onClick={() => onEdit?.(product)} className="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow touch-target">
               <Edit2 size={14} />
             </button>
           )}
           {onDelete && (
-            <button onClick={(e)=>{ e.stopPropagation(); onDelete(product); }} className="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow text-red-500 touch-target">
+            <button onClick={() => onDelete?.(product)} className="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/90 flex items-center justify-center shadow text-red-500 touch-target">
               <Trash2 size={14} />
             </button>
           )}

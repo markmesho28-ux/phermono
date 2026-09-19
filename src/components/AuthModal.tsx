@@ -170,7 +170,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 placeholder="e.g. Sarah Connor"
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                onPointerDown={(e)=>{ e.stopPropagation(); (e.target as HTMLInputElement).focus(); }}
                 style={{ fontSize: '16px', touchAction: 'manipulation' }}
                 className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
                 autoComplete="name"
@@ -195,7 +194,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               placeholder={mode === 'signup' ? 'e.g. 01012345678' : 'Enter your registered phone number'}
               value={form.phone}
               onChange={e => setForm({ ...form, phone: e.target.value })}
-              onPointerDown={(e)=>{ e.stopPropagation(); (e.target as HTMLInputElement).focus(); }}
               style={{ fontSize: '16px', touchAction: 'manipulation' }}
               className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
               autoComplete="tel"
@@ -211,7 +209,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               placeholder={mode === 'signup' ? 'Create a secure password' : 'Enter your password'}
               value={form.password}
               onChange={e => setForm({ ...form, password: e.target.value })}
-              onPointerDown={(e)=>{ e.stopPropagation(); (e.target as HTMLInputElement).focus(); }}
               style={{ fontSize: '16px', touchAction: 'manipulation' }}
               className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
@@ -228,7 +225,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                 placeholder="e.g. 15 Gardenia St, Apt 4B"
                 value={form.address}
                 onChange={e => setForm({ ...form, address: e.target.value })}
-                onPointerDown={(e)=>{ e.stopPropagation(); (e.target as HTMLInputElement).focus(); }}
                 className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold placeholder:text-stone-400 text-brand-black transition-all pointer-events-auto"
                 style={{ fontSize: '16px', touchAction: 'manipulation' }}
                 autoComplete="street-address"
@@ -244,7 +240,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
               <select
                 value={form.governorate}
                 onChange={e => setForm({ ...form, governorate: e.target.value })}
-                onPointerDown={(e)=>{ e.stopPropagation(); }}
                 className="w-full min-h-[44px] px-3.5 py-2.5 text-base bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold text-brand-black pointer-events-auto"
                 style={{ fontSize: '16px', touchAction: 'manipulation' }}
               >
@@ -268,7 +263,6 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             <button
               type="button"
               onClick={onClose}
-              onPointerDown={(e)=>{ e.stopPropagation(); }}
               style={{ touchAction: 'manipulation' }}
               className="px-4 py-2 text-sm font-semibold text-stone-600 hover:text-brand-black rounded-xl transition-colors touch-target"
             >

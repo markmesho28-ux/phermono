@@ -72,17 +72,33 @@ describe('Header Action Buttons', () => {
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers onMenuToggle on touchStart and suppresses subsequent ghost click', () => {
+  it('keeps the native click path on header action taps without preventing the browser click event', () => {
+    render(<Header {...defaultProps} />);
+
+    const observed: boolean[] = [];
+    document.addEventListener('click', (event) => {
+      observed.push(event.defaultPrevented);
+    }, { capture: true });
+
+    fireEvent.click(screen.getByLabelText('Favorite List'));
+    fireEvent.click(screen.getByLabelText('Bag'));
+    fireEvent.click(screen.getByLabelText('Track Orders'));
+    fireEvent.click(screen.getByLabelText('Your Assistant'));
+
+    expect(observed).toEqual([false, false, false, false]);
+    expect(defaultProps.onWishlistOpen).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onCartOpen).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onTrackOpen).toHaveBeenCalledWith(true);
+    expect(defaultProps.onAssistantOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the mobile menu via the native click path without synthetic touch interception', () => {
     render(<Header {...defaultProps} />);
     const menuBtn = screen.getByLabelText('Open categories menu');
 
-    // 1. Initial touch on mobile
-    fireEvent.touchStart(menuBtn);
-    expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
-
-    // 2. Synthetic delayed ghost click dispatched by browser ~300ms after touch
     fireEvent.click(menuBtn);
-    // Should still be called only 1 time (ghost click ignored)
+
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onMenuToggle).toHaveBeenCalledWith(true);
   });
 });

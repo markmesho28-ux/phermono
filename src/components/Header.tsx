@@ -54,15 +54,6 @@ export default function Header({
     return () => window.removeEventListener('resize', updateHeight);
   }, []);
 
-  const handleMenuButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (onMenuToggle) {
-      onMenuToggle(true);
-    }
-  };
-
   return (
     <>
       {/* ── Sticky full-height header wrapper ── */}
@@ -156,8 +147,7 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
-                    onClick={handleMenuButtonClick}
-                    style={{ touchAction: 'manipulation' }}
+                    onClick={() => onMenuToggle && onMenuToggle(true)}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
                     aria-expanded={isMenuOpen}
@@ -175,9 +165,7 @@ export default function Header({
               <div className="order-2 grid grid-cols-4 gap-1.5 w-full md:flex md:w-auto md:items-center md:justify-end md:gap-2">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     if (onWishlistOpen) onWishlistOpen();
                   }}
                   style={{ touchAction: 'manipulation' }}
@@ -193,9 +181,7 @@ export default function Header({
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     if (onCartOpen) onCartOpen();
                   }}
                   style={{ touchAction: 'manipulation' }}
@@ -218,9 +204,7 @@ export default function Header({
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     if (onTrackOpen) onTrackOpen(true);
                   }}
                   style={{ touchAction: 'manipulation' }}
@@ -236,9 +220,7 @@ export default function Header({
 
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     if (onAssistantOpen) onAssistantOpen();
                   }}
                   style={{ touchAction: 'manipulation' }}

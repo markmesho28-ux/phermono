@@ -434,7 +434,7 @@ textarea {
   scrollbar-width: none;
 }
 
-/* Mobile touch responsiveness and fast-tap standardization */
+/* Mobile tap behavior should follow native browser behavior rather than global synthetic interception. */
 *,
 *::before,
 *::after {
@@ -446,45 +446,12 @@ body {
   touch-action: manipulation;
 }
 
-/* Ensure all interactive buttons/links have explicit touch-action and pointer-events */
 button,
 a,
 [role="button"],
-.touch-target,
-.sidebar-nav-item,
-.header-menu-btn,
-.header-wishlist-btn,
-.header-cart-btn,
-.header-track-btn,
-.header-assistant-btn,
-.header-auth-btn,
-.category-filter-tab,
-.card-add-btn,
-.product-card {
-  touch-action: manipulation !important;
-  pointer-events: auto !important;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Explicitly exempt all inputs, textareas, selects, and text fields so they natively receive touches and trigger the virtual keyboard */
 input,
 textarea,
 select,
 [contenteditable="true"] {
-  pointer-events: auto !important;
-  touch-action: auto !important;
-  user-select: text !important;
-  -webkit-user-select: text !important;
-}
-
-/* Eliminate persistent focus rings/outlines and sticky hover states on touchscreens */
-@media (hover: none) and (pointer: coarse) {
-  button:focus:not(:focus-visible),
-  a:focus:not(:focus-visible),
-  [role="button"]:focus:not(:focus-visible),
-  .touch-target:focus:not(:focus-visible),
-  .sidebar-nav-item:focus:not(:focus-visible) {
-    outline: none !important;
-    box-shadow: none !important;
-  }
+  -webkit-tap-highlight-color: transparent;
 }

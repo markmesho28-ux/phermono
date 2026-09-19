@@ -162,8 +162,7 @@ export const buildPromoBannerConfigFromRows = (rows: any[], bannerId?: string): 
   });
 };
 
-const mapSupabaseBannerRow = (row: any): PromoBannerConfig => {
-  const productRows = Array.isArray(row?.promotional_banner_products) ? row.promotional_banner_products : [];
+const mapSupabaseBannerRow = (row: any, productRows: any[] = []): PromoBannerConfig => {
   const config = buildPromoBannerConfigFromRows(productRows, row?.id);
 
   return normalizePromoBannerConfig({
@@ -302,25 +301,35 @@ const fetchPromoBannerConfigById = async (bannerId: string): Promise<PromoBanner
     return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
   }
 
-  const { data, error } = await supabase
+  const { data: bannerRow, error: bannerError } = await supabase
     .from('promotional_banners')
-    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
+    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url')
     .eq('id', bannerId)
     .limit(1)
     .maybeSingle();
 
-  if (error && error.code !== 'PGRST116') {
-    throw error;
+  if (bannerError && bannerError.code !== 'PGRST116') {
+    throw bannerError;
   }
 
-  if (!data) {
+  if (!bannerRow) {
     return normalizePromoBannerConfig({
       ...DEFAULT_PROMO_BANNER,
       bannerId: undefined,
     });
   }
 
-  return mapSupabaseBannerRow(data);
+  const { data: productRows, error: productError } = await supabase
+    .from('promotional_banner_products')
+    .select('id, banner_id, image_path, alt_text, position, is_enabled')
+    .eq('banner_id', bannerId)
+    .order('position', { ascending: true });
+
+  if (productError) {
+    throw productError;
+  }
+
+  return mapSupabaseBannerRow(bannerRow, Array.isArray(productRows) ? productRows : []);
 };
 
 export const fetchPromoBannerConfig = async (): Promise<PromoBannerConfig> => {
@@ -369,7 +378,7 @@ export const savePromoBannerContent = async (config: PromoBannerConfig): Promise
   }
 
   const cleanContent = sanitizeContent(config.content);
-  const { data, error } = await supabase
+  const { data: updatedBanner, error } = await supabase
     .from('promotional_banners')
     .update({
       campaign_label: cleanContent.campaignLabel,
@@ -380,15 +389,14 @@ export const savePromoBannerContent = async (config: PromoBannerConfig): Promise
       cta_url: typeof config.cta?.url === 'string' ? config.cta.url : '',
     })
     .eq('id', bannerId)
-    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url, promotional_banner_products(*)')
-    .limit(1)
-    .maybeSingle();
+    .select('id, campaign_label, headline, badge_text, cta_enabled, cta_text, cta_url')
+    .single();
 
   if (error) {
     throw new Error(formatPromoBannerError(error));
   }
 
-  if (!data) {
+  if (!updatedBanner) {
     const refreshed = await fetchPromoBannerConfigById(bannerId);
     if (refreshed.content.headline) {
       return refreshed;
@@ -396,7 +404,17 @@ export const savePromoBannerContent = async (config: PromoBannerConfig): Promise
     throw new Error('No promotional banner row matched the targeted banner ID.');
   }
 
-  return mapSupabaseBannerRow(data);
+  const { data: productRows, error: productError } = await supabase
+    .from('promotional_banner_products')
+    .select('id, banner_id, image_path, alt_text, position, is_enabled')
+    .eq('banner_id', bannerId)
+    .order('position', { ascending: true });
+
+  if (productError) {
+    throw new Error(formatPromoBannerError(productError));
+  }
+
+  return mapSupabaseBannerRow(updatedBanner, Array.isArray(productRows) ? productRows : []);
 };
 
 export const savePromoBannerProductImage = async ({
