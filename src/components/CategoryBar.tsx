@@ -367,11 +367,15 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
                   }}
                 />
 
-                {/* Category name — clean black bold text directly on the image, zero background, zero border, zero box */}
-                <div className="absolute top-3.5 sm:top-4 inset-x-3.5 sm:inset-x-4 z-20 pointer-events-none">
-                  <p className="text-brand-black font-bold text-sm sm:text-base leading-tight drop-shadow-[0_1px_3px_rgba(255,255,255,0.9)] truncate text-center">
+                {/* Sleek top dark gradient overlay for crisp contrast and premium depth */}
+                <div className="absolute top-0 inset-x-0 h-24 sm:h-28 bg-gradient-to-b from-brand-black/85 via-brand-black/40 to-transparent z-10 pointer-events-none" />
+
+                {/* Redesigned Department Title Overlay */}
+                <div className="absolute top-3.5 sm:top-4 inset-x-3.5 sm:inset-x-4 z-20 pointer-events-none flex flex-col items-center">
+                  <h3 className="font-serif-luxury text-lg sm:text-xl md:text-2xl font-bold text-white tracking-wide text-center drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] group-hover:text-brand-gold transition-colors duration-300 truncate max-w-full">
                     {cat.label}
-                  </p>
+                  </h3>
+                  <div className="w-6 h-0.5 bg-brand-gold/70 rounded-full mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 </div>
 
                 {/* "Shop Collection" — solid black pill button matching header Tracking/Assistant button design */}

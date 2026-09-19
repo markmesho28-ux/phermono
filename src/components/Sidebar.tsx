@@ -474,11 +474,14 @@ function CategoryForm({ initial, onClose, mode }: CategoryFormProps){
           <div className="relative rounded-2xl overflow-hidden aspect-[16/9] border border-stone-200 shadow-sm bg-stone-100 group">
             <img src={image} alt="Preview" className="w-full h-full object-cover" />
 
-            {/* Category name preview — clean black bold text directly on the image, zero background, zero border */}
-            <div className="absolute top-2.5 inset-x-2.5 pointer-events-none">
-              <p className="text-brand-black font-bold text-xs leading-tight drop-shadow-[0_1px_3px_rgba(255,255,255,0.9)] truncate text-center">
+            {/* Sleek top gradient overlay for crisp contrast and premium depth */}
+            <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-brand-black/85 via-brand-black/45 to-transparent z-10 pointer-events-none" />
+
+            {/* Category name preview */}
+            <div className="absolute top-2.5 inset-x-2.5 z-20 pointer-events-none flex flex-col items-center">
+              <h3 className="font-serif-luxury text-sm font-bold text-white tracking-wide truncate text-center drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)]">
                 {label.trim() || 'Category Name'}
-              </p>
+              </h3>
             </div>
 
             {/* Shop Collection preview — solid black pill button matching card design */}

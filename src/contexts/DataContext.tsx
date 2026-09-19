@@ -49,6 +49,54 @@ const slugify = (value: string) => {
   return normalized || `item-${Date.now()}`;
 };
 
+export const resolveCategoryIdForUpdate = async (
+  candidateId: string,
+  currentCategories: Category[] = [],
+  supabaseClient: any = supabase,
+): Promise<string> => {
+  const raw = String(candidateId ?? '').trim();
+  if (!raw) return candidateId;
+  if (isUuid(raw)) return raw;
+
+  const localMatch = currentCategories.find((category) =>
+    category.id === raw ||
+    slugify(category.label) === raw ||
+    category.label.toLowerCase() === raw.toLowerCase()
+  );
+
+  if (localMatch && isUuid(localMatch.id)) {
+    return localMatch.id;
+  }
+
+  const candidates = Array.from(new Set([raw, slugify(raw)]));
+
+  for (const value of candidates) {
+    if (!value) continue;
+
+    try {
+      const { data, error } = await supabaseClient
+        .from('categories')
+        .select('id')
+        .eq('slug', value)
+        .limit(1);
+
+      if (!error && Array.isArray(data) && data[0]?.id) return String(data[0].id);
+    } catch (_) {}
+
+    try {
+      const { data, error } = await supabaseClient
+        .from('categories')
+        .select('id')
+        .eq('name', value)
+        .limit(1);
+
+      if (!error && Array.isArray(data) && data[0]?.id) return String(data[0].id);
+    } catch (_) {}
+  }
+
+  return raw;
+};
+
 const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] = []): Category => ({
   id: String(row?.id || ''),
   label: row?.name ?? row?.label ?? row?.slug ?? '',
@@ -696,15 +744,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (Object.keys(row).length === 0) return;
-      const { error } = await supabase.from('categories').update(row).eq('id', id).select().single();
-      if (error) {
+
+      const effectiveId = await resolveCategoryIdForUpdate(id, categories, supabase);
+      const isUuidValue = isUuid(effectiveId);
+
+      let targetQuery = supabase.from('categories').update(row);
+      if (isUuidValue) {
+        targetQuery = targetQuery.eq('id', effectiveId);
+      } else {
+        const exactSlug = slugify(String(effectiveId || ''));
+        targetQuery = targetQuery.eq('slug', exactSlug).limit(1);
+      }
+
+      const { error } = await targetQuery;
+      if (error && error.code !== 'PGRST116') {
         console.warn('Supabase category update failed:', error.message || error);
         // revert local change by refetching or leaving as-is; here we log and alert
         alert('Failed to update category: ' + (error.message || String(error)));
       }
     } catch (e: any) {
-      console.warn('Supabase category update error:', e?.message || e);
-      alert('Failed to update category: ' + (e?.message || String(e)));
+      if (e?.code !== 'PGRST116') {
+        console.warn('Supabase category update error:', e?.message || e);
+        alert('Failed to update category: ' + (e?.message || String(e)));
+      }
     }
   };
   const deleteCategory = async (id: string) => { await deleteCategoryRemote(id); };
@@ -1044,14 +1106,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         row.slug = slugify(String(updates.label || ''));
       }
       if (Object.keys(row).length === 0) return;
-      const { error } = await supabase.from('subcategories').update(row).eq('id', subId).select().single();
-      if (error) {
+      const isSubUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subId);
+      let subQuery = supabase.from('subcategories').update(row);
+      if (isSubUuid) {
+        subQuery = subQuery.eq('id', subId);
+      } else {
+        subQuery = subQuery.or(`slug.eq.${subId},name.eq.${subId}`);
+      }
+      const { error } = await subQuery;
+      if (error && error.code !== 'PGRST116') {
         console.warn('Supabase subcategory update failed:', error.message || error);
         alert('Failed to update subcategory: ' + (error.message || String(error)));
       }
     } catch (e: any) {
-      console.warn('Supabase subcategory update error:', e?.message || e);
-      alert('Failed to update subcategory: ' + (e?.message || String(e)));
+      if (e?.code !== 'PGRST116') {
+        console.warn('Supabase subcategory update error:', e?.message || e);
+        alert('Failed to update subcategory: ' + (e?.message || String(e)));
+      }
     }
   };
 
