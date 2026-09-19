@@ -62,6 +62,20 @@ describe('Native touch responsiveness and keyboard input focus', () => {
     expect(focused).toBe(true);
   });
 
+  it('does not suppress native touchstart or synthesize a click before the browser click fires', () => {
+    const button = document.createElement('button');
+    let clicked = 0;
+    button.type = 'button';
+    button.onclick = () => { clicked += 1; };
+    container.appendChild(button);
+
+    const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+    button.dispatchEvent(touchStart);
+
+    expect(touchStart.defaultPrevented).toBe(false);
+    expect(clicked).toBe(0);
+  });
+
   it('ensures textarea fields allow immediate focus for typing', () => {
     const textarea = document.createElement('textarea');
     container.appendChild(textarea);

@@ -103,7 +103,7 @@ describe('Header Action Buttons', () => {
     expect(defaultProps.onMenuToggle).toHaveBeenCalledWith(true);
   });
 
-  it('fires the touch-first activation path for a black button without waiting for a delayed click', () => {
+  it('keeps the native tap behavior for black buttons without synthetic touch interception', () => {
     const onClick = jest.fn();
     const destroy = initFastTouch();
 
@@ -113,8 +113,12 @@ describe('Header Action Buttons', () => {
       </button>
     );
 
-    fireEvent.touchStart(screen.getByRole('button', { name: 'Buy now' }));
+    const button = screen.getByRole('button', { name: 'Buy now' });
 
+    fireEvent.touchStart(button);
+    expect(onClick).not.toHaveBeenCalled();
+
+    fireEvent.click(button);
     expect(onClick).toHaveBeenCalledTimes(1);
     destroy();
   });

@@ -66,14 +66,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
     if (onClose) onClose();
   };
 
-  const rapidSidebarTouch = (event: React.TouchEvent<HTMLElement>) => {
-    if (event.touches.length === 0) return;
-    const target = event.currentTarget as HTMLElement;
-    if (target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true') return;
-    event.preventDefault();
-    target.click();
-  };
-
   const openAddModal = (e?: React.MouseEvent) => {
     if (e && typeof e.stopPropagation === 'function') {
       e.stopPropagation();
@@ -97,7 +89,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Home Navigation */}
       <button
         type="button"
-        onTouchStart={rapidSidebarTouch}
         onClick={() => {
           onSelect("home");
           if (onClose) onClose();
@@ -121,7 +112,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {isAdmin && (
         <button
           type="button"
-          onTouchStart={rapidSidebarTouch}
           onClick={() => {
             onSelect('orders');
             if (onClose) onClose();
@@ -172,7 +162,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onTouchStart={rapidSidebarTouch}
                 onClick={() => {
                   onSelect(cat.id);
                   if (onClose) onClose();
@@ -242,7 +231,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onTouchStart={rapidSidebarTouch}
           onClick={() => {
             onSelect("about");
             if (onClose) onClose();
@@ -283,12 +271,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       {/* Mobile drawer backdrop — full-screen overlay covering the entire viewport including the header */}
       <div
         data-testid="sidebar-backdrop"
-        onTouchStart={(event) => {
-          if (event.touches.length > 0) {
-            event.preventDefault();
-            handleBackdropClick(event as unknown as React.MouseEvent<HTMLDivElement>);
-          }
-        }}
         onClick={handleBackdropClick}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
@@ -299,7 +281,6 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
 
       {/* Mobile off-canvas drawer — full viewport height taking up 80% screen width up to max-w-sm */}
       <aside
-        onTouchStart={rapidSidebarTouch}
         onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
