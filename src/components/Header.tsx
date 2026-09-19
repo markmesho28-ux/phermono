@@ -72,12 +72,24 @@ export default function Header({
                       <button
                         type="button"
                         className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors flex items-center gap-1 text-[11px] touch-target"
+                        onPointerDown={(event) => {
+                          if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                            event.preventDefault();
+                            onAuthOpen && onAuthOpen(true);
+                          }
+                        }}
                         onClick={() => onAuthOpen && onAuthOpen(true)}
                       >
                         <User size={13} style={{ color: '#111827' }} /> {user.name ? user.name.trim().split(/\s+/)[0] : ''}
                       </button>
                       <button
                         type="button"
+                        onPointerDown={(event) => {
+                          if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                            event.preventDefault();
+                            logout();
+                          }
+                        }}
                         onClick={logout}
                         className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black text-[11px] font-semibold hover:bg-amber-500 transition-colors touch-target"
                       >
@@ -87,6 +99,12 @@ export default function Header({
                   ) : (
                     <button
                       type="button"
+                      onPointerDown={(event) => {
+                        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                          event.preventDefault();
+                          onAuthOpen && onAuthOpen(true);
+                        }
+                      }}
                       onClick={() => onAuthOpen && onAuthOpen(true)}
                       className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors text-[11px] touch-target max-md:bg-amber-400 max-md:text-brand-black max-md:border max-md:border-amber-500 max-md:shadow-sm max-md:font-bold"
                     >
@@ -147,6 +165,12 @@ export default function Header({
                 <div className="flex items-center gap-2.5 w-full">
                   <button
                     type="button"
+                    onPointerDown={(event) => {
+                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                        event.preventDefault();
+                        onMenuToggle && onMenuToggle(true);
+                      }
+                    }}
                     onClick={() => onMenuToggle && onMenuToggle(true)}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     aria-label="Open categories menu"
@@ -165,6 +189,12 @@ export default function Header({
               <div className="order-2 grid grid-cols-4 gap-1.5 w-full md:flex md:w-auto md:items-center md:justify-end md:gap-2">
                 <button
                   type="button"
+                  onPointerDown={(event) => {
+                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                      event.preventDefault();
+                      if (onWishlistOpen) onWishlistOpen();
+                    }
+                  }}
                   onClick={() => {
                     if (onWishlistOpen) onWishlistOpen();
                   }}
@@ -181,6 +211,12 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(event) => {
+                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                      event.preventDefault();
+                      if (onCartOpen) onCartOpen();
+                    }
+                  }}
                   onClick={() => {
                     if (onCartOpen) onCartOpen();
                   }}
@@ -204,6 +240,12 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(event) => {
+                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                      event.preventDefault();
+                      if (onTrackOpen) onTrackOpen(true);
+                    }
+                  }}
                   onClick={() => {
                     if (onTrackOpen) onTrackOpen(true);
                   }}
@@ -220,6 +262,12 @@ export default function Header({
 
                 <button
                   type="button"
+                  onPointerDown={(event) => {
+                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                      event.preventDefault();
+                      if (onAssistantOpen) onAssistantOpen();
+                    }
+                  }}
                   onClick={() => {
                     if (onAssistantOpen) onAssistantOpen();
                   }}
