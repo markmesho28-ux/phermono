@@ -110,16 +110,46 @@ export function CartDrawer({
     </>
   );
 
+  const lastBackdropClickRef = React.useRef(0);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      lastBackdropClickRef.current = Date.now();
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+    document.body.style.overflow = '';
+    return () => {};
+  }, [isOpen]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement> | React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - lastBackdropClickRef.current < 600) {
+      return;
+    }
+    lastBackdropClickRef.current = now;
+    onClose();
+  };
+
   return (
     <>
       <div
-        onClick={onClose}
+        data-testid="cart-backdrop"
+        onPointerDown={handleBackdropClick}
+        onClick={handleBackdropClick}
+        style={{ touchAction: 'manipulation' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-50 transition-opacity duration-300 ${
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />
 
       <aside
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'manipulation' }}
         className={`fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white z-50 flex flex-col shadow-2xl transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:h-[82vh] max-md:max-h-[82vh] max-md:w-full max-md:rounded-t-[28px] max-md:border-t max-md:border-brand-gold-border/40 max-md:overflow-hidden ${
           isOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none"
         }`}
@@ -127,7 +157,16 @@ export function CartDrawer({
         <div className="flex items-center justify-between px-6 py-5 border-b border-brand-gold-border/40 bg-brand-cream/60 max-md:px-4 max-md:py-4">
           {headerContent}
           <button
-            onClick={onClose}
+            type="button"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onClose();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="p-2 md:p-3 rounded-full hover:bg-stone-200 text-stone-500 hover:text-brand-black transition-colors touch-target"
             aria-label={checkoutMode ? "Close Checkout" : "Close Bag"}
           >

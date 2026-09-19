@@ -38,9 +38,30 @@ export default function Header({
   isMenuOpen,
   activeCategory,
 }: HeaderProps) {
-  // Keep header layout identical across viewports (no mobile-specific stacking)
   const { user, logout } = useAuth();
   const headerRef = useRef<HTMLDivElement>(null);
+  const lastMenuToggleRef = useRef(0);
+  const lastCartToggleRef = useRef(0);
+
+  const handleMenuAction = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+    const now = Date.now();
+    if (now - lastMenuToggleRef.current < 400) {
+      return;
+    }
+    lastMenuToggleRef.current = now;
+    if (onMenuToggle) onMenuToggle(true);
+  };
+
+  const handleCartAction = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+    const now = Date.now();
+    if (now - lastCartToggleRef.current < 400) {
+      return;
+    }
+    lastCartToggleRef.current = now;
+    if (onCartOpen) onCartOpen();
+  };
 
   useEffect(() => {
     const updateHeight = () => {
@@ -167,12 +188,12 @@ export default function Header({
                     type="button"
                     onPointerDown={(event) => {
                       event.stopPropagation();
-                      event.preventDefault();
-                      onMenuToggle && onMenuToggle(true);
+                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                        event.preventDefault();
+                      }
+                      handleMenuAction(event);
                     }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                    }}
+                    onClick={handleMenuAction}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     aria-label="Open categories menu"
@@ -214,14 +235,13 @@ export default function Header({
                 <button
                   type="button"
                   onPointerDown={(event) => {
+                    event.stopPropagation();
                     if (event.pointerType === 'touch' || event.pointerType === 'pen') {
                       event.preventDefault();
-                      if (onCartOpen) onCartOpen();
                     }
+                    handleCartAction(event);
                   }}
-                  onClick={() => {
-                    if (onCartOpen) onCartOpen();
-                  }}
+                  onClick={handleCartAction}
                   style={{ touchAction: 'manipulation' }}
                   className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active' : ''

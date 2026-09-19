@@ -573,6 +573,7 @@ export default function App(){
       <Header
         cartCount={totalCartCount}
         wishlistCount={wishlist.length}
+        cartOpen={cartOpen}
         onCartOpen={() => { if(user) setCartOpen(true); else { setAuthIntent('openCart'); setAuthOpen(true); } }}
         onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { setAuthIntent('openTracking'); setAuthOpen(true); } }}
         onAssistantOpen={() => {
