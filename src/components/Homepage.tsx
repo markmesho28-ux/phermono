@@ -90,10 +90,15 @@ export default function Homepage({
   }, []);
 
   useEffect(() => {
-    if (bannerConfig) {
+    if (!bannerConfig) {
+      setTextDraft('');
+      return;
+    }
+
+    if (!textEditorOpen) {
       setTextDraft(bannerConfig.content.headline);
     }
-  }, [bannerConfig]);
+  }, [bannerConfig, textEditorOpen]);
 
   const saveTextValues = async () => {
     if (!bannerConfig) return;
@@ -128,9 +133,7 @@ export default function Homepage({
         },
       });
 
-      const refreshed = await fetchPromoBannerConfig();
-      const finalBanner = refreshed && refreshed.content.headline ? refreshed : next;
-
+      const finalBanner = next && next.content.headline ? next : previousBanner;
       setBannerConfig(finalBanner);
       setTextDraft(finalBanner.content.headline);
       setTextEditorOpen(false);
@@ -332,12 +335,7 @@ export default function Homepage({
                     <button
                       type="button"
                       aria-label="Edit promotional text"
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
                       onClick={(event) => {
-                        event.preventDefault();
                         event.stopPropagation();
                         setTextDraft(bannerConfig.content.headline);
                         setTextError('');
@@ -359,19 +357,13 @@ export default function Homepage({
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
             <div
               className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
-              onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-brand-black">Edit Product Image</h3>
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     setImageEditorIndex(null);
                     setImageDraft('');
@@ -403,12 +395,7 @@ export default function Homepage({
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     setImageEditorIndex(null);
                     setImageDraft('');
@@ -421,12 +408,7 @@ export default function Homepage({
                 </button>
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     void saveImageValue();
                   }}
@@ -446,19 +428,13 @@ export default function Homepage({
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
             <div
               className="w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-4 shadow-2xl"
-              onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold text-brand-black">Edit Text</h3>
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     setTextEditorOpen(false);
                     setTextError('');
@@ -479,12 +455,7 @@ export default function Homepage({
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     setTextEditorOpen(false);
                     setTextError('');
@@ -496,12 +467,7 @@ export default function Homepage({
                 </button>
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
                   onClick={(event) => {
-                    event.preventDefault();
                     event.stopPropagation();
                     void saveTextValues();
                   }}
