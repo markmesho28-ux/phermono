@@ -701,7 +701,7 @@ export default function App(){
         </main>
       </div>
 
-      <GlobalFooter />
+      {activeCategory !== 'about' && <GlobalFooter />}
 
       <CartDrawer
         isOpen={cartOpen}

@@ -48,7 +48,30 @@ export default function Homepage({
 
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Stale-while-revalidate banner cache
+  // Read from localStorage synchronously so the banner is visible on first paint
+  // and never collapses during re-mounts / navigation.
+  // ---------------------------------------------------------------------------
+  const BANNER_CACHE_KEY = 'phermono_promo_banner_v1';
+
+  const readBannerCache = (): PromoBannerConfig | null => {
+    try {
+      const raw = localStorage.getItem(BANNER_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Minimal guard: must have content.headline
+      if (parsed && typeof parsed?.content?.headline === 'string') return parsed as PromoBannerConfig;
+    } catch (_) { /* ignore */ }
+    return null;
+  };
+
+  const writeBannerCache = (config: PromoBannerConfig) => {
+    try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(config)); } catch (_) { /* ignore */ }
+  };
+
+  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(() => readBannerCache() ?? DEFAULT_PROMO_BANNER);
   const [textDraft, setTextDraft] = useState('');
   const [textEditorOpen, setTextEditorOpen] = useState(false);
   const [imageEditorIndex, setImageEditorIndex] = useState<number | null>(null);
@@ -59,27 +82,21 @@ export default function Homepage({
   const [textError, setTextError] = useState('');
   const [textSaving, setTextSaving] = useState(false);
   const [imageSaving, setImageSaving] = useState(false);
-  const [bannerLoading, setBannerLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadBanner = async () => {
-      setBannerLoading(true);
       try {
         const next = await fetchPromoBannerConfig();
         if (!isMounted) return;
         setBannerConfig(next);
         setTextDraft(next.content.headline);
+        writeBannerCache(next);
       } catch (error) {
         if (!isMounted) return;
-        setBannerConfig(null);
-        setTextDraft('');
+        // Keep whatever is already shown (cache or default) — don't blank it
         console.warn('Failed to load promo banner config:', error);
-      } finally {
-        if (isMounted) {
-          setBannerLoading(false);
-        }
       }
     };
 
@@ -90,11 +107,6 @@ export default function Homepage({
   }, []);
 
   useEffect(() => {
-    if (!bannerConfig) {
-      setTextDraft('');
-      return;
-    }
-
     if (!textEditorOpen) {
       setTextDraft(bannerConfig.content.headline);
     }
@@ -207,146 +219,29 @@ export default function Homepage({
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">
       <div className="space-y-8 md:space-y-10">
-        {!bannerLoading && bannerConfig && (
-          <div className="relative isolate w-full overflow-hidden rounded-2xl border border-brand-gold/30 bg-[#f5efe7] shadow-[0_16px_36px_rgba(60,47,27,0.08)]">
-            <div
-              aria-hidden="true"
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(circle at 30% 55%, rgba(217,182,118,0.18), rgba(245,239,231,0) 32%), linear-gradient(90deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 100%)',
-              }}
-            />
+        {bannerConfig && (
+          <div className="promo-banner-shell relative w-full overflow-hidden text-white">
+            <div className="promo-banner-inner">
+              <div className="promo-banner-copy-group">
+                <div className="promo-banner-text-group">
+                  <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
+                </div>
 
-            <div className="promo-banner-shell relative z-10 w-full overflow-hidden rounded-[18px] text-brand-black">
-              <div className="promo-banner-bg-sketches" aria-hidden="true">
-              <svg viewBox="0 0 100 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--perfume promo-banner-bg-sketch--a">
-                <path d="M30 24h26v10H30zm4 10h18v28c0 8-6 14-14 14s-14-6-14-14V34z" fill="rgba(160,128,94,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
-                <path d="M40 16h12v10H40zm-2 40c5 5 10 7 17 10" stroke="rgba(26,23,21,0.38)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-                <path d="M28 72h30" stroke="rgba(161,121,92,0.32)" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--lipstick promo-banner-bg-sketch--b">
-                <path d="M22 18h22l8 14v28c0 9-7 16-16 16H30c-9 0-16-7-16-16V32l8-14z" fill="rgba(205,145,126,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
-                <path d="M28 12h18v10H28z" fill="rgba(207,180,123,0.18)" />
-                <path d="M34 30v32" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M30 48c5 4 9 7 12 14" stroke="rgba(188,137,110,0.32)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-              </svg>
-
-              <svg viewBox="0 0 120 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--c">
-                <path d="M18 60c10-16 25-26 42-34 7-4 15-7 23-14 8-6 21-4 27 4 5 7 3 17-2 24-8 12-17 17-28 24-10 6-16 14-26 25H26c-3-9-5-18-8-29z" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.38)" strokeWidth="1.3" />
-                <path d="M50 15c8 5 18 12 27 22" stroke="rgba(188,160,96,0.28)" strokeWidth="1.3" strokeLinecap="round" fill="none" />
-                <path d="M28 60h48" stroke="rgba(26,23,21,0.38)" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--tube promo-banner-bg-sketch--d">
-                <path d="M28 16h18v16H28zm-6 16h30v24c0 10-8 18-18 18S22 66 22 56V32z" fill="rgba(255,255,255,0.06)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.4" />
-                <path d="M36 26v36" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M24 54c7 5 13 8 17 13" stroke="rgba(176,125,100,0.3)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-              </svg>
-
-              <svg viewBox="0 0 100 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--e">
-                <path d="M28 28h28v20c0 14-9 24-20 24S28 62 28 48V28z" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.3" />
-                <path d="M32 20h20v12H32z" fill="rgba(207,180,123,0.14)" />
-                <path d="M32 54c10 6 18 8 24 12" stroke="rgba(26,23,21,0.34)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 90 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--compact promo-banner-bg-sketch--f">
-                <rect x="18" y="24" width="42" height="30" rx="6" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.42)" strokeWidth="1.3" />
-                <path d="M28 22h22" stroke="rgba(26,23,21,0.38)" strokeWidth="1.4" strokeLinecap="round" />
-                <path d="M39 36v13" stroke="rgba(26,23,21,0.38)" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M33 42h12" stroke="rgba(205,145,126,0.3)" strokeWidth="1.1" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 110 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--g">
-                <path d="M15 65c9-18 25-27 41-34 8-4 17-8 26-17 7-7 19-7 25 1 5 8 3 18-2 25-9 13-20 19-31 26-11 8-17 15-26 27H23c-2-8-5-17-8-28z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M42 18c7 5 17 12 26 22" stroke="rgba(188,160,96,0.26)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-              </svg>
-
-              <svg viewBox="0 0 84 84" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--h">
-                <path d="M26 22h24v16c0 14-8 25-18 25S26 52 26 38V22z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M30 16h18v9H30z" fill="rgba(207,180,123,0.14)" />
-                <path d="M30 48c8 5 13 7 18 11" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 96 100" className="promo-banner-bg-sketch promo-banner-bg-sketch--tube promo-banner-bg-sketch--i">
-                <path d="M30 20h18v12H30zm-8 12h34v26c0 13-9 22-20 22S22 71 22 58V32z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M38 26v34" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M28 58c7 5 12 8 15 12" stroke="rgba(176,125,100,0.26)" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-              </svg>
-
-              <svg viewBox="0 0 88 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--compact promo-banner-bg-sketch--j">
-                <rect x="16" y="26" width="42" height="30" rx="6" fill="rgba(255,255,255,0.04)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M26 22h22" stroke="rgba(26,23,21,0.32)" strokeWidth="1.3" strokeLinecap="round" />
-                <path d="M36 36v13" stroke="rgba(26,23,21,0.32)" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M31 42h12" stroke="rgba(205,145,126,0.26)" strokeWidth="1.1" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 98 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--perfume promo-banner-bg-sketch--k">
-                <path d="M30 22h24v10H30zm4 10h16v26c0 8-6 14-14 14s-14-6-14-14V32z" fill="rgba(160,128,94,0.05)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M42 14h10v11H42zm-4 34c6 5 11 7 16 11" stroke="rgba(26,23,21,0.3)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 92 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--lipstick promo-banner-bg-sketch--l">
-                <path d="M22 16h20l8 12v26c0 9-7 16-16 16H30c-9 0-16-7-16-16V28l8-12z" fill="rgba(205,145,126,0.05)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M28 12h16v8H28z" fill="rgba(207,180,123,0.14)" />
-                <path d="M33 28v30" stroke="rgba(26,23,21,0.3)" strokeWidth="1.1" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 86 86" className="promo-banner-bg-sketch promo-banner-bg-sketch--jar promo-banner-bg-sketch--m">
-                <path d="M24 24h24v18c0 12-8 21-17 21S24 54 24 42V24z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M28 14h18v10H28z" fill="rgba(207,180,123,0.12)" />
-                <path d="M29 49c9 5 15 7 19 10" stroke="rgba(26,23,21,0.3)" strokeWidth="1.1" fill="none" strokeLinecap="round" />
-              </svg>
-
-              <svg viewBox="0 0 100 90" className="promo-banner-bg-sketch promo-banner-bg-sketch--brush promo-banner-bg-sketch--n">
-                <path d="M18 58c10-16 25-26 41-33 9-4 17-8 25-16 8-7 20-5 26 4 5 9 2 18-4 24-8 10-17 15-28 22-10 7-16 15-27 26H27c-2-9-4-17-9-27z" fill="rgba(255,255,255,0.03)" stroke="rgba(26,23,21,0.35)" strokeWidth="1.2" />
-                <path d="M45 12c7 5 16 12 25 21" stroke="rgba(188,160,96,0.24)" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-              </svg>
-            </div>
-
-              <div className="promo-banner-inner">
-                <div className="promo-banner-copy-group">
-                  <div className="promo-banner-text-group">
-                    <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
-                  </div>
-
+                {isAdmin && (
                   <button
                     type="button"
-                    className="promo-banner-cta"
+                    aria-label="Edit promotional text"
                     onClick={() => {
-                      const section = document.getElementById('our-departments');
-                      if (!section) return;
-
-                      const headerHeight = Number.parseFloat(
-                        getComputedStyle(document.documentElement).getPropertyValue('--header-height') || '0'
-                      ) || 0;
-                      const top = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
-
-                      window.scrollTo({
-                        top: Math.max(0, top),
-                        behavior: 'smooth',
-                      });
+                      setTextDraft(bannerConfig.content.headline);
+                      setTextError('');
+                      setTextEditorOpen(true);
                     }}
+                    className="promo-banner-edit"
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   >
-                    SHOP NOW
+                    <Edit2 size={12} />
                   </button>
-
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      aria-label="Edit promotional text"
-                      onClick={() => {
-                        setTextDraft(bannerConfig.content.headline);
-                        setTextError('');
-                        setTextEditorOpen(true);
-                      }}
-                      className="promo-banner-edit"
-                      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
