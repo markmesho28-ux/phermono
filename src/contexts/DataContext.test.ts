@@ -1,4 +1,12 @@
-import { resolveCategoryIdForUpdate } from './DataContext';
+import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError } from './DataContext';
+
+describe('isPermissionDeniedOrRlsError', () => {
+  it('detects admin permission and row-level security rejections', () => {
+    expect(isPermissionDeniedOrRlsError({ code: '42501', message: 'permission denied for table products' })).toBe(true);
+    expect(isPermissionDeniedOrRlsError({ code: 'PGRST301', message: 'JWT expired' })).toBe(true);
+    expect(isPermissionDeniedOrRlsError({ code: '23505', message: 'duplicate key value violates unique constraint' })).toBe(false);
+  });
+});
 
 describe('resolveCategoryIdForUpdate', () => {
   it('returns a UUID as-is for a precise category id', async () => {

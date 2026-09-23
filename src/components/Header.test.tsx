@@ -93,6 +93,18 @@ describe('Header Action Buttons', () => {
     expect(defaultProps.onAssistantOpen).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the auth modal once when a touch pointer fires before the click', () => {
+    const onAuthOpen = jest.fn();
+    render(<Header {...defaultProps} onAuthOpen={onAuthOpen} />);
+
+    const signInButton = screen.getByRole('button', { name: 'Sign in' });
+    fireEvent.pointerDown(signInButton);
+    fireEvent.click(signInButton);
+
+    expect(onAuthOpen).toHaveBeenCalledTimes(1);
+    expect(onAuthOpen).toHaveBeenCalledWith(true);
+  });
+
   it('opens the mobile menu via the native click path without synthetic touch interception', () => {
     render(<Header {...defaultProps} />);
     const menuBtn = screen.getByLabelText('Open categories menu');

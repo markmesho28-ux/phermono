@@ -297,6 +297,23 @@ const isMissingColumnError = (error: any) => {
   return /column .* does not exist|does not exist|unknown column/i.test(message);
 };
 
+export const isPermissionDeniedOrRlsError = (error: any): boolean => {
+  const code = String(error?.code ?? '').toUpperCase();
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+
+  return (
+    code === '42501' ||
+    code === 'PGRST301' ||
+    code === 'PGRST302' ||
+    /permission denied/i.test(message) ||
+    /row level security/i.test(message) ||
+    /rls/i.test(message) ||
+    /jwt expired/i.test(message) ||
+    /not authenticated/i.test(message) ||
+    /unauthorized/i.test(message)
+  );
+};
+
 const persistBestSellerFlag = async (productId: number, nextValue: boolean): Promise<boolean> => {
   if (!supabase) return false;
 
@@ -718,9 +735,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const updateCategory = async (id: string, updates: Partial<Category>) => {
+    if (!supabase) return;
+
+    const isAllowed = await verifyAdminPermission('update categories');
+    if (!isAllowed) return;
+
     // Local optimistic update kept until server confirms
     setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    if (!supabase) return;
     try {
       const row: any = {};
       if (updates.label !== undefined) {
@@ -1092,13 +1113,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const updateSubcategory = async (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => {
+    if (!supabase) return;
+
+    const isAllowed = await verifyAdminPermission('update subcategories');
+    if (!isAllowed) return;
+
     // Optimistic local update
     setCategories(prev => prev.map(c => {
       if (c.id !== categoryId) return c;
       return { ...c, subcategories: c.subcategories.map(s => s.id === subId ? { ...s, ...updates } : s) } as any;
     }));
 
-    if (!supabase) return;
     try {
       const row: any = {};
       if (updates.label !== undefined) {
@@ -1650,11 +1675,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const updateProduct = (id: number, updates: Partial<Product>) => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     // send mapped update to remote
     void (async () => {
       try {
         if (!supabase) return;
+
+        const isAllowed = await verifyAdminPermission('update products');
+        if (!isAllowed) return;
+
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+
         // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
         // any incoming subcategory value (slug/name) to the canonical id first.
         const updatesForMapping: Partial<Product> = { ...updates };
@@ -1700,8 +1730,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
 
         const { error } = await supabase.from('products').update(row).eq('id', id).select().single();
-        if (error && !isMissingColumnError(error)) {
+        if (error) {
+          if (isMissingColumnError(error)) {
+            console.warn('Supabase product update failed because the live DB schema is missing a column:', error.message || error);
+            return;
+          }
+          if (isPermissionDeniedOrRlsError(error)) {
+            console.warn('Supabase product update was blocked by admin auth or row-level security:', error.message || error);
+            alert('Failed to update product: admin access or the products RLS policy denied the change. Verify the admin session and the products update policy.');
+            return;
+          }
           console.warn('Supabase product update failed:', error.message || error);
+          alert('Failed to update product: ' + (error.message || String(error)));
           return;
         }
 
@@ -1710,6 +1750,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (e: any) {
         console.warn('Supabase product update error:', e?.message || e);
+        alert('Failed to update product: ' + (e?.message || String(e)));
       }
     })();
   };
@@ -1791,6 +1832,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateBrand = async (oldName: string, newName: string) => {
     const clean = String(newName || '').trim();
     if (!clean) return;
+    if (!supabase) return;
+
+    const isAllowed = await verifyAdminPermission('update brands');
+    if (!isAllowed) return;
     // Optimistic local updates
     setBrands(prev => prev.map(b => b === oldName ? clean : b));
     setCategories(prev => prev.map(c => {
@@ -1802,7 +1847,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }));
     setProducts(prev => prev.map(p => p.brand === oldName ? { ...p, brand: clean } : p));
 
-    if (!supabase) return;
     try {
       // Find the brand row by name to get its id, then update by id to be explicit
       // Attempt to scope update to the category that currently lists this brand to avoid cross-category updates

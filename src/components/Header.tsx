@@ -172,12 +172,6 @@ export default function Header({
                     <button
                       type="button"
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all flex items-center gap-1 text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
-                      onPointerDown={(event) => {
-                        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                          event.preventDefault();
-                          onAuthOpen && onAuthOpen(true);
-                        }
-                      }}
                       onClick={() => onAuthOpen && onAuthOpen(true)}
                     >
                       <User size={12} style={{ color: '#111827' }} />
@@ -185,12 +179,6 @@ export default function Header({
                     </button>
                     <button
                       type="button"
-                      onPointerDown={(event) => {
-                        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                          event.preventDefault();
-                          logout();
-                        }
-                      }}
                       onClick={logout}
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white text-[10px] sm:text-[11px] font-medium transition-colors touch-target border border-white/15"
                     >
@@ -200,12 +188,6 @@ export default function Header({
                 ) : (
                   <button
                     type="button"
-                    onPointerDown={(event) => {
-                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                        event.preventDefault();
-                        onAuthOpen && onAuthOpen(true);
-                      }
-                    }}
                     onClick={() => onAuthOpen && onAuthOpen(true)}
                     className="header-auth-btn px-3 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
                   >

@@ -197,6 +197,7 @@ export default function ProductCard({
             <div className="w-full">
               <button
                 onClick={handleAddClick}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`card-add-btn flex w-full items-center justify-center gap-1 rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] transition-all duration-300 active:scale-95 touch-target md:px-4 md:py-2.5 md:text-[11px] ${
                   addedAnim
                     ? 'bg-emerald-600 text-white shadow-[0_12px_22px_rgba(16,185,129,0.28)]'

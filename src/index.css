@@ -516,6 +516,28 @@ body {
   touch-action: manipulation;
 }
 
+.card-add-btn,
+.footer-social-link,
+form button,
+form input[type="submit"],
+form input[type="button"],
+form input[type="reset"],
+form textarea,
+form select,
+form input:not([type="search"]):not([type="hidden"]) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card-add-btn:active,
+.footer-social-link:active,
+form button:active,
+form input[type="submit"]:active,
+form input[type="button"]:active,
+form input[type="reset"]:active {
+  transform: scale(0.98);
+}
+
 button,
 a,
 [role="button"],
