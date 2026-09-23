@@ -48,6 +48,9 @@ export function GlobalFooter() {
     if (typeof event.stopPropagation === 'function') {
       event.stopPropagation();
     }
+    if (typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
   };
 
   return (
@@ -83,7 +86,7 @@ export function GlobalFooter() {
                 onTouchEnd={handleFooterLinkPress}
                 onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#f3d29c]/40 bg-gradient-to-br from-[#f9dba1] via-[#d78a52] to-[#7b3f72] text-[#1d130d] shadow-[0_12px_24px_rgba(235,173,92,0.35)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(235,173,92,0.45)]"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
               >
                 <Instagram size={18} />
               </a>
@@ -98,7 +101,7 @@ export function GlobalFooter() {
                 onTouchEnd={handleFooterLinkPress}
                 onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#d9dfe8]/25 bg-[#1e3a8a] text-white shadow-[0_12px_22px_rgba(26,65,180,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#2547b8]"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
               >
                 <Facebook size={18} />
               </a>
@@ -113,7 +116,7 @@ export function GlobalFooter() {
                 onTouchEnd={handleFooterLinkPress}
                 onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#9fe0bc]/40 bg-[#1e8d5a] text-white shadow-[0_12px_22px_rgba(30,141,90,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1fa769]"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
               >
                 <MessageCircle size={18} />
               </a>
@@ -126,7 +129,7 @@ export function GlobalFooter() {
                 onTouchEnd={handleFooterLinkPress}
                 onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#f0d7a5]/40 bg-[#f9f5ee] text-[#1b1715] shadow-[0_12px_22px_rgba(249,245,238,0.12)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
               >
                 <Phone size={18} />
               </a>

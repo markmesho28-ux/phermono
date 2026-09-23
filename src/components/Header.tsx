@@ -48,6 +48,19 @@ export default function Header({
   const headerRef = useRef<HTMLDivElement>(null);
   const lastMenuToggleRef = useRef(0);
   const lastCartToggleRef = useRef(0);
+  const lastAuthActionRef = useRef(0);
+
+  const handleAuthAction = (callback: () => void, event?: React.SyntheticEvent | React.PointerEvent | React.TouchEvent) => {
+    if (event && typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
+    }
+    const now = Date.now();
+    if (now - lastAuthActionRef.current < 300) {
+      return;
+    }
+    lastAuthActionRef.current = now;
+    callback();
+  };
 
   const handleMenuAction = (event: React.SyntheticEvent) => {
     event.stopPropagation();
@@ -172,15 +185,21 @@ export default function Header({
                     <button
                       type="button"
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all flex items-center gap-1 text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
-                      onClick={() => onAuthOpen && onAuthOpen(true)}
+                      onPointerDown={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
+                      onTouchStart={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
+                      onClick={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
+                      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                     >
                       <User size={12} style={{ color: '#111827' }} />
                       <span>{user.name ? user.name.trim().split(/\s+/)[0] : 'Account'}</span>
                     </button>
                     <button
                       type="button"
-                      onClick={logout}
+                      onPointerDown={(event) => handleAuthAction(() => logout(), event)}
+                      onTouchStart={(event) => handleAuthAction(() => logout(), event)}
+                      onClick={(event) => handleAuthAction(() => logout(), event)}
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white text-[10px] sm:text-[11px] font-medium transition-colors touch-target border border-white/15"
+                      style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                     >
                       Sign out
                     </button>
@@ -188,8 +207,11 @@ export default function Header({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onAuthOpen && onAuthOpen(true)}
+                    onPointerDown={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
+                    onTouchStart={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
+                    onClick={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
                     className="header-auth-btn px-3 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                   >
                     Sign in
                   </button>

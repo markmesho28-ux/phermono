@@ -533,6 +533,7 @@ form input:not([type="search"]):not([type="hidden"]) {
 .footer-social-link {
   cursor: pointer;
   user-select: none;
+  pointer-events: auto;
 }
 
 .card-add-btn:active,
