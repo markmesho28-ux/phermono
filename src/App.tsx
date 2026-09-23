@@ -38,11 +38,17 @@ function Toast({ message, visible }: ToastProps) {
   );
 }
 
-function GlobalFooter() {
+export function GlobalFooter() {
   const whatsappUrl = 'https://wa.me/201010072795';
   const telUrl = 'tel:+201010072795';
   const instagramUrl = 'https://www.instagram.com/phermonostore3?stkn=ZmlsZ3NsZXh0cW52';
   const facebookUrl = 'https://www.facebook.com/share/14pshxhK3vA/?mibextid=wwXIfr';
+
+  const handleFooterLinkPress = (event: React.PointerEvent<HTMLAnchorElement> | React.TouchEvent<HTMLAnchorElement> | React.MouseEvent<HTMLAnchorElement>) => {
+    if (typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
+    }
+  };
 
   return (
     <footer className="w-full border-t border-[#eadac0] bg-[radial-gradient(circle_at_top,_rgba(243,210,156,0.20),_transparent_32%),linear-gradient(180deg,_#1b1715_0%,_#120f0d_100%)] text-[#f7f0e8]">
@@ -72,6 +78,10 @@ function GlobalFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Instagram"
+                onPointerDown={handleFooterLinkPress}
+                onTouchStart={handleFooterLinkPress}
+                onTouchEnd={handleFooterLinkPress}
+                onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#f3d29c]/40 bg-gradient-to-br from-[#f9dba1] via-[#d78a52] to-[#7b3f72] text-[#1d130d] shadow-[0_12px_24px_rgba(235,173,92,0.35)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(235,173,92,0.45)]"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
@@ -83,6 +93,10 @@ function GlobalFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Facebook"
+                onPointerDown={handleFooterLinkPress}
+                onTouchStart={handleFooterLinkPress}
+                onTouchEnd={handleFooterLinkPress}
+                onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#d9dfe8]/25 bg-[#1e3a8a] text-white shadow-[0_12px_22px_rgba(26,65,180,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#2547b8]"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
@@ -94,6 +108,10 @@ function GlobalFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="WhatsApp"
+                onPointerDown={handleFooterLinkPress}
+                onTouchStart={handleFooterLinkPress}
+                onTouchEnd={handleFooterLinkPress}
+                onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#9fe0bc]/40 bg-[#1e8d5a] text-white shadow-[0_12px_22px_rgba(30,141,90,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1fa769]"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
@@ -103,6 +121,10 @@ function GlobalFooter() {
               <a
                 href={telUrl}
                 aria-label="Call us"
+                onPointerDown={handleFooterLinkPress}
+                onTouchStart={handleFooterLinkPress}
+                onTouchEnd={handleFooterLinkPress}
+                onClick={handleFooterLinkPress}
                 className="footer-social-link flex h-11 w-11 items-center justify-center rounded-full border border-[#f0d7a5]/40 bg-[#f9f5ee] text-[#1b1715] shadow-[0_12px_22px_rgba(249,245,238,0.12)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
@@ -729,7 +751,7 @@ export default function App(){
         </main>
       </div>
 
-      {activeCategory !== 'about' && <GlobalFooter />}
+      {activeCategory !== 'about' && activeCategory !== 'orders' && <GlobalFooter />}
 
       <CartDrawer
         isOpen={cartOpen}

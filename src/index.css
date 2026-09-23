@@ -518,6 +518,7 @@ body {
 
 .card-add-btn,
 .footer-social-link,
+.footer-social-link:focus-visible,
 form button,
 form input[type="submit"],
 form input[type="button"],
@@ -527,6 +528,11 @@ form select,
 form input:not([type="search"]):not([type="hidden"]) {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+.footer-social-link {
+  cursor: pointer;
+  user-select: none;
 }
 
 .card-add-btn:active,
