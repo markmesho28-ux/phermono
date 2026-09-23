@@ -124,182 +124,199 @@ export default function CategoryView({
   const openEditBrand = (brand: string) => { setEditing({ categoryId: categoryId, brand }); setModalMode('editBrand'); setModalOpen(true); };
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 pt-4 pb-28 md:pb-12 space-y-8 animate-fadeIn overflow-hidden">
-      {/* Category Hero (clean, unboxed) */}
-      <div className="relative p-8 sm:p-10 text-white">
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-gold/20 border border-brand-gold/40 text-gray-900 text-xs font-bold uppercase tracking-wider mb-3">
-            <Sparkles size={13} />
-            <span>PhM Department</span>
+    <div className="mx-auto w-full max-w-[1500px] px-3 pb-24 pt-4 sm:px-5 lg:px-8 md:pb-12">
+      <div className="relative overflow-hidden rounded-[32px] border border-[#ead7b5] bg-[radial-gradient(circle_at_top_left,_#fffdfb_0%,_#f8f1e8_30%,_#efe4d3_100%)] p-5 shadow-[0_22px_60px_rgba(40,28,18,0.10)] sm:p-7 lg:p-9">
+        <div className="pointer-events-none absolute inset-y-0 right-[-10%] hidden w-1/2 bg-[radial-gradient(circle,_rgba(175,120,68,0.18)_0%,_rgba(175,120,68,0.06)_28%,_transparent_70%)] lg:block" />
+        <div className="relative z-10 flex w-full flex-col gap-4">
+          <div className="max-w-2xl text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8b880]/70 bg-[#1b1715] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#f7d9a3] shadow-[0_10px_24px_rgba(27,23,21,0.15)]">
+              <Sparkles size={12} />
+              <span>PhM Department</span>
+            </div>
+            <h1 className="mt-4 text-left font-serif-luxury text-3xl font-black tracking-[-0.04em] text-[#1d130d] sm:text-4xl lg:text-5xl">
+              {category.label}
+            </h1>
+            <p className="mt-3 max-w-xl text-left text-sm text-[#574a3d] sm:text-base">
+              Curated essentials and elevated rituals for {category.label.toLowerCase()} with tailored beauty picks and premium formulas.
+            </p>
           </div>
-          <h1 className="font-serif-luxury text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 mb-2">{category.label}</h1>
-          <p className="font-tagline text-base sm:text-lg text-gray-800 mb-2">Ur favorite Mono choice in {category.label.toLowerCase()}</p>
         </div>
       </div>
 
-      {/* ── SUB-CATEGORIES BREAKDOWN ── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Tag size={14} className="text-brand-gold" />
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Sub-Categories Breakdown</span>
-            {user && user.role === 'admin' && (
-              <button type="button" onClick={openAddSub} className="ml-2 text-brand-gold cursor-pointer touch-target">
-                <PlusCircle size={14} />
-              </button>
-            )}
-          </div>
-          <span className="text-xs text-stone-400 font-medium">
-            {selectedSubcategory === "all" ? "All Sub-Categories" : category.subcategories.find(s=>s.id===selectedSubcategory)?.label}
-          </span>
-        </div>
-        <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
-          {category.subcategories.map((sub) => {
-            const isActive = selectedSubcategory === sub.id;
-            const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===sub.id).length;
-            return (
-              <div key={sub.id} className="relative">
-                <button
-                  type="button"
-                  onClick={()=>setSelectedSubcategory(sub.id)}
-                  className={`category-filter-tab shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 touch-target border ${isActive ? "bg-brand-black text-white border-brand-black shadow-luxury" : "bg-white text-brand-black border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
-                  data-active={isActive}
-                >
-                  <span className="pointer-events-none">{sub.label}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isActive?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>{subCount}</span>
-                </button>
-                {user && user.role==='admin' && sub.id !== 'all' && (
-                  <div className="absolute -right-2 top-0 flex flex-col gap-1">
-                    <button type="button" onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="p-1 bg-white rounded-full shadow cursor-pointer touch-target"><Edit2 size={12} /></button>
-                    <button type="button" onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer touch-target"><Trash2 size={12} /></button>
-                  </div>
-                )}
+      <div className="mt-7 space-y-5">
+        <div className="rounded-[28px] border border-[#ead7b5] bg-white/80 p-3 shadow-[0_16px_32px_rgba(32,24,17,0.05)] backdrop-blur-sm sm:p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f2e5cf] text-[#8a5d2d]">
+                <Tag size={14} />
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── FILTER BY BRAND ── (identical structure/design to Sub-Categories Breakdown above) */}
-      <div>
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <Tag size={14} className="text-brand-gold" />
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-darkgray">Filter by Brand</span>
-            {user && user.role === 'admin' && (
-              <button type="button" onClick={openAddBrand} className="ml-2 text-brand-gold cursor-pointer touch-target" aria-label="Add Brand">
-                <PlusCircle size={14} />
-              </button>
-            )}
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-[#5b4637]">Sub-Categories</span>
+              {user && user.role === 'admin' && (
+                <button type="button" onClick={openAddSub} className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d9b57c] bg-[#f9f1e7] text-[#7b5333] transition hover:bg-[#f1d8a8] touch-target" aria-label="Add Subcategory">
+                  <PlusCircle size={13} />
+                </button>
+              )}
+            </div>
+            <span className="truncate text-[11px] font-semibold text-[#8c7c6d]">
+              {selectedSubcategory === "all" ? "All Sub-Categories" : category.subcategories.find(s=>s.id===selectedSubcategory)?.label}
+            </span>
           </div>
-          <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-            <span className="inline-flex min-w-0 justify-end">
-              {selectedBrand !== "all" ? (
-                <button type="button" onClick={()=>setSelectedBrand('all')} className="flex items-center gap-1 text-xs font-bold text-stone-500 transition-colors hover:text-red-500 touch-target">
-                  <X size={12} /> Reset Brand
+
+          <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {category.subcategories.map((sub) => {
+              const isActive = selectedSubcategory === sub.id;
+              const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===sub.id).length;
+              return (
+                <div key={sub.id} className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={()=>setSelectedSubcategory(sub.id)}
+                    className={`flex items-center gap-2 rounded-full border px-4 py-2.5 text-[11px] font-bold tracking-[0.12em] uppercase transition-all duration-300 active:scale-95 touch-target ${isActive ? 'border-[#1b1715] bg-[#1b1715] text-[#f8ebd9] shadow-[0_14px_24px_rgba(27,23,21,0.12)]' : 'border-[#e8dcc6] bg-[#fffdfb] text-[#2d231b] hover:border-[#d6b67d] hover:text-[#1d130d]'}`}
+                    data-active={isActive}
+                  >
+                    <span className="pointer-events-none">{sub.label}</span>
+                    <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${isActive ? 'bg-[#f3d29c] text-[#1d130d]' : 'bg-[#f7f0e6] text-[#6b5441]'}`}>
+                      {subCount}
+                    </span>
+                  </button>
+                  {user && user.role==='admin' && sub.id !== 'all' && (
+                    <div className="absolute -right-2 top-0 flex flex-col gap-1">
+                      <button type="button" onClick={()=>{ setEditing({categoryId: categoryId, sub}); setModalMode('editSub'); setModalOpen(true); }} className="h-6 w-6 rounded-full bg-white shadow-md text-[#4b3d2e] touch-target"><Edit2 size={11} className="mx-auto" /></button>
+                      <button type="button" onClick={()=>{ actions.deleteSubcategory(categoryId, sub.id); }} className="h-6 w-6 rounded-full bg-white shadow-md text-red-500 touch-target"><Trash2 size={11} className="mx-auto" /></button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-[#ead7b5] bg-white/80 p-3 shadow-[0_16px_32px_rgba(32,24,17,0.05)] backdrop-blur-sm sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f2e5cf] text-[#8a5d2d]">
+                <Tag size={14} />
+              </div>
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-[#5b4637]">Filter by Brand</span>
+              {user && user.role === 'admin' && (
+                <button type="button" onClick={openAddBrand} className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d9b57c] bg-[#f9f1e7] text-[#7b5333] transition hover:bg-[#f1d8a8] touch-target" aria-label="Add Brand">
+                  <PlusCircle size={13} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 sm:gap-3">
+              <span className="inline-flex min-w-0 justify-end">
+                {selectedBrand !== "all" ? (
+                  <button type="button" onClick={()=>setSelectedBrand('all')} className="flex items-center gap-1 text-[11px] font-bold text-[#7a655d] transition-colors hover:text-red-500 touch-target">
+                    <X size={12} /> Reset Brand
+                  </button>
+                ) : (
+                  <span className="invisible text-[11px] font-bold">Reset Brand</span>
+                )}
+              </span>
+              {availableBrands.length > 8 ? (
+                <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-[#7b5333] transition-colors hover:text-[#1d130d] touch-target">
+                  {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
                 </button>
               ) : (
-                <span className="invisible text-xs font-bold">Reset Brand</span>
+                <span className="invisible whitespace-nowrap text-[11px] font-bold">View All (0)</span>
               )}
-            </span>
-            {availableBrands.length > 8 ? (
-              <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-xs font-bold text-brand-gold-dark transition-colors hover:text-brand-black touch-target">
-                {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
-              </button>
-            ) : (
-              <span className="invisible whitespace-nowrap text-xs font-bold">View All (0)</span>
-            )}
+            </div>
           </div>
-        </div>
-        <div className="flex gap-2.5 overflow-x-auto scrollbar-hide pb-1">
-          {/* All Brands pill */}
-          <button
-            type="button"
-            onClick={()=>setSelectedBrand('all')}
-            className={`category-filter-tab shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 touch-target border ${selectedBrand==='all' ? "bg-brand-black text-white border-brand-black shadow-luxury" : "bg-white text-brand-black border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
-            data-active={selectedBrand === 'all'}
-          >
-            <span className="pointer-events-none">All Brands</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${selectedBrand==='all'?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>
-              {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===selectedSubcategory).length}
-            </span>
-          </button>
-          {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
-            const isSelected = selectedBrand===brand;
-            const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategoryId===selectedSubcategory)).length;
-            return (
-              <div key={brand} className="relative">
-                <button
-                  type="button"
-                  onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)}
-                  className={`category-filter-tab shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 shadow-sm active:scale-95 touch-target border ${isSelected ? "bg-brand-black text-white border-brand-black shadow-luxury" : "bg-white text-brand-black border-stone-200 hover:border-brand-gold/50 hover:text-brand-black"}`}
-                  data-active={isSelected}
-                >
-                  <span className="pointer-events-none">{brand}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none ${isSelected?"bg-brand-gold text-brand-black font-extrabold":"filter-tab-count-badge"}`}>{brandCount}</span>
-                </button>
-                {user && user.role==='admin' && (
-                  <div className="absolute -right-2 top-0 flex flex-col gap-1">
-                    <button type="button" onClick={()=>openEditBrand(brand)} className="p-1 bg-white rounded-full shadow cursor-pointer touch-target"><Edit2 size={12} /></button>
-                    <button type="button" onClick={()=>actions.deleteBrand(brand)} className="p-1 bg-white rounded-full shadow text-red-500 cursor-pointer touch-target"><Trash2 size={12} /></button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* ── SORT / FILTER BAR (sticky) ── */}
-      <div
-        style={{ top: 'var(--header-height, 124px)' }}
-        className="category-control-bar sticky z-20 w-full max-w-full overflow-hidden bg-brand-cream/95 px-3 py-2 backdrop-blur-md shadow-sm sm:px-6"
-      >
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-flex min-w-0">
-              {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') ? (
-                <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-stone-400 hover:text-red-500 cursor-pointer touch-target">
-                  <X size={13} /> Clear All Filters
-                </button>
-              ) : (
-                <span className="invisible whitespace-nowrap text-xs font-semibold">Clear All Filters</span>
-              )}
-            </span>
-            <span className="hidden text-xs font-medium text-stone-400 sm:inline">Showing <strong className="text-brand-black">{filteredProducts.length}</strong> items</span>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={()=>setSelectedBrand('all')}
+              className={`shrink-0 rounded-full border px-4 py-2.5 text-[11px] font-bold tracking-[0.12em] uppercase transition-all duration-300 active:scale-95 touch-target ${selectedBrand==='all' ? 'border-[#1b1715] bg-[#1b1715] text-[#f8ebd9] shadow-[0_14px_24px_rgba(27,23,21,0.12)]' : 'border-[#e8dcc6] bg-[#fffdfb] text-[#2d231b] hover:border-[#d6b67d] hover:text-[#1d130d]'}`}
+              data-active={selectedBrand === 'all'}
+            >
+              <span className="inline-flex items-center gap-2">
+                <span>All Brands</span>
+                <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${selectedBrand==='all' ? 'bg-[#f3d29c] text-[#1d130d]' : 'bg-[#f7f0e6] text-[#6b5441]'}`}>
+                  {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===selectedSubcategory).length}
+                </span>
+              </span>
+            </button>
+
+            {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
+              const isSelected = selectedBrand===brand;
+              const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategoryId===selectedSubcategory)).length;
+              return (
+                <div key={brand} className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={()=>setSelectedBrand(prev=>prev===brand?'all':brand)}
+                    className={`rounded-full border px-4 py-2.5 text-[11px] font-bold tracking-[0.12em] uppercase transition-all duration-300 active:scale-95 touch-target ${isSelected ? 'border-[#1b1715] bg-[#1b1715] text-[#f8ebd9] shadow-[0_14px_24px_rgba(27,23,21,0.12)]' : 'border-[#e8dcc6] bg-[#fffdfb] text-[#2d231b] hover:border-[#d6b67d] hover:text-[#1d130d]'}`}
+                    data-active={isSelected}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <span>{brand}</span>
+                      <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${isSelected ? 'bg-[#f3d29c] text-[#1d130d]' : 'bg-[#f7f0e6] text-[#6b5441]'}`}>
+                        {brandCount}
+                      </span>
+                    </span>
+                  </button>
+                  {user && user.role==='admin' && (
+                    <div className="absolute -right-2 top-0 flex flex-col gap-1">
+                      <button type="button" onClick={()=>openEditBrand(brand)} className="h-6 w-6 rounded-full bg-white shadow-md text-[#4b3d2e] touch-target"><Edit2 size={11} className="mx-auto" /></button>
+                      <button type="button" onClick={()=>actions.deleteBrand(brand)} className="h-6 w-6 rounded-full bg-white shadow-md text-red-500 touch-target"><Trash2 size={11} className="mx-auto" /></button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="flex w-full min-w-0 items-center justify-end sm:w-auto">
-            <div className="relative w-full min-w-0 sm:w-auto">
-              <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="w-full min-w-0 appearance-none rounded-full border border-stone-200 bg-white py-2 pl-4 pr-9 text-xs font-semibold text-brand-black shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer sm:w-auto">
-                <option value="price-asc">Price: Low to High (السعر من الأقل)</option>
-                <option value="price-desc">Price: High to Low (السعر من الأكبر)</option>
-                <option value="discount">Best Deals / Offers (أفضل العروض بناءً على نسبة الخصم)</option>
-              </select>
-              <ArrowUpDown size={12} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+        </div>
+
+        <div className="rounded-[24px] border border-[#ead7b5] bg-[#faf5ee]/90 px-3 py-2.5 shadow-[0_14px_28px_rgba(27,23,21,0.04)] backdrop-blur-sm sm:px-4">
+          <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="inline-flex min-w-0">
+                {(selectedSubcategory!=='all' || (selectedBrand && selectedBrand!=='all') || selectedPriceRange!=='all' || selectedSkinType!=='all') ? (
+                  <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-[#7d6a5d] transition-colors hover:text-red-500 touch-target">
+                    <X size={12} /> Clear All Filters
+                  </button>
+                ) : (
+                  <span className="invisible whitespace-nowrap text-[11px] font-bold">Clear All Filters</span>
+                )}
+              </span>
+              <span className="hidden text-[11px] font-medium text-[#7d6a5d] sm:inline">Showing <strong className="text-[#1d130d]">{filteredProducts.length}</strong> items</span>
+            </div>
+
+            <div className="flex w-full items-center justify-end sm:w-auto">
+              <div className="relative w-full min-w-0 sm:w-[240px]">
+                <select value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="w-full appearance-none rounded-full border border-[#e4d6bc] bg-white py-2.5 pl-4 pr-10 text-[11px] font-semibold text-[#1d130d] shadow-[0_8px_18px_rgba(33,25,20,0.04)] transition-colors focus:outline-none focus:ring-2 focus:ring-[#d7b57e]/40 cursor-pointer">
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="discount">Best Deals / Offers</option>
+                </select>
+                <ArrowUpDown size={12} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#7d6a5d]" />
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {user && user.role === 'admin' && (
-        <div className="flex w-full justify-end pb-2">
-          <button type="button" onClick={openAddProduct} className="inline-flex items-center gap-2 rounded-full bg-brand-black px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-brand-gold shadow-sm transition-all hover:bg-brand-charcoal touch-target">
+        <div className="mt-4 flex w-full justify-end">
+          <button type="button" onClick={openAddProduct} className="inline-flex items-center gap-2 rounded-full bg-[#1b1715] px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#f3d29c] shadow-[0_12px_24px_rgba(27,23,21,0.14)] transition-all hover:bg-[#2b241f] touch-target">
             <PlusCircle size={14} /> Add Product
           </button>
         </div>
       )}
 
-      {/* ── PRODUCT GRID ── */}
       {filteredProducts.length>0 ? (
         <>
-          <div className="flex items-center justify-between">
+          <div className="mt-5 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold">Products</h3>
+              <h3 className="text-base font-black uppercase tracking-[0.12em] text-[#2a221d]">Products</h3>
               {user && user.role === 'admin' && (
                 <button
                   type="button"
                   onClick={openAddProduct}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-gold/40 bg-brand-gold/10 text-brand-gold shadow-sm transition hover:bg-brand-gold hover:text-brand-black"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d9b57c] bg-[#f7efe5] text-[#7b5333] shadow-sm transition hover:bg-[#f1d8a8]"
                   aria-label="Add Product"
                   title="Add Product"
                 >
@@ -308,18 +325,18 @@ export default function CategoryView({
               )}
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
             {filteredProducts.map((product)=>(
               <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlist.some(w=>w.id===product.id)} onEdit={user&&user.role==='admin'?openEditProduct:undefined} onDelete={user&&user.role==='admin'?handleDeleteProduct:undefined} />
             ))}
           </div>
         </>
       ) : (
-        <div className="bg-white rounded-3xl p-12 text-center border border-brand-gold-border/40 shadow-luxury my-8 max-w-lg mx-auto">
-          <div className="w-16 h-16 rounded-full bg-brand-gold-light text-brand-gold-dark flex items-center justify-center mx-auto mb-4 border border-brand-gold/30"><Filter size={24} /></div>
-          <h3 className="font-serif-luxury text-2xl font-bold text-brand-black mb-2">No Products Found</h3>
-          <p className="text-sm text-stone-500 mb-6">There are no products matching this combination of sub-category and brand filters.</p>
-          <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="px-6 py-3 bg-brand-black text-brand-gold font-bold text-xs uppercase tracking-wider rounded-full hover:bg-brand-charcoal transition-all shadow-md cursor-pointer touch-target">Reset All Filters</button>
+        <div className="mx-auto my-8 max-w-lg rounded-[30px] border border-[#ead7b5] bg-white/90 p-8 text-center shadow-[0_18px_42px_rgba(33,25,20,0.06)] sm:p-12">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[#d9b57c] bg-[#f7efe5] text-[#7b5333]"><Filter size={24} /></div>
+          <h3 className="mb-2 text-2xl font-black tracking-[-0.03em] text-[#1d130d]">No Products Found</h3>
+          <p className="mb-6 text-sm text-[#655b53]">There are no products matching this combination of sub-category and brand filters.</p>
+          <button type="button" onClick={()=>{ setSelectedSubcategory('all'); setSelectedBrand('all'); setSelectedPriceRange('all'); setSelectedSkinType('all'); }} className="rounded-full bg-[#1b1715] px-6 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#f3d29c] shadow-[0_12px_24px_rgba(27,23,21,0.14)] transition-all hover:bg-[#2f2823] touch-target">Reset All Filters</button>
         </div>
       )}
 

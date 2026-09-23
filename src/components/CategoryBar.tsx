@@ -276,10 +276,10 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
               {baseList.map((_, i) => (
                 <span
                   key={i}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                  className={`h-2 rounded-full transition-all duration-300 ${
                     activeCategoryIndex === i
-                      ? 'bg-brand-black w-4'
-                      : 'bg-stone-300 w-1.5'
+                      ? 'bg-brand-black w-5 shadow-[0_0_0_2px_rgba(245,166,35,0.12)]'
+                      : 'bg-stone-300 w-2.5'
                   }`}
                 />
               ))}
@@ -288,22 +288,22 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
 
           {/* Desktop Controls */}
           {baseCount > 1 && (
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={handlePrev}
-                className="w-8 h-8 rounded-full bg-white border border-stone-200 text-stone-700 hover:border-brand-gold hover:text-brand-black hover:bg-brand-gold-light/40 transition-all flex items-center justify-center shadow-xs cursor-pointer touch-target active:scale-95"
+                className="w-9 h-9 rounded-full bg-white/90 border border-stone-200/80 text-stone-700 shadow-[0_10px_20px_rgba(15,23,42,0.08)] backdrop-blur-sm hover:border-brand-gold/70 hover:text-brand-black hover:bg-[#fff8ee] transition-all duration-300 flex items-center justify-center cursor-pointer touch-target active:scale-95"
                 aria-label="Previous categories"
               >
-                <ChevronLeft size={16} />
+                <ChevronLeft size={17} />
               </button>
               <button
                 type="button"
                 onClick={handleNext}
-                className="w-8 h-8 rounded-full bg-white border border-stone-200 text-stone-700 hover:border-brand-gold hover:text-brand-black hover:bg-brand-gold-light/40 transition-all flex items-center justify-center shadow-xs cursor-pointer touch-target active:scale-95"
+                className="w-9 h-9 rounded-full bg-white/90 border border-stone-200/80 text-stone-700 shadow-[0_10px_20px_rgba(15,23,42,0.08)] backdrop-blur-sm hover:border-brand-gold/70 hover:text-brand-black hover:bg-[#fff8ee] transition-all duration-300 flex items-center justify-center cursor-pointer touch-target active:scale-95"
                 aria-label="Next categories"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={17} />
               </button>
             </div>
           )}
@@ -338,10 +338,10 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
                 key={`${cat.id}-${idx}`}
                 type="button"
                 onClick={() => onSelect && onSelect(cat.id)}
-                className={`relative flex-shrink-0 h-64 sm:h-72 md:h-80 rounded-3xl overflow-hidden shadow-luxury border transition-all duration-300 group cursor-pointer text-left focus:outline-none touch-manipulation bg-white ${
+                className={`relative flex-shrink-0 h-64 sm:h-72 md:h-80 overflow-hidden border transition-all duration-300 group cursor-pointer text-left focus:outline-none touch-manipulation bg-white rounded-[28px] shadow-[0_20px_48px_rgba(17,17,17,0.10)] ${
                   active
-                    ? 'border-brand-gold ring-2 ring-brand-gold ring-offset-2 ring-offset-brand-cream'
-                    : 'border-stone-200/80 hover:border-brand-gold/70 hover:shadow-2xl'
+                    ? 'border-brand-gold ring-2 ring-brand-gold ring-offset-2 ring-offset-brand-cream shadow-[0_24px_52px_rgba(17,17,17,0.16)]'
+                    : 'border-stone-200/80 hover:border-brand-gold/70 hover:shadow-[0_24px_56px_rgba(17,17,17,0.14)]'
                 }`}
                 style={{
                   width: `${cardWidth}px`,
@@ -352,12 +352,11 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
                 aria-pressed={active}
                 aria-label={`Category: ${cat.label}`}
               >
-                {/* 100% Clear, bright, fully exposed background image — zero dark overlays, zero dimming */}
                 <img
                   src={bgImage}
                   alt={cat.label}
                   decoding="async"
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     const fallback = getCategoryFallbackImage(cat.label, cat.id);
@@ -367,21 +366,22 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
                   }}
                 />
 
-                {/* Sleek top dark gradient overlay for crisp contrast and premium depth */}
-                <div className="absolute top-0 inset-x-0 h-24 sm:h-28 bg-gradient-to-b from-brand-black/85 via-brand-black/40 to-transparent z-10 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-b from-[#120f0d]/55 via-[#120f0d]/18 to-[#120f0d]/70 z-10" />
+                <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#120f0d]/70 via-[#120f0d]/20 to-transparent z-10" />
 
-                {/* Redesigned Department Title Overlay */}
-                <div className="absolute top-3.5 sm:top-4 inset-x-3.5 sm:inset-x-4 z-20 pointer-events-none flex flex-col items-center">
-                  <h3 className="font-serif-luxury text-lg sm:text-xl md:text-2xl font-bold text-white tracking-wide text-center drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] group-hover:text-brand-gold transition-colors duration-300 truncate max-w-full">
-                    {cat.label}
-                  </h3>
-                  <div className="w-6 h-0.5 bg-brand-gold/70 rounded-full mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="absolute inset-x-2.5 sm:inset-x-4 top-3 sm:top-4 z-20 flex items-center justify-center text-center pointer-events-none px-2">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2.5 min-w-0 max-w-full">
+                    <span className="h-px w-3 sm:w-6 bg-white/60 shrink-0" />
+                    <span className="text-[8px] sm:text-[10px] uppercase tracking-[0.16em] sm:tracking-[0.28em] text-[#f5d9a6] whitespace-nowrap max-w-full overflow-hidden text-ellipsis px-0.5">
+                      {cat.label}
+                    </span>
+                    <span className="h-px w-3 sm:w-6 bg-white/60 shrink-0" />
+                  </div>
                 </div>
 
-                {/* "Shop Collection" — solid black pill button matching header Tracking/Assistant button design */}
-                <div className="absolute bottom-3.5 sm:bottom-4 inset-x-3.5 sm:inset-x-4 z-20 flex justify-center pointer-events-none">
-                  <div className="inline-flex items-center justify-center gap-1.5 rounded-full bg-brand-black px-3 py-1.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-white shadow-luxury tracking-wide">
-                    <ShoppingBag size={11} className="text-brand-gold shrink-0" />
+                <div className="absolute inset-x-3.5 sm:inset-x-4 bottom-3.5 sm:bottom-4 z-20 flex justify-center pointer-events-none">
+                  <div className="inline-flex items-center justify-center gap-1.5 rounded-full border border-white/20 bg-[#111111]/80 px-3 py-1.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-white shadow-[0_10px_20px_rgba(0,0,0,0.22)] tracking-[0.08em] backdrop-blur-sm">
+                    <ShoppingBag size={11} className="text-[#f5d9a6] shrink-0" />
                     <span>Shop Collection</span>
                   </div>
                 </div>

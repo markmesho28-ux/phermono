@@ -1,7 +1,13 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
-import { ShoppingBag, Heart, Search, X, ShieldCheck, User, Truck, Bot } from "lucide-react";
+import { ShoppingBag, Heart, Search, X, ShieldCheck, User, Truck, Bot, Edit2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  DEFAULT_PROMO_BANNER,
+  fetchPromoBannerConfig,
+  savePromoBannerContent,
+  type PromoBannerConfig,
+} from "../utils/promoBanner";
 
 interface HeaderProps {
   cartCount: number;
@@ -63,6 +69,34 @@ export default function Header({
     if (onCartOpen) onCartOpen();
   };
 
+  const BANNER_CACHE_KEY = 'phermono_promo_banner_v1';
+  const readBannerCache = (): PromoBannerConfig | null => {
+    try {
+      const raw = localStorage.getItem(BANNER_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed?.content?.headline === 'string') return parsed as PromoBannerConfig;
+    } catch (_) { /* ignore */ }
+    return null;
+  };
+
+  const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(() => readBannerCache() ?? DEFAULT_PROMO_BANNER);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadBanner = async () => {
+      try {
+        const config = await fetchPromoBannerConfig();
+        if (isMounted && config && config.content.headline) {
+          setBannerConfig(config);
+          try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(config)); } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    loadBanner();
+    return () => { isMounted = false; };
+  }, []);
+
   useEffect(() => {
     const updateHeight = () => {
       if (headerRef.current) {
@@ -73,7 +107,7 @@ export default function Header({
     updateHeight();
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
-  }, []);
+  }, [bannerConfig]);
 
   return (
     <>
@@ -82,44 +116,62 @@ export default function Header({
           Using sticky keeps the header in document flow so the content below it
           starts cleanly beneath it at top of page, and stays pinned at top-0 during scroll. */}
       <div ref={headerRef} className="sticky top-0 z-50 w-full">
+        {/* Top-Most Promotional Announcement Bar */}
+        {bannerConfig && bannerConfig.content?.headline && (
+          <div className="promo-banner-shell relative w-full overflow-hidden text-white z-[60]">
+            <div className="promo-banner-inner">
+              <span className="promo-banner-accent promo-banner-accent--left" aria-hidden="true" />
+
+              <div className="promo-banner-copy-group">
+                <span className="promo-banner-mark promo-banner-mark--left" aria-hidden="true">✦</span>
+                <div className="promo-banner-text-group">
+                  <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
+                </div>
+                <span className="promo-banner-mark promo-banner-mark--right" aria-hidden="true">✦</span>
+                {user?.role === 'admin' && (
+                  <button
+                    type="button"
+                    aria-label="Edit promotional text"
+                    onClick={() => {
+                      const newText = window.prompt("Edit promotional announcement text:", bannerConfig.content.headline);
+                      if (newText && newText.trim() && newText.trim() !== bannerConfig.content.headline) {
+                        const updated: PromoBannerConfig = {
+                          ...bannerConfig,
+                          content: {
+                            ...bannerConfig.content,
+                            headline: newText.trim()
+                          }
+                        };
+                        setBannerConfig(updated);
+                        try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(updated)); } catch (_) {}
+                        savePromoBannerContent(updated).catch(console.error);
+                      }
+                    }}
+                    className="promo-banner-edit shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    <Edit2 size={11} className="text-[#f5d97a]" />
+                  </button>
+                )}
+              </div>
+
+              <span className="promo-banner-accent promo-banner-accent--right" aria-hidden="true" />
+            </div>
+          </div>
+        )}
+
         {/* Top Luxury Announcement Bar */}
-        <div className="bg-brand-black text-white text-[11px] font-medium tracking-wider py-1.5 px-4 border-b border-brand-charcoal">
+        <div className="relative z-40 bg-gradient-to-r from-[#0c0c0d] via-[#141416] to-[#0c0c0d] text-white text-[11px] py-1.5 sm:py-2 px-3 sm:px-6 border-b border-brand-gold/25 shadow-sm">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                {/* Account / Admin & Theme Toggle */}
-                <div className="flex items-center gap-2 z-50">
-                  {user ? (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors flex items-center gap-1 text-[11px] touch-target"
-                        onPointerDown={(event) => {
-                          if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                            event.preventDefault();
-                            onAuthOpen && onAuthOpen(true);
-                          }
-                        }}
-                        onClick={() => onAuthOpen && onAuthOpen(true)}
-                      >
-                        <User size={13} style={{ color: '#111827' }} /> {user.name ? user.name.trim().split(/\s+/)[0] : ''}
-                      </button>
-                      <button
-                        type="button"
-                        onPointerDown={(event) => {
-                          if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                            event.preventDefault();
-                            logout();
-                          }
-                        }}
-                        onClick={logout}
-                        className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black text-[11px] font-semibold hover:bg-amber-500 transition-colors touch-target"
-                      >
-                        Sign out
-                      </button>
-                    </div>
-                  ) : (
+            {/* Left: Auth Controls & Authentic Formulations Badge */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Account / Auth */}
+              <div className="flex items-center gap-1.5 z-50">
+                {user ? (
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
+                      className="header-auth-btn px-2.5 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all flex items-center gap-1 text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
                       onPointerDown={(event) => {
                         if (event.pointerType === 'touch' || event.pointerType === 'pen') {
                           event.preventDefault();
@@ -127,36 +179,60 @@ export default function Header({
                         }
                       }}
                       onClick={() => onAuthOpen && onAuthOpen(true)}
-                      className="header-auth-btn px-2.5 py-1 rounded-full bg-amber-400 text-brand-black font-semibold hover:bg-amber-500 transition-colors text-[11px] touch-target max-md:bg-amber-400 max-md:text-brand-black max-md:border max-md:border-amber-500 max-md:shadow-sm max-md:font-bold"
                     >
-                      Sign in
+                      <User size={12} style={{ color: '#111827' }} />
+                      <span>{user.name ? user.name.trim().split(/\s+/)[0] : 'Account'}</span>
                     </button>
-                  )}
-                </div>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-gold animate-pulse" />
-              <span className="text-stone-300 hidden sm:inline">
-                100% Authentic Dermo-Cosmetics &amp; Pharmacy Formulations
-              </span>
-              <span className="text-stone-300 sm:hidden">
-                100% Authentic Beauty &amp; Pharmacy
-              </span>
+                    <button
+                      type="button"
+                      onPointerDown={(event) => {
+                        if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                          event.preventDefault();
+                          logout();
+                        }
+                      }}
+                      onClick={logout}
+                      className="header-auth-btn px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white text-[10px] sm:text-[11px] font-medium transition-colors touch-target border border-white/15"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onPointerDown={(event) => {
+                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                        event.preventDefault();
+                        onAuthOpen && onAuthOpen(true);
+                      }
+                    }}
+                    onClick={() => onAuthOpen && onAuthOpen(true)}
+                    className="header-auth-btn px-3 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
+                  >
+                    Sign in
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="max-md:hidden flex items-center gap-3">
-              <span className="font-tagline text-brand-gold font-medium tracking-wide">
+            {/* Desktop Center/Right: Tagline & Licensed Guarantee */}
+            <div className="max-md:hidden flex items-center gap-3.5">
+              <span className="font-tagline text-brand-gold text-[12px] tracking-wide italic font-medium drop-shadow-[0_1px_3px_rgba(245,166,35,0.25)]">
                 Ur favorite Mono choice
               </span>
-              <span className="text-stone-600 hidden md:inline">|</span>
-              <span className="text-stone-400 hidden md:inline flex items-center gap-1">
-                <ShieldCheck size={13} className="text-brand-gold" /> Licensed Pharmacy Guaranteed
-              </span>
+              <span className="h-3 w-[1px] bg-brand-gold/30" />
+              <div className="flex items-center gap-1.5 text-stone-300 text-[10.5px] tracking-wider uppercase font-light">
+                <ShieldCheck size={13} className="text-brand-gold shrink-0 drop-shadow-[0_1px_2px_rgba(245,166,35,0.3)]" />
+                <span className="text-stone-200 font-medium">Licensed Pharmacy Guaranteed</span>
+              </div>
             </div>
 
-            <div className="hidden max-md:flex items-center gap-2 pr-1">
-              <div className="w-6 h-6 rounded-lg overflow-hidden border border-brand-gold/40 bg-white shadow-sm">
+            {/* Mobile Right: Compact Tagline & Brand Logo */}
+            <div className="hidden max-md:flex items-center gap-2 pr-0.5">
+              <div className="w-5 h-5 rounded-md overflow-hidden border border-brand-gold/50 bg-white/95 shadow-xs shrink-0">
                 <img src="/logo.jpg" alt="PherMono logo" className="w-full h-full object-contain" />
               </div>
-              <span className="font-tagline text-[10px] text-brand-gold font-medium tracking-[0.08em]">
+              <span className="font-tagline text-[10px] text-brand-gold font-medium italic tracking-wide">
                 Ur favorite Mono choice
               </span>
             </div>
@@ -164,26 +240,29 @@ export default function Header({
         </div>
 
         {/* Main Navigation Header */}
-        <header className="glass-nav shadow-sm transition-all duration-300">
+        <header className="glass-nav relative shadow-sm border-b border-brand-gold-border/40 backdrop-blur-xl transition-all duration-300 bg-white/95">
+          {/* Subtle Luxury Gold Edge Highlight */}
+          <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-brand-gold/50 to-transparent pointer-events-none" />
+
           <div className="max-w-7xl mx-auto px-3 sm:px-6">
             <div className="flex flex-col md:flex-row items-center justify-between h-auto md:h-20 py-2.5 md:py-0 gap-2.5 md:gap-4 w-full">
 
               <div className="hidden md:flex items-center">
-                <button type="button" onClick={onHomeClick} className="flex items-center gap-3 group text-left transition-transform active:scale-98 touch-target">
-                  <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-brand-gold-border bg-white flex items-center justify-center p-0.5 group-hover:border-brand-gold group-hover:shadow-luxury transition-all">
-                    <img src="/logo.jpg" alt="PherMono PhM Logo" className="w-full h-full object-contain" />
+                <button type="button" onClick={onHomeClick} className="flex items-center gap-3 group text-left transition-all duration-300 active:scale-98 touch-target">
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-xs border border-brand-gold/50 bg-white flex items-center justify-center p-0.5 group-hover:border-brand-gold group-hover:shadow-[0_0_16px_rgba(245,166,35,0.3)] transition-all duration-300">
+                    <img src="/logo.jpg" alt="PherMono PhM Logo" className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105" />
                   </div>
                   <div className="pointer-events-none">
                     <div className="flex items-baseline">
-                      <span className="text-sm md:text-2xl font-bold tracking-tight text-brand-black font-sans group-hover:text-brand-gold-dark transition-colors">Pher<span className="text-brand-gold">Mono</span></span>
+                      <span className="text-sm md:text-2xl font-bold tracking-tight text-brand-black font-sans group-hover:text-brand-gold-dark transition-colors duration-300">Pher<span className="text-brand-gold">Mono</span></span>
                     </div>
-                    <p className="font-tagline text-[11px] md:text-xs text-brand-gold font-medium tracking-wide -mt-0.5">Ur favorite Mono choice</p>
+                    <p className="font-tagline text-[11px] md:text-xs text-brand-gold font-medium tracking-wide -mt-0.5 transition-opacity duration-300 group-hover:opacity-95">Ur favorite Mono choice</p>
                   </div>
                 </button>
               </div>
 
               <div className="w-full md:flex-1 md:max-w-lg order-3 md:order-2">
-                <div className="flex items-center gap-2.5 w-full">
+                <div className="flex items-center gap-2 w-full">
                   <button
                     type="button"
                     onPointerDown={(event) => {
@@ -194,22 +273,34 @@ export default function Header({
                       handleMenuAction(event);
                     }}
                     onClick={handleMenuAction}
-                    className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-brand-cream/90 border border-stone-200 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:bg-brand-gold-light transition-all cursor-pointer touch-target shadow-inner select-none z-10 relative"
+                    className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-gradient-to-b from-white to-brand-cream border border-brand-gold/45 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:border-brand-gold active:bg-brand-gold-light transition-all duration-200 cursor-pointer touch-target shadow-xs select-none z-10 relative"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     aria-label="Open categories menu"
                     aria-expanded={isMenuOpen}
                   >
-                    <Menu size={20} className="pointer-events-none" />
+                    <Menu size={20} className="pointer-events-none text-brand-black" />
                   </button>
-                  <div className="relative group flex-1 min-w-0">
-                    <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold transition-colors duration-200" />
-                    <input type="text" value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search over 1,000+ luxury cosmetics, skincare, perfumes..." className="w-full pl-11 pr-10 py-2.5 text-sm max-md:text-base bg-brand-cream/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-gold/40 focus:border-brand-gold focus:bg-white transition-all placeholder-stone-400 text-brand-black shadow-inner" style={{ fontSize: '16px' }} />
-                    {searchQuery && <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 touch-target"><X size={15} /></button>}
+                  <div className="relative group flex-1 min-w-0 transition-all duration-300">
+                    <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold group-hover:text-stone-600 transition-colors duration-300" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => onSearchChange(e.target.value)}
+                      placeholder="Search luxury cosmetics, skincare, perfumes..."
+                      className="w-full pl-11 pr-10 py-2.5 sm:py-3 text-sm max-md:text-base bg-[#FAF8F5] hover:bg-white border border-brand-gold/30 hover:border-brand-gold/60 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/30 rounded-full focus:bg-white shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] focus:shadow-[0_2px_15px_rgba(245,166,35,0.15)] transition-all duration-300 placeholder-stone-400 text-brand-black"
+                      style={{ fontSize: '16px' }}
+                    />
+                    {searchQuery && (
+                      <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-brand-black transition-colors duration-200 touch-target">
+                        <X size={15} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="order-2 grid grid-cols-4 gap-1.5 w-full md:flex md:w-auto md:items-center md:justify-end md:gap-2">
+              <div className="order-2 flex w-full flex-row items-center justify-around gap-1.5 overflow-hidden sm:justify-between sm:gap-2 md:w-auto md:justify-end md:gap-2.5">
+                {/* Favorites Button */}
                 <button
                   type="button"
                   onPointerDown={(event) => {
@@ -222,16 +313,17 @@ export default function Header({
                     if (onWishlistOpen) onWishlistOpen();
                   }}
                   style={{ touchAction: 'manipulation' }}
-                  className={`header-wishlist-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
-                    activeCategory === "favorites" ? "active" : ""
+                  className={`header-wishlist-btn relative inline-flex shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] px-1.5 py-2 text-[7.5px] font-bold whitespace-nowrap text-white border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 group cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-xs min-w-0 ${
+                    activeCategory === "favorites" ? "active border-brand-gold ring-1 ring-brand-gold/60 shadow-[0_0_14px_rgba(245,166,35,0.35)]" : ""
                   }`}
                   aria-label="Favorite List"
                   data-active={activeCategory === "favorites"}
                 >
-                  <Heart size={12} className="text-brand-gold transition-colors pointer-events-none shrink-0" />
-                  <span className="truncate pointer-events-none">Favorites</span>
+                  <Heart size={11} className="text-brand-gold drop-shadow-[0_1px_3px_rgba(245,166,35,0.5)] group-hover:scale-110 transition-all duration-200 pointer-events-none shrink-0 sm:size-[12px] md:size-[13px]" />
+                  <span className="pointer-events-none tracking-[0.14em] uppercase text-[7.5px] sm:text-[8.5px] md:text-[10px]">Favorites</span>
                 </button>
 
+                {/* Bag Button */}
                 <button
                   type="button"
                   onPointerDown={(event) => {
@@ -243,23 +335,24 @@ export default function Header({
                   }}
                   onClick={handleCartAction}
                   style={{ touchAction: 'manipulation' }}
-                  className={`header-cart-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 bg-brand-black text-white px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap rounded-full shadow-luxury hover:bg-brand-charcoal hover:shadow-luxury-hover transition-all duration-300 group cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
-                    (activeCategory === 'cart' || cartOpen) ? 'active' : ''
+                  className={`header-cart-btn relative inline-flex shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] text-white px-1.5 py-2 text-[7.5px] font-bold whitespace-nowrap border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 group cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-[10px] min-w-0 ${
+                    (activeCategory === 'cart' || cartOpen) ? 'active border-brand-gold ring-1 ring-brand-gold/60 shadow-[0_0_14px_rgba(245,166,35,0.35)]' : ''
                   }`}
                   data-active={activeCategory === 'cart' || cartOpen}
                   aria-label="Bag"
                 >
                   <div className="relative pointer-events-none shrink-0 flex items-center">
-                    <ShoppingBag size={12} className="text-brand-gold group-hover:scale-110 transition-transform" />
+                    <ShoppingBag size={11} className="text-brand-gold drop-shadow-[0_1px_3px_rgba(245,166,35,0.5)] group-hover:scale-110 transition-all duration-200 sm:size-[12px] md:size-[13px]" />
                     {cartCount > 0 && (
-                      <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-brand-gold text-brand-black text-[8px] font-extrabold rounded-full flex items-center justify-center px-0.5 shadow-sm">
+                      <span className="absolute -top-1.5 -right-2.5 min-w-[15px] h-[15px] bg-brand-gold text-brand-black text-[8px] font-black rounded-full flex items-center justify-center px-0.5 shadow-md border border-[#111111] group-hover:scale-105 transition-transform duration-200">
                         {cartCount}
                       </span>
                     )}
                   </div>
-                  <span className="uppercase tracking-wider pointer-events-none">Bag</span>
+                  <span className="uppercase tracking-[0.14em] pointer-events-none text-[7.5px] sm:text-[8.5px] md:text-[10px]">Bag</span>
                 </button>
 
+                {/* Tracking Button */}
                 <button
                   type="button"
                   onPointerDown={(event) => {
@@ -272,16 +365,17 @@ export default function Header({
                     if (onTrackOpen) onTrackOpen(true);
                   }}
                   style={{ touchAction: 'manipulation' }}
-                  className={`header-track-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold whitespace-nowrap text-white shadow-luxury transition-all cursor-pointer touch-target md:px-3 md:py-1.5 md:text-sm min-w-0 ${
-                    activeCategory === "tracking" ? "active" : ""
+                  className={`header-track-btn relative inline-flex shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] px-1.5 py-2 text-[7.5px] font-bold whitespace-nowrap text-white border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-[10px] min-w-0 ${
+                    activeCategory === "tracking" ? "active border-brand-gold ring-1 ring-brand-gold/60 shadow-[0_0_14px_rgba(245,166,35,0.35)]" : ""
                   }`}
                   aria-label="Track Orders"
                   data-active={activeCategory === "tracking"}
                 >
-                  <Truck size={12} className="text-brand-gold pointer-events-none shrink-0" />
-                  <span className="truncate pointer-events-none">Tracking</span>
+                  <Truck size={11} className="text-brand-gold drop-shadow-[0_1px_3px_rgba(245,166,35,0.5)] group-hover:scale-110 transition-all duration-200 pointer-events-none shrink-0 sm:size-[12px] md:size-[13px]" />
+                  <span className="pointer-events-none tracking-[0.14em] uppercase text-[7.5px] sm:text-[8.5px] md:text-[10px]">Tracking</span>
                 </button>
 
+                {/* Assistant Button */}
                 <button
                   type="button"
                   onPointerDown={(event) => {
@@ -294,15 +388,15 @@ export default function Header({
                     if (onAssistantOpen) onAssistantOpen();
                   }}
                   style={{ touchAction: 'manipulation' }}
-                  className={`header-assistant-btn relative inline-flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap rounded-full bg-brand-black px-1.5 py-1.5 text-[10px] sm:text-[11px] font-semibold tracking-wide text-white shadow-luxury transition hover:bg-brand-charcoal hover:shadow-luxury-hover focus:outline-none focus:ring-2 focus:ring-brand-gold/40 cursor-pointer touch-target md:px-4 md:py-1.5 md:text-sm min-w-0 ${
-                    activeCategory === "assistant" ? "active" : ""
+                  className={`header-assistant-btn relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full bg-gradient-to-b from-[#28282a] via-[#1d1d20] to-[#111111] px-1.5 py-2 text-[7.5px] font-bold tracking-wide text-white border border-brand-gold/55 shadow-[0_2px_10px_rgba(245,166,35,0.15)] hover:border-brand-gold hover:shadow-[0_4px_20px_rgba(245,166,35,0.3)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_14px_rgba(245,166,35,0.45)] focus:outline-none focus:ring-2 focus:ring-brand-gold/40 transition-all duration-200 cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-4 md:py-2 md:text-[10px] min-w-0 ${
+                    activeCategory === "assistant" ? "active border-brand-gold ring-1 ring-brand-gold/70 shadow-[0_0_16px_rgba(245,166,35,0.4)]" : ""
                   }`}
                   aria-label="Your Assistant"
                   data-active={activeCategory === "assistant"}
                 >
-                  <Bot size={12} className="text-brand-gold shrink-0" />
-                  <span className="truncate pointer-events-none">
-                    <span className="hidden sm:inline">Your </span>Assistant
+                  <Bot size={11} className="text-brand-gold drop-shadow-[0_1px_3px_rgba(245,166,35,0.6)] group-hover:scale-110 transition-all duration-200 shrink-0 sm:size-[12px] md:size-[13px]" />
+                  <span className="pointer-events-none tracking-[0.14em] uppercase text-[7.5px] sm:text-[8.5px] md:text-[10px]">
+                    <span className="hidden lg:inline">Your </span>Assistant
                   </span>
                 </button>
               </div>

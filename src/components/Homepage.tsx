@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Edit2, X } from "lucide-react";
+import { X } from "lucide-react";
 import ProductCard from "./ProductCard";
 import CategoryBar from "./CategoryBar";
 import { useData } from "../contexts/DataContext";
@@ -219,34 +219,6 @@ export default function Homepage({
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-20 md:pb-8 animate-fadeIn select-none">
       <div className="space-y-8 md:space-y-10">
-        {bannerConfig && (
-          <div className="promo-banner-shell relative w-full overflow-hidden text-white">
-            <div className="promo-banner-inner">
-              <div className="promo-banner-copy-group">
-                <div className="promo-banner-text-group">
-                  <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
-                </div>
-
-                {isAdmin && (
-                  <button
-                    type="button"
-                    aria-label="Edit promotional text"
-                    onClick={() => {
-                      setTextDraft(bannerConfig.content.headline);
-                      setTextError('');
-                      setTextEditorOpen(true);
-                    }}
-                    className="promo-banner-edit"
-                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {imageEditorIndex !== null && isAdmin && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4">
             <div
@@ -381,15 +353,15 @@ export default function Homepage({
           onSelect={onCategorySelect}
         />
 
-        <section className="rounded-[28px] border border-brand-gold/20 bg-gradient-to-b from-brand-black via-brand-charcoal to-brand-stone p-4 md:p-6 shadow-2xl">
-          <div className="mb-5 flex items-end justify-between gap-4">
+        <section className="rounded-[30px] border border-[#d4b06d]/30 bg-[radial-gradient(circle_at_top,_rgba(43,33,25,0.98),_rgba(17,15,12,0.98)_42%,_rgba(11,10,9,1)_100%)] p-3 shadow-[0_30px_80px_rgba(0,0,0,0.18)] md:p-6">
+          <div className="mb-4 md:mb-5 flex items-end justify-between gap-4">
             <div>
-              <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.28em] text-brand-gold/90">Curated favourites</p>
-              <h2 className="mt-2 font-serif-luxury text-3xl md:text-5xl text-white leading-none">Best Sellers</h2>
+              <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-[0.26em] text-[#f3d194]">Curated favourites</p>
+              <h2 className="mt-2 font-serif-luxury text-2xl text-white leading-none md:text-5xl">Best Sellers</h2>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
             {renderedBestSellers.map((product) => (
               <ProductCard
                 key={product.id}

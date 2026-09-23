@@ -45,45 +45,69 @@ function GlobalFooter() {
   const facebookUrl = 'https://www.facebook.com/share/14pshxhK3vA/?mibextid=wwXIfr';
 
   return (
-    <footer className="w-full border-t border-stone-200 bg-white">
-      <div className="mx-auto flex max-w-5xl items-center justify-center gap-4 px-3 py-5 sm:px-6 sm:py-6">
-        <a
-          href={instagramUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Instagram"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white transition-transform hover:scale-105"
-        >
-          <Instagram size={20} />
-        </a>
+    <footer className="w-full border-t border-[#eadac0] bg-[radial-gradient(circle_at_top,_rgba(243,210,156,0.20),_transparent_32%),linear-gradient(180deg,_#1b1715_0%,_#120f0d_100%)] text-[#f7f0e8]">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+        <div className="grid gap-6 md:grid-cols-[1.3fr_0.9fr] md:items-end">
+          <div className="text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d9b57c]/60 bg-[#f8efe6]/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#f4d29d]">
+              <span className="h-2 w-2 rounded-full bg-[#f4d29d] shadow-[0_0_12px_rgba(244,210,157,0.9)]" />
+              PhM Beauty House
+            </div>
+            <h3 className="mt-4 max-w-xl text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
+              Elevated essentials for your everyday ritual.
+            </h3>
+            <p className="mt-3 max-w-lg text-sm leading-6 text-[#d9c8b7] sm:text-[15px]">
+              Discover premium beauty, self-care, and fragrance favorites curated for effortless confidence and everyday luxury.
+            </p>
+          </div>
 
-        <a
-          href={facebookUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Facebook"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white transition-transform hover:scale-105"
-        >
-          <Facebook size={20} />
-        </a>
+          <div className="flex flex-col gap-4 text-left">
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[#efc987]">
+              Contact & Connect
+            </div>
 
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="WhatsApp"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white transition-transform hover:scale-105"
-        >
-          <MessageCircle size={20} />
-        </a>
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href={instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[#f3d29c]/40 bg-gradient-to-br from-[#f9dba1] via-[#d78a52] to-[#7b3f72] text-[#1d130d] shadow-[0_12px_24px_rgba(235,173,92,0.35)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(235,173,92,0.45)]"
+              >
+                <Instagram size={18} />
+              </a>
 
-        <a
-          href={telUrl}
-          aria-label="Call us"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-black text-brand-gold transition-transform hover:scale-105"
-        >
-          <Phone size={20} />
-        </a>
+              <a
+                href={facebookUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d9dfe8]/25 bg-[#1e3a8a] text-white shadow-[0_12px_22px_rgba(26,65,180,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#2547b8]"
+              >
+                <Facebook size={18} />
+              </a>
+
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="WhatsApp"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[#9fe0bc]/40 bg-[#1e8d5a] text-white shadow-[0_12px_22px_rgba(30,141,90,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1fa769]"
+              >
+                <MessageCircle size={18} />
+              </a>
+
+              <a
+                href={telUrl}
+                aria-label="Call us"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[#f0d7a5]/40 bg-[#f9f5ee] text-[#1b1715] shadow-[0_12px_22px_rgba(249,245,238,0.12)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white"
+              >
+                <Phone size={18} />
+              </a>
+            </div>
+
+          </div>
+        </div>
       </div>
     </footer>
   );
