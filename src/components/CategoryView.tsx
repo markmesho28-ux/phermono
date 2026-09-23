@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { X, ChevronDown, ChevronUp, Filter, Sparkles, ArrowUpDown, Tag, PlusCircle, Edit2, Trash2 } from "lucide-react";
 import ProductCard from "./ProductCard";
-import { useData } from "../contexts/DataContext";
+import { useData, createUuid, uploadImageFile } from "../contexts/DataContext";
 import { useAuth } from "../contexts/AuthContext";
 import AdminModal from "./AdminModal";
 import type { Category, CategorySubcategory, DataActions, Product } from "../types";
@@ -56,7 +56,9 @@ export default function CategoryView({
 
   // Always use products from DataContext (Supabase source). Do not fall back to any externally
   // supplied arrays to avoid showing mock/demo items when the database is empty.
-  const effectiveProducts = contextProducts;
+  const effectiveProducts = user?.role === 'admin'
+    ? contextProducts
+    : contextProducts.filter((product) => !product.isHidden);
   const categoryProducts = useMemo(() => effectiveProducts.filter((p) => p.category === categoryId), [effectiveProducts, categoryId]);
 
   const availableBrands = useMemo(() => {
@@ -488,6 +490,7 @@ function ModalContent({
   }, [assignableSubcategories, category?.id, category?.subcategories, editing, mergedBrands, mode]);
 
   const [form, setForm] = useState<ProductFormState>(buildProductFormState);
+  const [isImageUploading, setIsImageUploading] = useState(false);
   const lastInitialisedKeyRef = useRef<string>('');
 
   const editIdentity = (() => {
@@ -510,42 +513,19 @@ function ModalContent({
     setForm(buildProductFormState());
   }, [buildProductFormState, editIdentity, editing, mode]);
 
-  // Compress image file to max 600px to avoid filling localStorage quota
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxDim = 600;
-        let w = img.width;
-        let h = img.height;
-        if (w > h) {
-          if (w > maxDim) {
-            h = Math.round((h * maxDim) / w);
-            w = maxDim;
-          }
-        } else {
-          if (h > maxDim) {
-            w = Math.round((w * maxDim) / h);
-            h = maxDim;
-          }
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          setForm((f) => ({ ...f, image: canvas.toDataURL('image/jpeg', 0.8) }));
-        } else {
-          setForm((f) => ({ ...f, image: String(event.target?.result || '') }));
-        }
-      };
-      img.src = String(event.target?.result || '');
-    };
-    reader.readAsDataURL(file);
+    setIsImageUploading(true);
+    try {
+      const publicUrl = await uploadImageFile(file, 'products', 'products');
+      setForm((current) => ({ ...current, image: publicUrl }));
+    } catch (error: any) {
+      alert(error?.message || 'Image upload failed.');
+    } finally {
+      setIsImageUploading(false);
+      e.target.value = '';
+    }
   };
 
   const submit = () => {
@@ -673,8 +653,8 @@ function ModalContent({
         return;
       }
 
-      const id = trimmed.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
-      // addSubcategory is idempotent and will return an existing row if a concurrent insert occurred
+      const id = createUuid();
+      // addSubcategory is idempotent and will return an existing row if a concurrent insert occurred.
       (async () => {
         try {
           const created = await actions.addSubcategory(category.id, { id, label: trimmed });
@@ -828,6 +808,7 @@ function ModalContent({
                 type="file"
                 accept="image/*"
                 onChange={handleImageFileChange}
+                disabled={isImageUploading}
                 className="w-full min-h-[36px] rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-[11px] text-stone-500 file:mr-2 file:rounded-full file:border-0 file:bg-brand-black file:px-2 file:py-1.5 file:text-[10px] file:font-semibold file:text-white hover:file:bg-brand-charcoal file:cursor-pointer sm:min-h-[38px] sm:px-2.5 sm:py-2"
               />
               <input
@@ -895,9 +876,10 @@ function ModalContent({
         <button
           type="button"
           onClick={submit}
+          disabled={isImageUploading}
           className="cursor-pointer rounded-md bg-brand-black px-2.5 py-1.5 text-[10px] font-semibold text-white shadow-luxury transition-all hover:bg-brand-charcoal active:scale-98 sm:px-3"
         >
-          {mode === 'addProduct' ? 'Save' : 'Save'}
+          {isImageUploading ? 'Uploading...' : 'Save'}
         </button>
       </div>
     </div>

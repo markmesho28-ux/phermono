@@ -26,7 +26,7 @@ $$;
 
 -- Categories
 CREATE TABLE IF NOT EXISTS public.categories (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   image TEXT,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 -- Subcategories linked to categories
 CREATE TABLE IF NOT EXISTS public.subcategories (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   category_id TEXT NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   slug TEXT NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.subcategories (
 
 -- Brands (category-scoped when needed)
 CREATE TABLE IF NOT EXISTS public.brands (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   category_id TEXT REFERENCES public.categories(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   slug TEXT NOT NULL,

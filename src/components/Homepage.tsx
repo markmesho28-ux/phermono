@@ -31,23 +31,24 @@ export default function Homepage({
   onCategorySelect,
 }: HomepageProps) {
   const { products, categories } = useData();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const visibleProducts = isAdmin ? products : products.filter((product) => !product.isHidden);
 
   // New arrivals: strictly by creation date (most recent first). Only include rows that have a valid `createdAt`.
-  const sortedProductsByNewest = [...products]
+  const sortedProductsByNewest = [...visibleProducts]
     .filter((p) => p.createdAt)
     .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
   const newArrivals = sortedProductsByNewest.slice(0, 8);
 
   // Best sellers: strictly products explicitly flagged by admin. Do NOT fallback to random products.
-  const bestSellers = [...products]
+  const bestSellers = [...visibleProducts]
     .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
     .slice(0, 8);
 
   const renderedBestSellers = bestSellers; // intentionally no fallback
   const renderedNewArrivals = newArrivals; // intentionally no fallback
 
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
 
   // ---------------------------------------------------------------------------
   // Stale-while-revalidate banner cache

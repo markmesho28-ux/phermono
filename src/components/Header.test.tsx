@@ -93,12 +93,14 @@ describe('Header Action Buttons', () => {
     expect(defaultProps.onAssistantOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the auth modal once when a touch pointer fires before the click', () => {
+  it('opens the auth modal from the click event without opening on pointer down', () => {
     const onAuthOpen = jest.fn();
     render(<Header {...defaultProps} onAuthOpen={onAuthOpen} />);
 
     const signInButton = screen.getByRole('button', { name: 'Sign in' });
     fireEvent.pointerDown(signInButton);
+    expect(onAuthOpen).not.toHaveBeenCalled();
+
     fireEvent.click(signInButton);
 
     expect(onAuthOpen).toHaveBeenCalledTimes(1);

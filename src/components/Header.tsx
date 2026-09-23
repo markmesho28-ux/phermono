@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import { ShoppingBag, Heart, Search, X, ShieldCheck, User, Truck, Bot, Edit2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useData } from "../contexts/DataContext";
 import {
   DEFAULT_PROMO_BANNER,
   fetchPromoBannerConfig,
@@ -45,10 +46,13 @@ export default function Header({
   activeCategory,
 }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { siteSettings, updateSiteSettings } = useData();
   const headerRef = useRef<HTMLDivElement>(null);
   const lastMenuToggleRef = useRef(0);
   const lastCartToggleRef = useRef(0);
   const lastAuthActionRef = useRef(0);
+  const [bannerDraft, setBannerDraft] = useState('');
+  const [isBannerEditing, setIsBannerEditing] = useState(false);
 
   const handleAuthAction = (callback: () => void, event?: React.SyntheticEvent | React.PointerEvent | React.TouchEvent) => {
     if (event && typeof event.stopPropagation === 'function') {
@@ -94,6 +98,11 @@ export default function Header({
   };
 
   const [bannerConfig, setBannerConfig] = useState<PromoBannerConfig>(() => readBannerCache() ?? DEFAULT_PROMO_BANNER);
+  const dynamicBannerHeadline = (siteSettings?.promo_banner_text && siteSettings.promo_banner_text.trim()) || bannerConfig.content.headline;
+
+  useEffect(() => {
+    setBannerDraft(dynamicBannerHeadline || '');
+  }, [dynamicBannerHeadline]);
 
   useEffect(() => {
     let isMounted = true;
@@ -138,33 +147,76 @@ export default function Header({
               <div className="promo-banner-copy-group">
                 <span className="promo-banner-mark promo-banner-mark--left" aria-hidden="true">✦</span>
                 <div className="promo-banner-text-group">
-                  <p className="promo-banner-headline">{bannerConfig.content.headline}</p>
+                  <p className="promo-banner-headline">{dynamicBannerHeadline}</p>
                 </div>
                 <span className="promo-banner-mark promo-banner-mark--right" aria-hidden="true">✦</span>
                 {user?.role === 'admin' && (
-                  <button
-                    type="button"
-                    aria-label="Edit promotional text"
-                    onClick={() => {
-                      const newText = window.prompt("Edit promotional announcement text:", bannerConfig.content.headline);
-                      if (newText && newText.trim() && newText.trim() !== bannerConfig.content.headline) {
-                        const updated: PromoBannerConfig = {
-                          ...bannerConfig,
-                          content: {
-                            ...bannerConfig.content,
-                            headline: newText.trim()
-                          }
-                        };
-                        setBannerConfig(updated);
-                        try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(updated)); } catch (_) {}
-                        savePromoBannerContent(updated).catch(console.error);
-                      }
-                    }}
-                    className="promo-banner-edit shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    <Edit2 size={11} className="text-[#f5d97a]" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isBannerEditing ? (
+                      <div className="flex items-center gap-2 rounded-full border border-[#f5d97a]/60 bg-black/20 px-2 py-1">
+                        <input
+                          value={bannerDraft}
+                          onChange={(event) => setBannerDraft(event.target.value)}
+                          className="w-44 bg-transparent text-[10px] text-white placeholder:text-[#d9c17d] outline-none"
+                          placeholder="Edit promo text"
+                          aria-label="Edit promotional announcement text"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const nextText = bannerDraft.trim();
+                            if (!nextText || nextText === dynamicBannerHeadline) {
+                              setIsBannerEditing(false);
+                              return;
+                            }
+
+                            try {
+                              await updateSiteSettings({ promo_banner_text: nextText });
+                              const updated: PromoBannerConfig = {
+                                ...bannerConfig,
+                                content: {
+                                  ...bannerConfig.content,
+                                  headline: nextText,
+                                },
+                              };
+                              setBannerConfig(updated);
+                              try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(updated)); } catch (_) {}
+                              savePromoBannerContent(updated).catch(console.error);
+                              setIsBannerEditing(false);
+                            } catch (error) {
+                              console.warn('Banner update failed:', error);
+                            }
+                          }}
+                          className="rounded-full bg-brand-gold px-2 py-0.5 text-[10px] font-semibold text-brand-black"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBannerDraft(dynamicBannerHeadline || '');
+                            setIsBannerEditing(false);
+                          }}
+                          className="text-[10px] text-stone-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label="Edit promotional text"
+                        onClick={() => {
+                          setBannerDraft(dynamicBannerHeadline || '');
+                          setIsBannerEditing(true);
+                        }}
+                        className="promo-banner-edit shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                        style={{ touchAction: 'manipulation' }}
+                      >
+                        <Edit2 size={11} className="text-[#f5d97a]" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -185,8 +237,6 @@ export default function Header({
                     <button
                       type="button"
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all flex items-center gap-1 text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
-                      onPointerDown={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
-                      onTouchStart={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
                       onClick={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
                       style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                     >
@@ -195,8 +245,6 @@ export default function Header({
                     </button>
                     <button
                       type="button"
-                      onPointerDown={(event) => handleAuthAction(() => logout(), event)}
-                      onTouchStart={(event) => handleAuthAction(() => logout(), event)}
                       onClick={(event) => handleAuthAction(() => logout(), event)}
                       className="header-auth-btn px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white text-[10px] sm:text-[11px] font-medium transition-colors touch-target border border-white/15"
                       style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
@@ -207,8 +255,6 @@ export default function Header({
                 ) : (
                   <button
                     type="button"
-                    onPointerDown={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
-                    onTouchStart={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
                     onClick={(event) => handleAuthAction(() => onAuthOpen && onAuthOpen(true), event)}
                     className="header-auth-btn px-3 py-0.5 rounded-full bg-gradient-to-r from-brand-gold to-brand-gold-hover text-brand-black font-bold hover:brightness-110 transition-all text-[10px] sm:text-[11px] tracking-wide touch-target shadow-xs border border-amber-300/40"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
@@ -303,7 +349,7 @@ export default function Header({
                 </div>
               </div>
 
-              <div className="order-2 flex w-full flex-row items-center justify-around gap-1.5 overflow-hidden sm:justify-between sm:gap-2 md:w-auto md:justify-end md:gap-2.5">
+              <div className="order-2 flex w-full flex-row items-center justify-around gap-1.5 overflow-visible sm:justify-between sm:gap-2 md:w-auto md:justify-end md:gap-2.5">
                 {/* Favorites Button */}
                 <button
                   type="button"
@@ -339,21 +385,21 @@ export default function Header({
                   }}
                   onClick={handleCartAction}
                   style={{ touchAction: 'manipulation' }}
-                  className={`header-cart-btn relative inline-flex shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] text-white px-1.5 py-2 text-[7.5px] font-bold whitespace-nowrap border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 group cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-[10px] min-w-0 ${
+                  className={`header-cart-btn relative inline-flex min-w-[68px] shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] text-white px-3 py-2 text-[7.5px] font-bold whitespace-nowrap border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 group cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-[10px] sm:min-w-0 md:min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active border-brand-gold ring-1 ring-brand-gold/60 shadow-[0_0_14px_rgba(245,166,35,0.35)]' : ''
                   }`}
                   data-active={activeCategory === 'cart' || cartOpen}
                   aria-label="Bag"
                 >
-                  <div className="relative pointer-events-none shrink-0 flex items-center">
+                  <div className="pointer-events-none flex shrink-0 items-center">
                     <ShoppingBag size={11} className="text-brand-gold drop-shadow-[0_1px_3px_rgba(245,166,35,0.5)] group-hover:scale-110 transition-all duration-200 sm:size-[12px] md:size-[13px]" />
-                    {cartCount > 0 && (
-                      <span className="absolute -top-1.5 -right-2.5 min-w-[15px] h-[15px] bg-brand-gold text-brand-black text-[8px] font-black rounded-full flex items-center justify-center px-0.5 shadow-md border border-[#111111] group-hover:scale-105 transition-transform duration-200">
-                        {cartCount}
-                      </span>
-                    )}
                   </div>
                   <span className="uppercase tracking-[0.14em] pointer-events-none text-[7.5px] sm:text-[8.5px] md:text-[10px]">Bag</span>
+                  {cartCount > 0 && (
+                    <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border border-[#111111] bg-brand-gold px-0.5 text-[8px] font-black text-brand-black shadow-md group-hover:scale-105 transition-transform duration-200">
+                      {cartCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Tracking Button */}

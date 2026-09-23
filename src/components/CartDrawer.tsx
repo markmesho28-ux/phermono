@@ -11,6 +11,8 @@ import {
   MapPin,
 } from "lucide-react";
 
+import { getCartPromoDiscount, getFreeShippingFee } from "../contexts/DataContext";
+import { useData } from "../contexts/DataContext";
 import type { AuthUser, CartItem, OrderInput, Product } from "../types";
 
 interface CartDrawerProps {
@@ -53,7 +55,10 @@ export function CartDrawer({
   onPlaceOrder,
   user,
 }: CartDrawerProps) {
+  const { siteSettings } = useData();
   const subtotal = cartItems.reduce((s: number, i: CartItem) => s + i.price * i.qty, 0);
+  const promoDiscount = getCartPromoDiscount(cartItems.map((item) => ({ price: item.price, qty: item.qty })), siteSettings);
+  const subtotalAfterPromo = Math.max(subtotal - promoDiscount, 0);
 
   // Delivery address for current order only (temporary override)
   const [orderGovernorate, setOrderGovernorate] = React.useState(user?.governorate || '');
@@ -68,12 +73,11 @@ export function CartDrawer({
   }, [user, checkoutMode, isOpen]);
 
   const getShippingFee = (governorate?: string) => {
-    // Flat rate of 50 for supported governorates; fallback to 50.
-    return 50;
+    return getFreeShippingFee(subtotalAfterPromo, siteSettings, 50);
   };
 
   const shippingFee = getShippingFee(orderGovernorate);
-  const total = subtotal + shippingFee;
+  const total = subtotalAfterPromo + shippingFee;
 
   const headerContent = checkoutMode ? (
     <>
@@ -228,6 +232,12 @@ export function CartDrawer({
                     <span>Subtotal</span>
                     <span className="font-semibold text-brand-black">EGP {subtotal.toFixed(2)}</span>
                   </div>
+                  {promoDiscount > 0 && (
+                    <div className="flex justify-between text-sm text-emerald-700 mb-2">
+                      <span>Promo Discount</span>
+                      <span className="font-semibold">-EGP {promoDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm text-stone-600 mb-2">
                     <span>Shipping</span>
                     <span className="font-semibold text-emerald-700">EGP {shippingFee.toFixed(2)}</span>

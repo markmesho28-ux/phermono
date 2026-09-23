@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
-import { ShoppingBag, Heart, Eye, Star, Check, Edit2, Trash2 } from "lucide-react";
+import { ShoppingBag, Heart, Eye, EyeOff, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { useData } from "../contexts/DataContext";
+import { getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
 import type { Product } from "../types";
 
 const TAG_STYLES: Record<string, string> = {
@@ -34,14 +34,17 @@ export default function ProductCard({
   const [addedAnim, setAddedAnim] = useState(false);
   const addActionLockRef = useRef(false);
   const { user } = useAuth();
-  const { actions } = useData();
+  const { actions, siteSettings } = useData();
 
   const generalPrice = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
   const storePrice = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
   const ourPrice = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
+  const dynamicDiscountPercent = getPromoDiscountPercent(siteSettings);
+  const activeDisplayPrice = typeof storePrice === 'number' ? getDiscountedPrice(storePrice, siteSettings) : (typeof generalPrice === 'number' ? getDiscountedPrice(generalPrice, siteSettings) : 0);
   const discount = (typeof generalPrice === 'number' && typeof storePrice === 'number' && generalPrice > 0)
     ? Math.round(((generalPrice - storePrice) / generalPrice) * 100)
     : null;
+  const displayDiscountPercent = Math.max(dynamicDiscountPercent, discount ?? 0);
   const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
@@ -107,7 +110,10 @@ export default function ProductCard({
 
         <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(29,18,13,0.00)_0%,_rgba(29,18,13,0.06)_100%)]" />
 
-        <div className="absolute left-2.5 top-2.5 z-10 flex flex-col gap-1.5 md:left-3 md:top-3">
+        <div
+          className="absolute left-2.5 top-2.5 z-10 flex flex-col gap-1.5 md:left-3 md:top-3"
+          onClick={(event) => event.stopPropagation()}
+        >
           {shouldShowBestSeller && (
             <span className="w-fit rounded-full border border-[#c38d2d] bg-brand-gold px-2 py-0.5 text-[7px] font-extrabold uppercase tracking-[0.16em] text-brand-black shadow-sm md:text-[8px]">
               Best Seller
@@ -118,9 +124,9 @@ export default function ProductCard({
               New
             </span>
           )}
-          {typeof discount === 'number' && discount > 0 && (
+          {displayDiscountPercent > 0 && (
             <span className="w-fit rounded-full border border-[#c38d2d] bg-brand-gold px-2 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-brand-black shadow-[0_8px_20px_rgba(18,14,10,0.12)] md:text-[8px]">
-              Save {discount}%
+              Save {displayDiscountPercent}%
             </span>
           )}
         </div>
@@ -157,17 +163,32 @@ export default function ProductCard({
       </div>
 
       {user && user.role === 'admin' && (
-        <div className="absolute left-2.5 top-2.5 z-20 flex gap-2 md:left-3 md:top-3">
-          <button onClick={() => actions.toggleHero(product.id)} className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10 ${product.hero ? 'text-yellow-500' : ''}`} title={product.hero ? 'Unmark Best Seller' : 'Mark Best Seller'}>
+        <div
+          className="absolute left-2.5 top-2.5 z-20 flex gap-2 md:left-3 md:top-3"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.updateProduct(product.id, { isHidden: !product.isHidden });
+            }}
+            className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10 ${product.isHidden ? 'text-emerald-600' : 'text-stone-600'}`}
+            title={product.isHidden ? 'Show product' : 'Hide product'}
+            aria-label={product.isHidden ? `Show ${product.name}` : `Hide ${product.name}`}
+          >
+            {product.isHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+          </button>
+          <button onClick={(event) => { event.stopPropagation(); actions.toggleHero(product.id); }} className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10 ${product.hero ? 'text-yellow-500' : ''}`} title={product.hero ? 'Unmark Best Seller' : 'Mark Best Seller'}>
             <Star size={14} fill={product.hero ? 'currentColor' : 'none'} />
           </button>
           {onEdit && (
-            <button onClick={() => onEdit?.(product)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10">
+            <button onClick={(event) => { event.stopPropagation(); onEdit?.(product); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10">
               <Edit2 size={14} />
             </button>
           )}
           {onDelete && (
-            <button onClick={() => onDelete?.(product)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-500 shadow touch-target md:h-10 md:w-10">
+            <button onClick={(event) => { event.stopPropagation(); onDelete?.(product); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-500 shadow touch-target md:h-10 md:w-10">
               <Trash2 size={14} />
             </button>
           )}
@@ -198,7 +219,7 @@ export default function ProductCard({
               ) : (
                 <div className="flex items-end gap-2">
                   <span className="text-[14px] font-extrabold text-brand-black md:text-[18px]">
-                    EGP {(typeof storePrice === 'number' ? storePrice.toFixed(2) : '0.00')}
+                    EGP {activeDisplayPrice.toFixed(2)}
                   </span>
                   {generalPrice !== undefined && (
                     <span className="text-[10px] text-stone-400 line-through md:text-[12px]">

@@ -12,7 +12,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { CheckCircle2, MessageCircle, Phone, Instagram, Facebook } from "lucide-react";
 import ProductCard from "./components/ProductCard";
 import ChatWidget from "./components/ChatWidget";
-import { formatOrderDate } from "./utils/orderDate";
+import { formatOrderDate, getOrderDisplayId } from "./utils/orderDate";
 import type { CartItem, OrderInput, Product } from "./types";
 
 function AssistantPage({ products, sidebarOpen = false }: { products: Product[]; sidebarOpen?: boolean }) {
@@ -176,7 +176,7 @@ function TrackingPage() {
             <div key={order.id} className="border rounded-lg p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-sm font-semibold">Order #{order.id}</div>
+                  <div className="text-sm font-semibold">Order #{getOrderDisplayId(order.id)}</div>
                   <div className="text-xs text-stone-400">Placed: {formatOrderDate(order)}</div>
                 </div>
                 <div className="text-sm font-medium">Total: EGP {(Number(order?.total) || 0).toFixed(2)}</div>
@@ -268,7 +268,7 @@ function AccountProfile(){
     setPassError('');
     if(!passState.current || !passState.next || !passState.confirm) { setPassError('All fields required'); return; }
     if(passState.next !== passState.confirm){ setPassError('New passwords do not match'); return; }
-    const res = changePassword ? changePassword({ currentPassword: passState.current, newPassword: passState.next }) : { error: 'Password change not available' };
+    const res = changePassword ? await changePassword({ currentPassword: passState.current, newPassword: passState.next }) : { error: 'Password change not available' };
     if(res && res.error){ setPassError(res.error); return; }
     setPassState({ current:'', next:'', confirm:'' });
     setPassError('');
@@ -420,6 +420,54 @@ function SearchResults({ results, onAddToCart, onQuickView, onWishlist, wishlist
 }
 
 const CART_STORAGE_KEY = 'phermono_cart_v1';
+const WISHLIST_STORAGE_KEY = 'phermono_wishlist_v1';
+const ACTIVE_CATEGORY_STORAGE_KEY = 'phermono_active_category_v1';
+const PERSISTED_CATEGORIES = new Set(['home', 'skincare', 'haircare', 'makeup', 'fragrance', 'bodycare']);
+
+const getInitialActiveCategory = (): string => {
+  try {
+    const stored = sessionStorage.getItem(ACTIVE_CATEGORY_STORAGE_KEY);
+    return stored && PERSISTED_CATEGORIES.has(stored) ? stored : 'home';
+  } catch (_) {
+    return 'home';
+  }
+};
+
+const getWishlistStorageKey = (phone?: string) => {
+  const identity = String(phone || '').trim();
+  return identity ? `${WISHLIST_STORAGE_KEY}:${identity}` : `${WISHLIST_STORAGE_KEY}:guest`;
+};
+
+const getInitialWishlist = (storageKey: string): Product[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((product): product is Product => (
+      product !== null &&
+      typeof product === 'object' &&
+      typeof product.id === 'number' &&
+      typeof product.name === 'string'
+    ));
+  } catch (err) {
+    console.warn('Failed to load wishlist from localStorage:', err);
+    return [];
+  }
+};
+
+const saveWishlist = (storageKey: string, wishlist: Product[]) => {
+  try {
+    if (wishlist.length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify(wishlist));
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  } catch (err) {
+    console.warn('Failed to save wishlist to localStorage:', err);
+  }
+};
 
 export const getInitialCart = (): CartItem[] => {
   if (typeof window === 'undefined') return [];
@@ -451,7 +499,7 @@ export const getInitialCart = (): CartItem[] => {
 };
 
 export default function App(){
-  const [activeCategory, setActiveCategory] = useState('home');
+  const [activeCategory, setActiveCategory] = useState(getInitialActiveCategory);
   // profile is rendered as a dedicated page via `activeCategory === 'profile'`
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -460,7 +508,7 @@ export default function App(){
   const [authOpen, setAuthOpen] = useState(false);
   const [authIntent, setAuthIntent] = useState<string | null>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  const [wishlist, setWishlist] = useState<Product[]>([]);
+  const [wishlist, setWishlist] = useState<Product[]>(() => getInitialWishlist(getWishlistStorageKey()));
   const [toast, setToast] = useState<ToastProps>({ message: '', visible: false });
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -481,6 +529,18 @@ export default function App(){
       // ignore storage errors
     }
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    try {
+      if (PERSISTED_CATEGORIES.has(activeCategory)) {
+        sessionStorage.setItem(ACTIVE_CATEGORY_STORAGE_KEY, activeCategory);
+      } else {
+        sessionStorage.removeItem(ACTIVE_CATEGORY_STORAGE_KEY);
+      }
+    } catch (_) {
+      // ignore storage errors
+    }
+  }, [activeCategory]);
   const handleMenuToggle = useCallback((forceOpen?: boolean) => {
     setMobileMenuOpen(prev => {
       if (typeof forceOpen === 'boolean') return forceOpen;
@@ -494,6 +554,23 @@ export default function App(){
 
   const { products, actions } = useData();
   const { user } = useAuth();
+  const visibleWishlist = user?.role === 'admin' ? wishlist : wishlist.filter((product) => !product.isHidden);
+  const wishlistStorageKey = getWishlistStorageKey(user?.phone);
+
+  useEffect(() => {
+    setWishlist(getInitialWishlist(wishlistStorageKey));
+  }, [wishlistStorageKey]);
+
+  useEffect(() => {
+    const handleWishlistStorageChange = (event: StorageEvent) => {
+      if (event.key === wishlistStorageKey) {
+        setWishlist(getInitialWishlist(wishlistStorageKey));
+      }
+    };
+
+    window.addEventListener('storage', handleWishlistStorageChange);
+    return () => window.removeEventListener('storage', handleWishlistStorageChange);
+  }, [wishlistStorageKey]);
 
   // cartItems state with immediate localStorage persistence across page reloads
   const [cartItems, setCartItems] = useState<CartItem[]>(() => getInitialCart());
@@ -561,11 +638,12 @@ export default function App(){
   const handleWishlist = useCallback((product: Product) => {
     setWishlist(prev => {
       const exists = prev.find(w=>w.id===product.id);
-      if(exists){ showToast('Removed from Favorite List'); return prev.filter(w=>w.id!==product.id); }
-      showToast('Added to Favorite List');
-      return [...prev, product];
+      const nextWishlist = exists ? prev.filter(w=>w.id!==product.id) : [...prev, product];
+      saveWishlist(wishlistStorageKey, nextWishlist);
+      showToast(exists ? 'Removed from Favorite List' : 'Added to Favorite List');
+      return nextWishlist;
     });
-  }, [showToast]);
+  }, [showToast, wishlistStorageKey]);
 
   // Robust, unconstrained search matching
   const matchProducts = useCallback((query: string) => {
@@ -573,6 +651,7 @@ export default function App(){
     const q = String(query).toLowerCase().trim();
     const tokens = q.split(/\s+/).filter(Boolean);
     return products.filter(p => {
+      if (user?.role !== 'admin' && p.isHidden) return false;
       const name = (p.name || '').toLowerCase();
       const brand = (p.brand || '').toLowerCase();
       const sub = (p.subcategoryId || '').toLowerCase();
@@ -582,7 +661,7 @@ export default function App(){
         name.includes(tok) || brand.includes(tok) || sub.includes(tok) || desc.includes(tok)
       ));
     });
-  }, [products]);
+  }, [products, user]);
 
   const searchResults = matchProducts(searchQuery);
 
@@ -673,7 +752,7 @@ export default function App(){
       `}</style>
       <Header
         cartCount={totalCartCount}
-        wishlistCount={wishlist.length}
+        wishlistCount={visibleWishlist.length}
         cartOpen={cartOpen}
         onCartOpen={() => { if(user) setCartOpen(true); else { setAuthIntent('openCart'); setAuthOpen(true); } }}
         onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { setAuthIntent('openTracking'); setAuthOpen(true); } }}
@@ -733,11 +812,11 @@ export default function App(){
                 <h2 className="text-2xl font-bold">Favorite List</h2>
               </div>
 
-              {wishlist.length === 0 ? (
+              {visibleWishlist.length === 0 ? (
                 <div className="text-sm text-stone-500">You have no saved favorites yet.</div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {wishlist.map(p => (
+                  {visibleWishlist.map(p => (
                     <ProductCard key={p.id} product={p} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} isWishlisted={true} />
                   ))}
                 </div>
@@ -818,8 +897,10 @@ export default function App(){
                 onClick={() => {
                   const label = String(newCategoryName || '').trim();
                   if (!label) return;
-                  const id = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `cat-${Date.now()}`;
-                  actions.addCategory({ id, label, icon: 'Sparkles', color: '', accent: '', subcategories: [{ id: 'all', label: 'All' }], brands: [] });
+                  const generatedId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                    ? crypto.randomUUID()
+                    : `cat-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+                  actions.addCategory({ id: generatedId, label, icon: 'Sparkles', color: '', accent: '', subcategories: [{ id: 'all', label: 'All' }], brands: [] });
                   setIsAddCategoryModalOpen(false);
                   setNewCategoryName('');
                   showToast('Category added');

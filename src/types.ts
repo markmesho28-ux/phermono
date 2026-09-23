@@ -29,6 +29,8 @@ export interface Product {
   sellingPrice?: number;
   marketPrice?: number | null;
   adminCost?: number;
+  stock?: number;
+  isHidden?: boolean;
   rating: number;
   reviews: number;
   skinType?: string | null;
@@ -119,17 +121,32 @@ export interface DataActions {
   addSubcategory: (categoryId: string, sub: CategorySubcategory) => Promise<any>;
   updateSubcategory: (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => void;
   deleteSubcategory: (categoryId: string, subId: string) => void;
-  addBrand: (name: string, categoryId?: string) => Promise<any>;
+  addBrand: (name: string, categoryId?: string, logo?: string) => Promise<any>;
   updateBrand: (oldName: string, newName: string) => void;
   deleteBrand: (nameOrId: string) => Promise<void> | void;
   addProduct: (prod: Product) => Promise<number>;
   updateProduct: (id: number, updates: Partial<Product>) => void;
   deleteProduct: (id: number) => void;
   toggleHero: (id: number) => void;
-  addOrder: (order: OrderInput) => number;
+  addOrder: (order: OrderInput) => number | string;
   updateOrder: (id: number | string, updates: Partial<Order>) => void;
   deleteOrder: (id: number | string) => Promise<void> | void;
   adminClearDatabase?: () => Promise<void>;
+}
+
+export interface SiteSettings {
+  free_shipping_threshold: number;
+  active_promo: string;
+  is_free_shipping_active: boolean;
+  promo_banner_text?: string;
+  promo_discount_percent?: number;
+  promotion_scope?: string;
+  promo_rule?: string;
+  buy_x?: number;
+  get_y?: number;
+  promo_start_at?: string | null;
+  promo_end_at?: string | null;
+  [key: string]: any;
 }
 
 export interface DataContextValue {
@@ -138,7 +155,10 @@ export interface DataContextValue {
   products: Product[];
   priceRanges: PriceRange[];
   orders: Order[];
+  siteSettings: SiteSettings;
   getBrandsForCategory?: (categoryId: string) => string[];
+  updateSiteSettings: (updates: Partial<SiteSettings>) => Promise<void>;
+  applyPromoCommand: (command: string) => Promise<Partial<SiteSettings>>;
   actions: DataActions;
 }
 
@@ -149,5 +169,5 @@ export interface AuthContextValue {
   login: (params: LoginParams) => Promise<{ error?: string; user?: AuthUser }>;
   logout: () => void;
   updateProfile: (updates: ProfileUpdate) => Promise<{ error?: string; user?: AuthUser }>;
-  changePassword: (params: { currentPassword: string; newPassword: string }) => { error?: string; ok?: boolean };
+  changePassword: (params: { currentPassword: string; newPassword: string }) => Promise<{ error?: string; ok?: boolean }>;
 }

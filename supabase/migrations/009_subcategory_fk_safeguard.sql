@@ -1,0 +1,4 @@
+-- Migration 009 — REVERTED
+-- The subcategory_fk_safeguard trigger and resolve_category_id function
+-- were dropped. See the DROP script run against Supabase directly.
+-- This file is intentionally left as a no-op tombstone.

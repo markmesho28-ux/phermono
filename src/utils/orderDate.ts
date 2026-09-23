@@ -50,3 +50,8 @@ export function getOrderTimestamp(orderOrDate: any): number {
   }
   return 0;
 }
+
+export function getOrderDisplayId(orderId: number | string | null | undefined): string {
+  const normalized = String(orderId ?? '').trim().replace(/^(?:order\s*#\s*)+/i, '');
+  return normalized || 'unknown';
+}

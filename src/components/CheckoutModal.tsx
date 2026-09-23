@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getShippingCost } from '../utils/shipping';
 import AdminModal from './AdminModal';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
+import { getCartPromoDiscount, getFreeShippingFee, useData } from '../contexts/DataContext';
 import type { CartItem, OrderInput } from '../types';
 
 const GOVERNORATES = ['أسوان','أسيوط'];
@@ -17,7 +17,9 @@ interface CheckoutModalProps {
 
 export default function CheckoutModal({ open, onClose, cartItems, subtotal, onConfirm }: CheckoutModalProps){
   const { user } = useAuth();
-  const { actions } = useData();
+  const { actions, siteSettings } = useData();
+  const promoDiscount = getCartPromoDiscount(cartItems.map((item) => ({ price: item.price, qty: item.qty })), siteSettings);
+  const subtotalAfterPromo = Math.max(subtotal - promoDiscount, 0);
   const [form, setForm] = useState<{ name: string; phone: string; governorate: string; address: string }>({ name: '', phone: '', governorate: '', address: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -39,8 +41,8 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
 
   const submit = ()=>{
     if(!validate()) return;
-    const shipping = (getShippingCost && typeof getShippingCost === 'function') ? getShippingCost(form.governorate) : 50;
-    const total = subtotal + shipping;
+    const shipping = getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate));
+    const total = subtotalAfterPromo + shipping;
     const order: OrderInput = {
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -96,8 +98,9 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
         {/* Order Summary */}
         <div className="bg-stone-50 p-3 rounded">
           <div className="flex justify-between text-sm text-stone-600"><span>Subtotal</span><span>EGP {subtotal.toFixed(2)}</span></div>
-          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>EGP {getShippingCost(form.governorate).toFixed(2)}</span></div>
-          <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>EGP {(subtotal + getShippingCost(form.governorate)).toFixed(2)}</span></div>
+          {promoDiscount > 0 && <div className="flex justify-between text-sm text-emerald-700"><span>Promo Discount</span><span>-EGP {promoDiscount.toFixed(2)}</span></div>}
+          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>EGP {getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate)).toFixed(2)}</span></div>
+          <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>EGP {(subtotalAfterPromo + getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate))).toFixed(2)}</span></div>
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded touch-target">Cancel</button>

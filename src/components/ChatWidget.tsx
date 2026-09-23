@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import supabase from "../lib/supabase";
 import { MessageCircleMore, SendHorizonal, Sparkles, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { parseSitePromoCommand } from "../contexts/DataContext";
 import type { Product } from "../types";
+import { checkIsAdminRole, isAdminPhone } from "../utils/admin";
 
 interface ChatMessage {
   id: number;
@@ -230,6 +232,128 @@ const writeLocalUserUsage = (userId: string, count: number) => {
     localStorage.setItem(LOCAL_USER_LIMIT_KEY, JSON.stringify(entries));
   } catch {
     // ignore local storage write failures
+  }
+};
+
+const dispatchSiteSettingsUpdate = (settings: Record<string, any>) => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent('site-settings-updated', { detail: settings }));
+};
+
+export const looksLikeAdminCommandIntent = (message: string): boolean => {
+  const text = String(message ?? '').trim();
+  if (!text) return false;
+
+  const dynamicPercentPattern = /(?:make\s+(?:a\s+)?)?(?:\d{1,2}\s*%\s*(?:off|discount|sale|offer)|(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|the\s+store|everything)?\s*\d{1,2}\s*(?:%|٪)|\d{1,2}\s*(?:%|٪)\s*(?:off|discount|sale|offer)|(?:خصم|تخفيض)\s*\d{1,2}\s*(?:%|٪)|\d{1,2}\s*(?:%|٪)\s*(?:خصم|تخفيض))/i;
+
+  return dynamicPercentPattern.test(text)
+    || /(free shipping|shipping free|free delivery|delivery free|promo|discount|offer|reset|cancel|stop|remove|disable|enable|activate|buy one|get one|bogo|الغي|الغى|إيقاف|تفعيل|خصم|تخفيض|عرض|العرض|شحن مجانى|الشحن المجانى|شحن مجاني|الشحن المجاني|هدية|gift)/i.test(text);
+};
+
+const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any) => {
+  const isAdmin = !!currentUser && (checkIsAdminRole(currentUser) || isAdminPhone(currentUser.phone));
+  const looksLikeAdminIntent = looksLikeAdminCommandIntent(message);
+
+  if (!isAdmin || !looksLikeAdminIntent) {
+    return { handled: false, message: '' };
+  }
+
+  const updates = parseSitePromoCommand(message);
+  if (!updates || Object.keys(updates).length === 0) {
+    return { handled: false, message: '' };
+  }
+
+  if (!supabase) {
+    return { handled: true, message: 'Supabase is not configured for live site updates. No database write was attempted.' };
+  }
+
+  try {
+    const { data: existingRow } = await supabase
+      .from('site_settings')
+      .select('*')
+      .eq('key', 'site_config')
+      .maybeSingle();
+
+    const currentValue = existingRow && existingRow.value && typeof existingRow.value === 'object' ? existingRow.value : {};
+    const resetDefaults = {
+      free_shipping_threshold: 200,
+      active_promo: 'none',
+      is_free_shipping_active: false,
+      promo_banner_text: '',
+      promo_discount_percent: 0,
+      promo_rule: 'none',
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+      promo_start_at: null,
+      promo_end_at: null,
+    };
+    const nextValue = {
+      ...resetDefaults,
+      ...currentValue,
+      ...updates,
+    };
+
+    if (updates.active_promo === 'none' || updates.is_free_shipping_active === false) {
+      Object.assign(nextValue, {
+        free_shipping_threshold: 200,
+        active_promo: 'none',
+        is_free_shipping_active: false,
+        promo_banner_text: '',
+        promo_discount_percent: 0,
+        promo_rule: 'none',
+        buy_x: 0,
+        get_y: 0,
+        promotion_scope: 'all',
+      });
+    }
+
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert([
+        {
+          key: 'site_config',
+          value: nextValue,
+          updated_at: new Date().toISOString(),
+        }
+      ], { onConflict: 'key' })
+      .select();
+
+    if (error) {
+      console.warn('Admin site settings command failed:', error.message || error);
+      return { handled: true, message: 'I hit a database issue while updating the live site settings. Please try again.' };
+    }
+
+    dispatchSiteSettingsUpdate(nextValue);
+
+    const isArabicMessage = /[\u0600-\u06FF]/.test(message);
+    const summary = [] as string[];
+
+    if (typeof updates.free_shipping_threshold === 'number' && updates.free_shipping_threshold > 0) {
+      const thresholdMessage = isArabicMessage
+        ? `تم تحديث إعدادات الموقع بنجاح: الشحن المجاني أصبح مفعل للطلبات فوق ${updates.free_shipping_threshold} جنيه`
+        : `✅ Live site settings updated successfully: free shipping is now active for orders over ${updates.free_shipping_threshold} EGP`;
+      return { handled: true, message: thresholdMessage };
+    }
+
+    if (updates.active_promo === 'none' && updates.is_free_shipping_active === false) {
+      return {
+        handled: true,
+        message: isArabicMessage
+          ? 'تم إلغاء العرض النشط والشحن المجاني بنجاح. الموقع الآن في الوضع الافتراضي.'
+          : '✅ The active promo and free shipping were cancelled successfully. The storefront is back to default settings.'
+      };
+    }
+
+    if (typeof updates.is_free_shipping_active === 'boolean') summary.push(isArabicMessage ? `الشحن المجاني: ${updates.is_free_shipping_active ? 'مفعل' : 'غير مفعل'}` : `free shipping: ${updates.is_free_shipping_active ? 'enabled' : 'disabled'}`);
+    if (updates.active_promo && updates.active_promo !== 'none') summary.push(isArabicMessage ? `العرض النشط: ${updates.active_promo}` : `active promo: ${updates.active_promo}`);
+    if (updates.promo_banner_text) summary.push(isArabicMessage ? `الشعار: ${updates.promo_banner_text}` : `banner: ${updates.promo_banner_text}`);
+
+    const summaryText = summary.length > 0 ? ` (${summary.join(' • ')})` : '';
+    return { handled: true, message: isArabicMessage ? `تم تحديث إعدادات الموقع بنجاح${summaryText}.` : `✅ Live site settings updated successfully${summaryText}.` };
+  } catch (error) {
+    console.warn('Admin site settings command exception:', error);
+    return { handled: true, message: 'I hit a problem while updating the live site settings. Please try again.' };
   }
 };
 
@@ -597,6 +721,18 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
           ]);
           return;
         }
+      }
+
+      const adminAction = await handleAdminSiteSettingsCommand(trimmed, user);
+      if (adminAction.handled) {
+        const actionMessage: ChatMessage = {
+          id: Date.now() + 1,
+          sender: "bot",
+          text: adminAction.message || '✅ Live site settings updated successfully.',
+          time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        };
+        setMessages((prev) => [...prev, actionMessage]);
+        return;
       }
 
       const catalog = buildCatalogContext(products);

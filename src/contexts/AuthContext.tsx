@@ -22,24 +22,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<AuthUserWithPassword[]>([]);
 
   useEffect(() => {
-    // Load any saved client-side session/profile
-    try {
-      const rawSession = localStorage.getItem(STORAGE_KEY);
-      if (rawSession) {
-        const parsed = JSON.parse(rawSession);
-        if (parsed && typeof parsed === 'object') {
-          // Verify and enforce admin role and name if phone or flags match
-          if (checkIsAdminRole(parsed) || isAdminPhone(parsed.phone)) {
-            parsed.role = 'admin';
-            if (isAdminPhone(parsed.phone)) {
-              parsed.name = 'wassef';
-            }
-          }
-          setUser(parsed);
-        }
-      }
-    } catch (e) {}
-
     // Load registered users and guarantee the admin account is present
     try {
       const rawUsers = localStorage.getItem(USERS_KEY);
@@ -71,23 +53,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-      } catch (_) {}
-    } else {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch (_) {}
-    }
-  }, [user]);
-
   const syncUsersFromProfiles = async () => {
     if (!supabase) return;
 
     try {
-      const { data, error } = await supabase.from('profiles').select('*');
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData?.user;
+      if (!authUser) return;
+
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', authUser.id);
       if (error) {
         console.error('Failed to fetch profiles from Supabase:', error);
         return;
@@ -145,9 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // On mount, check Supabase auth and synchronize profile / role safely
-  useEffect(() => {
-    void syncUsersFromProfiles();
-  }, []);
+  // Profile synchronization is scoped to the current user and is invoked after signup.
 
   useEffect(() => {
     const init = async () => {
@@ -178,35 +150,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const userPhone = profile?.phone || supaUser.phone || supaUser.user_metadata?.phone || '';
-        const isWassef =
-          isAdminPhone(userPhone) ||
-          isAdminPhone(profile?.phone) ||
-          isAdminPhone(supaUser.phone) ||
-          isAdminPhone(supaUser.user_metadata?.phone);
+        const isAdmin = Boolean(profile && (
+          String(profile.role || '').toLowerCase() === 'admin' ||
+          String(profile.role || '').toLowerCase() === 'superadmin' ||
+          profile.is_admin === true
+        ));
 
-        // Ensure database profile in public.profiles table has name/full_name set to "wassef"
-        if (isWassef && supabase && supaUser.id) {
-          if (profile?.name !== 'wassef' || profile?.full_name !== 'wassef') {
-            try {
-              await supabase
-                .from('profiles')
-                .update({ name: 'wassef', full_name: 'wassef' })
-                .eq('id', supaUser.id);
-            } catch (updErr) {
-              console.warn('Failed to update admin profile name in Supabase:', updErr);
-            }
-          }
-        }
-
-        const isAdmin =
-          isWassef ||
-          checkIsAdminRole(profile) ||
-          checkIsAdminRole(supaUser);
-
-        const role = isAdmin ? 'admin' : (profile?.role || supaUser.user_metadata?.role || 'customer');
-        const displayName = isWassef
-          ? 'wassef'
-          : (profile?.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || (isAdmin ? 'wassef' : ''));
+        const role = isAdmin ? 'admin' : 'customer';
+        const displayName = profile?.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || '';
 
         const sessionUser: AuthUser = {
           name: displayName,
@@ -238,8 +189,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: 'Name, phone and password are required' };
     }
 
-    const isTargetAdmin = isAdminPhone(cleanPhone) || isAdminPhone(phone);
-    const assignedRole = isTargetAdmin ? 'admin' : 'customer';
+    // Admin access is provisioned in the database, never from a phone number
+    // or client-controlled signup metadata.
+    const assignedRole = 'customer';
 
     try {
       // Generate internal service email for Supabase using the phone number.
@@ -256,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             data: {
               phone: cleanPhone,
               role: assignedRole,
-              is_admin: isTargetAdmin,
+              is_admin: false,
               full_name: trimmedName,
               name: trimmedName,
             },
@@ -293,12 +245,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (userId && supabase) {
-        const profileName = isTargetAdmin ? 'wassef' : trimmedName;
+        const profileName = trimmedName;
         const profileRow = {
           id: userId,
           email: dummyEmail,
           role: assignedRole,
-          is_admin: isTargetAdmin,
+          is_admin: false,
           name: profileName,
           full_name: profileName,
           phone: cleanPhone,
@@ -321,7 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const newUser: AuthUserWithPassword = {
-        name: isTargetAdmin ? 'wassef' : trimmedName,
+        name: trimmedName,
         phone: cleanPhone,
         address: address || '',
         governorate: governorate || '',
@@ -344,7 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         phone: newUser.phone,
         address: newUser.address,
         governorate: newUser.governorate,
-        role: newUser.role,
+        role: 'customer',
       };
 
       setUser(userSession);
@@ -360,8 +312,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!identifier || !password) return { error: 'Phone/email and password required' };
 
     const cleanPhone = normalizePhone(identifier);
-    const isTargetAdmin = isAdminPhone(identifier) || isAdminPhone(cleanPhone);
-
     // Try Supabase authentication first if supabase is configured
     if (supabase) {
       const emailCandidates: string[] = [];
@@ -396,40 +346,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               console.warn('Profile fetch after login warning:', pfErr);
             }
 
-            const isWassef =
-              isTargetAdmin ||
-              isAdminPhone(profile?.phone) ||
-              isAdminPhone(supaUser?.phone) ||
-              isAdminPhone(supaUser?.user_metadata?.phone);
+            const isAdmin = Boolean(profile && (
+              String(profile.role || '').toLowerCase() === 'admin' ||
+              String(profile.role || '').toLowerCase() === 'superadmin' ||
+              profile.is_admin === true
+            ));
 
-            // DATABASE PROFILE UPDATE:
-            // Ensure display name / full name in public.profiles table is set/updated to "wassef"
-            if (isWassef && supabase && supaUser?.id) {
-              if (profile?.name !== 'wassef' || profile?.full_name !== 'wassef') {
-                try {
-                  await supabase
-                    .from('profiles')
-                    .update({ name: 'wassef', full_name: 'wassef' })
-                    .eq('id', supaUser.id);
-                } catch (updErr) {
-                  console.warn('Failed to update admin profile name on login:', updErr);
-                }
-              }
-            }
+            const role = isAdmin ? 'admin' : 'customer';
 
-            const isAdmin =
-              isTargetAdmin ||
-              checkIsAdminRole(profile) ||
-              checkIsAdminRole(supaUser);
-
-            const role = isAdmin ? 'admin' : (profile?.role || supaUser.user_metadata?.role || 'customer');
-
-            const displayName = isWassef
-              ? 'wassef'
-              : (profile?.name ||
-                 supaUser.user_metadata?.full_name ||
-                 supaUser.user_metadata?.name ||
-                 (isAdmin ? 'wassef' : ''));
+            const displayName = profile?.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || '';
 
             const sessionUser: AuthUser = {
               name: displayName,
@@ -446,40 +371,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Try next email candidate
         }
       }
-    }
-
-    // Fall back to local users store
-    const found = users.find(
-      (u) =>
-        (normalizePhone(u.phone) === cleanPhone || String(u.phone).trim() === identifier) &&
-        u.password === password
-    );
-
-    if (found) {
-      const isAdmin = isTargetAdmin || checkIsAdminRole(found);
-      const isWassef = isTargetAdmin || isAdminPhone(found.phone);
-      const u: AuthUser = {
-        name: isWassef ? 'wassef' : (found.name || (isAdmin ? 'wassef' : '')),
-        phone: found.phone || cleanPhone,
-        address: found.address || '',
-        governorate: found.governorate || '',
-        role: isAdmin ? 'admin' : (found.role || 'customer'),
-      };
-      setUser(u);
-      return { user: u };
-    }
-
-    // Bypass / Fallback for Admin Phone: if signing in with admin phone and matching default password
-    if (isTargetAdmin && (password === 'admin' || password === DEFAULT_ADMIN_ACCOUNT.password)) {
-      const adminSession: AuthUser = {
-        name: 'wassef',
-        phone: cleanPhone || ADMIN_PHONE_NUMBER,
-        address: 'Headquarters',
-        governorate: 'Cairo',
-        role: 'admin',
-      };
-      setUser(adminSession);
-      return { user: adminSession };
     }
 
     return { error: 'Invalid credentials' };
@@ -504,10 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cleanOldPhone = normalizePhone(oldPhone);
     const cleanNewPhone = normalizePhone(newPhone);
 
-    const isNowAdmin =
-      checkIsAdminRole(user) ||
-      isAdminPhone(newPhone) ||
-      isAdminPhone(cleanNewPhone);
+    const isNowAdmin = String(user.role || '').toLowerCase() === 'admin';
 
     // If admin phone, enforce "wassef"
     const assignedName = (isNowAdmin && (isAdminPhone(newPhone) || isAdminPhone(cleanNewPhone)))
@@ -550,10 +438,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setUser(updatedUser);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
-    } catch (_) {}
-
     // 2. DATABASE SYNC: Update Supabase public.profiles table
     if (supabase) {
       try {
@@ -566,7 +450,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone: cleanNewPhone || newPhone || null,
           address: sanitizedUpdates.address || null,
           governorate: sanitizedUpdates.governorate || null,
-          role: isNowAdmin ? 'admin' : (user.role || 'customer'),
+          role: user.role || 'customer',
           is_admin: isNowAdmin,
         };
 
@@ -626,7 +510,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { user: updatedUser };
   };
 
-  const changePassword = ({
+  const changePassword = async ({
     currentPassword,
     newPassword,
   }: {
@@ -634,25 +518,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     newPassword: string;
   }) => {
     if (!user) return { error: 'Not authenticated' };
-    const phone = String(user.phone);
-    const found = users.find(
-      (u) => String(u.phone) === phone || normalizePhone(u.phone) === normalizePhone(phone)
-    );
-    if (!found) return { error: 'User not found' };
-    if (found.password !== currentPassword) return { error: 'Current password incorrect' };
+    if (!supabase) return { error: 'Authentication service unavailable' };
 
-    setUsers((prev) => {
-      const next = prev.map((u) =>
-        String(u.phone) === phone || normalizePhone(u.phone) === normalizePhone(phone)
-          ? { ...u, password: newPassword }
-          : u
-      );
-      try {
-        localStorage.setItem(USERS_KEY, JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: error.message || 'Password update failed' };
     return { ok: true };
   };
 

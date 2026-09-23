@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import ConfirmModal from '../components/ConfirmModal';
 import supabase, { SUPABASE_URL } from '../lib/supabase';
-import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange } from '../types';
+import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange, SiteSettings } from '../types';
 import { normalizeOrderItems } from '../utils/orderPrice';
-import { checkIsAdminRole, isAdminPhone } from '../utils/admin';
 
 const DataContext = createContext<DataContextValue | null>(null);
 const STORAGE_KEY = 'phermono_data_v1';
@@ -13,6 +12,303 @@ const EMPTY_DATA = {
   products: [] as Product[],
   priceRanges: [] as PriceRange[],
   orders: [] as Order[],
+};
+
+const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  free_shipping_threshold: 200,
+  active_promo: 'none',
+  is_free_shipping_active: false,
+  promo_banner_text: '',
+  promo_discount_percent: 0,
+  promotion_scope: 'all',
+  promo_rule: 'none',
+  buy_x: 0,
+  get_y: 0,
+  promo_start_at: null,
+  promo_end_at: null,
+};
+
+const SITE_SETTINGS_CACHE_KEY = 'phermono_site_settings_v1';
+
+const readCachedSiteSettings = (): Partial<SiteSettings> | null => {
+  try {
+    const raw = localStorage.getItem(SITE_SETTINGS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+};
+
+const writeCachedSiteSettings = (settings: Partial<SiteSettings>) => {
+  try {
+    localStorage.setItem(SITE_SETTINGS_CACHE_KEY, JSON.stringify({ ...DEFAULT_SITE_SETTINGS, ...settings }));
+  } catch (_) {
+    // ignore cache write failures
+  }
+};
+
+export const getEffectiveSiteSettings = (settings: Partial<SiteSettings> = {}): SiteSettings => ({
+  ...DEFAULT_SITE_SETTINGS,
+  ...settings,
+});
+
+export const getPromoDiscountPercent = (settings: Partial<SiteSettings> = {}): number => {
+  const value = Number(settings.promo_discount_percent ?? 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), 100);
+};
+
+export const getFreeShippingFee = (subtotal: number, settings: Partial<SiteSettings> = {}, fallbackFee = 50): number => {
+  const threshold = Number(settings.free_shipping_threshold ?? DEFAULT_SITE_SETTINGS.free_shipping_threshold ?? 200);
+  const normalizedFallbackFee = Number.isFinite(Number(fallbackFee)) ? Number(fallbackFee) : 50;
+  const activeFreeShipping = Boolean(settings.is_free_shipping_active);
+  const qualifiesForFreeShipping = activeFreeShipping && Number.isFinite(threshold) && subtotal >= threshold;
+
+  if (qualifiesForFreeShipping) {
+    return 0;
+  }
+
+  return normalizedFallbackFee;
+};
+
+export const getDiscountedPrice = (basePrice: number, settings: Partial<SiteSettings> = {}): number => {
+  const rate = getPromoDiscountPercent(settings) / 100;
+  const normalizedBase = Number(basePrice) || 0;
+  return Number((normalizedBase * (1 - rate)).toFixed(2));
+};
+
+export const getCartPromoDiscount = (items: Array<{ price: number; qty: number }>, settings: Partial<SiteSettings> = {}): number => {
+  const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.qty) || 0), 0);
+  const discountPercent = getPromoDiscountPercent(settings);
+  if (discountPercent > 0) {
+    return Number((subtotal * (discountPercent / 100)).toFixed(2));
+  }
+
+  const promoRule = String(settings.promo_rule || settings.active_promo || '').toLowerCase();
+  const buyX = Number(settings.buy_x ?? 0);
+  const getY = Number(settings.get_y ?? 0);
+  if (promoRule.includes('buy') && buyX > 0 && getY > 0) {
+    const qualifyingUnits = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+    const freeUnits = Math.floor(qualifyingUnits / (buyX + getY)) * getY;
+    const averagePrice = items.length > 0 ? subtotal / items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0) : 0;
+    return Number((averagePrice * freeUnits).toFixed(2));
+  }
+
+  return 0;
+};
+
+const normalizeArabicCommandText = (value: string): string => {
+  const normalized = String(value ?? '').trim();
+  const digitsMap: Record<string, string> = {
+    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5',
+    '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4', '۵': '5',
+    '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+  };
+
+  let result = normalized
+    .replace(/[\u0640\u0610-\u061A\u064B-\u065F]/g, '')
+    .replace(/[ًٌٍَُِّْ]/g, '')
+    .replace(/[\u200C\u200D]/g, '');
+
+  result = Array.from(result).map((char) => digitsMap[char] || char).join('');
+  result = result
+    .replace(/\s+/g, ' ')
+    .replace(/[\u2013\u2014\-–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return result;
+};
+
+const extractFirstNumber = (value: string): number | null => {
+  const normalized = normalizeArabicCommandText(value);
+  const regex = /(\d{1,6})/g;
+  const matches = normalized.match(regex);
+  if (!matches || matches.length === 0) return null;
+
+  const candidate = Number(matches[0]);
+  return Number.isFinite(candidate) && candidate > 0 ? candidate : null;
+};
+
+export const parseSitePromoCommand = (command: string): Partial<SiteSettings> => {
+  const text = String(command ?? '').trim();
+  if (!text) return {};
+
+  const normalized = normalizeArabicCommandText(text);
+  const lower = normalized.toLowerCase();
+  const updates: Partial<SiteSettings> = {};
+
+  const triggerKeywords = /(free shipping|shipping free|free delivery|delivery free|sale|percent|percentage|discount|offer|promo|campaign|شحن مجانى|الشحن المجانى|شحن مجاني|الشحن المجاني|الشحن مجانا|توصيل مجاني|الشحن مجاني|التوصيل المجاني|العرض|تفعيل|إيقاف|تعطيل|تحديث|هدية|gift|buy one|get one|bogo|باقي|فوق|اوردر|order|طلب|خصم|تخفيض|تخلي|off|الغي|الغى|cancel|stop|disable|remove|reset)/i;
+  if (!triggerKeywords.test(normalized)) {
+    return {};
+  }
+
+  const shippingVariant = /(free shipping|shipping free|free delivery|delivery free|الشحن|شحن|التوصيل|توصيل|شحن مجانى|الشحن المجانى|شحن مجاني|الشحن المجاني|الشحن مجانا|التوصيل المجاني|توصيل مجاني|توصيل مجانى|شحن مجان|مجان شحن|مجان التوصيل|شحنه مجاني|شحنه مجانى|مجاني)/i;
+  const shippingDisable = /(disable|deactivate|turn off|off|تعطيل|إيقاف|قف|توقيف|أوقف|غلق|لاغي|ألغاء|الغى|الغي|اغلاق|خليها|بلاش|stop|cancel|remove|reset|clear|none|لا عرض|خلاص|أزل|سحب|نهي|شيل|إزالة)/i;
+  const shippingEnable = /(activate|enable|turn on|on|تفعيل|تشغيل|افتح|enabled|اشتغل|فعل|شغل|خلي|خلّى|خلها|خلى)/i;
+
+  const isGlobalReset = /(reset|clear all|remove all|cancel all|disable all|no promo|لا يوجد عرض|لا توجد عروض|ازالة كل العروض|مسح كل|إعادة تعيين|اعادة ضبط|reset to default|default)/i.test(normalized)
+    || /(اغلاق|إيقاف|الغى|الغي|إلغاء|cancel|stop|shil|شيل|remove|reset).*(promo|offer|عرض|العرض|campaign|حملة|شحن|توصيل|الشحن)/i.test(normalized);
+
+  if (isGlobalReset) {
+    updates.active_promo = 'none';
+    updates.promo_rule = 'none';
+    updates.promo_banner_text = '';
+    updates.promo_discount_percent = 0;
+    updates.buy_x = 0;
+    updates.get_y = 0;
+    updates.free_shipping_threshold = 200;
+    updates.is_free_shipping_active = false;
+    updates.promotion_scope = 'all';
+    return updates;
+  }
+
+  const hasShippingFeature = /(شحن|توصيل|shipping|delivery)/i.test(normalized);
+
+  if (hasShippingFeature && shippingDisable.test(normalized)) {
+    updates.is_free_shipping_active = false;
+    updates.active_promo = 'none';
+    updates.promo_rule = 'none';
+    updates.promo_banner_text = '';
+    updates.promo_discount_percent = 0;
+    updates.buy_x = 0;
+    updates.get_y = 0;
+    return updates;
+  }
+
+  const freeShippingActivationPattern = /(make|set|create|apply|start)\s*(?:a\s+)?(?:free\s+)?shipping|(?:enable|activate|turn\s*on|turnon|start)\s*(?:free\s+)?shipping|(?:free\s+shipping|الشحن\s*المجاني|الشحن\s*المجانى|شحن\s*مجاني|شحن\s*مجانى)\s*(?:for|ل|على)?\s*(?:all\s+orders|كل\s*الطلبات|الطلبات)?/i;
+
+  if (shippingVariant.test(normalized) && (shippingEnable.test(normalized) || freeShippingActivationPattern.test(normalized))) {
+    updates.is_free_shipping_active = true;
+    updates.active_promo = 'free_shipping';
+    updates.promo_rule = 'free_shipping';
+    updates.promo_banner_text = 'Free shipping';
+  }
+
+  const directShippingThresholdPatterns = [
+    /(?:اوردر|order|طلب|الطلب|)\s*(?:فوق|اعلى|أعلى|اكبر|أكبر|اكثر|أكثر|over|above|more than)\s*(?:ال)?\s*(\d{1,6}|[٠-٩]{1,6})\s*(?:جنيه|جنيهات|ج.م|egp|جنيه مصرى|جنيهات مصريه|pounds|£)?\s*(?:.*)?(?:شحن|توصيل)\s*(?:مجان|مجاني|مجانا|مجانى)/i,
+    /(?:شحن|توصيل)\s*(?:مجان|مجاني|مجانا|مجانى)\s*(?:.*)?(?:فوق|اعلى|أعلى|اكبر|أكبر|اكثر|أكثر|over|above|more than)\s*(?:ال)?\s*(\d{1,6}|[٠-٩]{1,6})\s*(?:جنيه|جنيهات|ج.م|egp|جنيه مصرى|جنيهات مصريه|pounds|£)?/i,
+    /(?:فوق\s*(?:ال)?\s*(\d{1,6}|[٠-٩]{1,6})\s*(?:جنيه|جنيهات|ج.م|egp|جنيه مصرى|جنيهات مصريه|pounds|£))(?:(?!$).)*?(?:شحن|توصيل)\s*(?:مجان|مجاني|مجانا|مجانى)/i,
+    /(?:أوردر|order|طلب|الطلب)[\s\S]{0,35}(?:فوق|اعلى|أعلى|اكبر|أكبر|اكثر|أكثر|over|above|more than)[\s\S]{0,20}(\d{1,6}|[٠-٩]{1,6})/i,
+    /(?:فوق|اعلى|أعلى|اكبر|أكبر|اكثر|أكثر|over|above|more than)[\s\S]{0,20}(\d{1,6}|[٠-٩]{1,6})[\s\S]{0,30}(?:شحن|توصيل)\s*(?:مجان|مجاني|مجانا|مجانى)/i,
+  ];
+
+  let thresholdMatch: RegExpMatchArray | null = null;
+  for (const pattern of directShippingThresholdPatterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      thresholdMatch = match;
+      break;
+    }
+  }
+
+  if (!thresholdMatch) {
+    const explicitValue = extractFirstNumber(normalized);
+    const thresholdContext = /(فوق|اعلى|أعلى|اكبر|أكبر|اكثر|أكثر|over|above|more than|الحد الأدنى|حد أدنى|minimum|threshold|اوردر|order|طلب)/i.test(normalized);
+    if (thresholdContext && shippingVariant.test(normalized) && explicitValue) {
+      thresholdMatch = [normalized, String(explicitValue)];
+    }
+  }
+
+  if (thresholdMatch) {
+    const parsedValue = Number(String(thresholdMatch[1] || thresholdMatch[0]).replace(/[^0-9]/g, ''));
+    if (Number.isFinite(parsedValue) && parsedValue > 0) {
+      updates.free_shipping_threshold = parsedValue;
+      updates.is_free_shipping_active = true;
+      updates.active_promo = 'free_shipping';
+      updates.promo_rule = 'free_shipping';
+      updates.promo_banner_text = `Free shipping over ${parsedValue}`;
+    }
+  }
+
+  const bogoPatterns = [
+    /(?:buy\s*)(\d+)\s*(?:get|gets|واحد|احصل على|اتنين|two|3|4|5)?\s*(\d+)?\s*(?:free|مجانا|مجاناً|هدية)/i,
+    /(?:اشتري|خلي|buy)\s*(\d+)\s*(?:واحد|و|احصل|get)\s*(?:على)?\s*(\d+)?\s*(?:مجانا|هدية|free)/i,
+    /(?:buy\s*one\s*get\s*one|bogo|buy 1 get 1|buy one get one|اشتري واحد واحصل على واحد|واحد هدية|هدية مجانية|قطعة هدية|gift with purchase|gift)/i,
+    /(?:أي\s*قطعة\s*عليها\s*قطعة\s*تانية\s*هدية|قطعة\s*عليها\s*قطعة\s*تانية\s*هدية|قطعة\s*تاني\s*هدية|أي\s*قطعة\s*على\s*قطعة\s*هدية)/i,
+  ];
+
+  const buyXGetYMatch = bogoPatterns.map((pattern) => normalized.match(pattern)).find(Boolean);
+  if (buyXGetYMatch) {
+    const buyCount = Number(buyXGetYMatch[1] || 1);
+    const freeCount = Number(buyXGetYMatch[2] || 1);
+
+    updates.active_promo = 'buy_one_get_one';
+    updates.promo_rule = 'buy_one_get_one';
+    updates.buy_x = buyCount > 0 ? buyCount : 1;
+    updates.get_y = freeCount > 0 ? freeCount : 1;
+    updates.promo_banner_text = `Buy ${updates.buy_x} Get ${updates.get_y} Free`;
+  }
+
+  const percentMatch = lower.match(/(?:make\s+(?:a\s+)?)?(\d{1,2})\s*%\s*(?:off|discount|sale|offer)/i)
+    || lower.match(/(?:make\s+(?:a\s+)?)?(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,2})\s*(?:%|٪)/i)
+    || lower.match(/(\d{1,2})\s*%/i)
+    || normalized.match(/(\d{1,2})\s*٪/i)
+    || normalized.match(/(?:خصم|تخفيض|discount|percentage|percent|offer|off|sale)[\s\S]{0,20}(\d{1,2})/i)
+    || normalized.match(/(\d{1,2})\s*(?:%|٪)\s*(?:off|discount|sale|offer)/i)
+    || normalized.match(/(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,2})\s*(?:%|٪)/i)
+    || normalized.match(/(?:خصم|تخفيض)\s*(?:على|كل|ال)?[\s\S]{0,20}(\d{1,2})\s*(?:%|٪)/i);
+  if (percentMatch) {
+    const percentValue = Number((percentMatch[1] ?? percentMatch[0] ?? '0').toString().replace(/[^0-9]/g, ''));
+    if (Number.isFinite(percentValue) && percentValue >= 0 && percentValue <= 100) {
+      updates.promo_discount_percent = Math.max(0, Math.min(100, percentValue));
+      updates.active_promo = 'percentage_discount';
+      updates.promo_rule = 'percentage_discount';
+      updates.promotion_scope = /skincare|skin care|بشرة|beauty|مكياج|cosmetics|مستحضرات/i.test(normalized) ? 'skincare' : 'all';
+      updates.promo_banner_text = `${percentValue}% off on your order`;
+    }
+  }
+
+  if (shippingVariant.test(normalized) && !shippingDisable.test(normalized) && !shippingEnable.test(normalized) && !thresholdMatch && Object.keys(updates).length === 0) {
+    updates.active_promo = 'free_shipping';
+    updates.promo_rule = 'free_shipping';
+    updates.is_free_shipping_active = true;
+    updates.promo_banner_text = 'Free shipping';
+  } else if (/(gift|هدية|قطعة هدية|piece gift|offer with free gift|هدية مجانية|مكافأة|present)/i.test(normalized) && !buyXGetYMatch) {
+    updates.active_promo = 'gift_with_purchase';
+    updates.promo_rule = 'gift_with_purchase';
+    updates.promo_banner_text = 'Gift with purchase';
+  } else if (/(clear|disable|remove|none|لا عرض|خلاص|أزل|سحب|نهي|إلغاء|end promo|remove promo|cancel promo)/i.test(normalized) && /(promo|campaign|عرض|برومو|حملة|offer|discount)/i.test(normalized)) {
+    updates.active_promo = 'none';
+    updates.promo_rule = 'none';
+    updates.promo_discount_percent = 0;
+    updates.buy_x = 0;
+    updates.get_y = 0;
+    updates.promo_banner_text = '';
+  }
+
+  const explicitPromoMatch = lower.match(/(?:set\s+active\s+promo\s+to|promo\s+to|active promo\s+is|العرض\s+النشط\s+هو|حدد\s+العرض\s+النشط|ضع\s+عرض\s+)\s*([a-z0-9\s-]+)/i)
+    || normalized.match(/(?:العرض\s+النشط\s+هو|حدد\s+العرض\s+النشط|ضع\s+عرض\s+)\s*([\u0600-\u06FFa-z0-9\s-]+)/i);
+  if (explicitPromoMatch) {
+    const label = explicitPromoMatch[1].trim();
+    if (label && label.toLowerCase() !== 'none' && !/لا\s*عرض|none/i.test(label)) {
+      updates.active_promo = label.toLowerCase().replace(/\s+/g, '_');
+      updates.promo_rule = label.toLowerCase().replace(/\s+/g, '_');
+      updates.promo_banner_text = label;
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return {};
+  }
+
+  if (!('promo_banner_text' in updates) && updates.active_promo && updates.active_promo !== 'none') {
+    updates.promo_banner_text = updates.active_promo.replace(/_/g, ' ');
+  }
+
+  if (updates.active_promo === 'none' || /^(none|لا عرض|لا توجد عروض|cancelled|cancelled promo|مسح|إلغاء)$/i.test(String(updates.active_promo || ''))) {
+    updates.active_promo = 'none';
+    updates.promo_rule = 'none';
+    updates.promo_banner_text = '';
+    updates.promo_discount_percent = 0;
+    updates.buy_x = 0;
+    updates.get_y = 0;
+  }
+
+  return updates;
 };
 
 // Hard-coded live schema facts for the `products` table.
@@ -47,6 +343,29 @@ const slugify = (value: string) => {
     .replace(/-+/g, '-');
 
   return normalized || `item-${Date.now()}`;
+};
+
+export const createUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.random() * 16 | 0;
+    const value = char === 'x' ? random : ((random & 0x3) | 0x8);
+    return value.toString(16);
+  });
+};
+
+export const createCategoryId = (): string => createUuid();
+
+export const resolveCategoryIdForInsert = (candidate?: string | null): string => {
+  const trimmed = String(candidate ?? '').trim();
+  if (trimmed && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return createUuid();
 };
 
 export const resolveCategoryIdForUpdate = async (
@@ -97,6 +416,67 @@ export const resolveCategoryIdForUpdate = async (
   return raw;
 };
 
+export const resolveCategoryIdForRelation = async (
+  candidateId: string | null | undefined,
+  currentCategories: Category[] = [],
+  supabaseClient: any = supabase,
+): Promise<string | null> => {
+  const raw = String(candidateId ?? '').trim();
+  if (!raw) return null;
+
+  // If the value is already a UUID, verify it actually exists as a row in the
+  // categories table before returning it. Returning a locally-generated UUID that
+  // has not yet been committed to Supabase (or was since deleted) will cause a
+  // foreign key constraint violation on the subcategories insert.
+  if (isUuid(raw)) {
+    // Fast-path: check local categories state first (no network round-trip needed
+    // when the category was already fetched/inserted in this session).
+    const localHit = currentCategories.find((c) => c.id === raw && isUuid(c.id));
+    if (localHit) return raw;
+
+    // Not found locally — do a targeted DB lookup to confirm the row exists.
+    try {
+      const { data, error } = await supabaseClient
+        .from('categories')
+        .select('id')
+        .eq('id', raw)
+        .limit(1)
+        .maybeSingle();
+      if (!error && data?.id) return String(data.id);
+    } catch (_) {}
+
+    // UUID not found in DB — fall through to slug/name resolution below.
+  }
+
+  // Non-UUID input: try to resolve via local state label/slug match.
+  const localMatch = currentCategories.find(
+    (category) =>
+      String(category.id) === raw ||
+      slugify(category.label) === raw ||
+      category.label.toLowerCase() === raw.toLowerCase(),
+  );
+  if (localMatch && isUuid(localMatch.id)) return localMatch.id;
+
+  // Final fallback: query Supabase by slug or name.
+  const candidates = Array.from(new Set([raw, slugify(raw)]));
+  for (const value of candidates) {
+    if (!value) continue;
+    try {
+      const { data, error } = await supabaseClient
+        .from('categories')
+        .select('id')
+        .or(`id.eq.${value},slug.eq.${value},name.eq.${value}`)
+        .limit(1)
+        .maybeSingle();
+      if (!error && data?.id) return String(data.id);
+    } catch (_) {}
+  }
+
+  // All resolution attempts exhausted — return null. Callers must treat null as
+  // "category not found" and must NOT proceed with a subcategory insert.
+  return null;
+};
+
 const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] = []): Category => ({
   id: String(row?.id || ''),
   label: row?.name ?? row?.label ?? row?.slug ?? '',
@@ -107,9 +487,13 @@ const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] 
   subcategories: (subcategoryRows || [])
     .filter((sub) => String(sub?.category_id) === String(row?.id))
     .map((sub) => ({
-      id: String(sub?.id ?? sub?.slug ?? sub?.name ?? sub?.label ?? ''),
+      // Only use the actual UUID from the DB. Never fall back to slug/name/label —
+      // those are not valid FK values and would cause FK violations if used as category_id
+      // in subsequent subcategory operations.
+      id: isUuid(String(sub?.id ?? '')) ? String(sub.id) : '',
       label: sub?.name ?? sub?.label ?? sub?.slug ?? '',
-    })),
+    }))
+    .filter((sub) => !!sub.id), // drop any rows that don't have a real UUID id
   brands: (brandRows || [])
     .filter((brand) => String(brand?.category_id) === String(row?.id))
     .map((brand) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
@@ -236,8 +620,34 @@ const resolvePersistedProductImage = (row: any): string | null => {
   return null;
 };
 
-// Upload data/blob image strings to Supabase Storage (bucket: 'products') and return public URL.
-const uploadImageIfNeeded = async (value: any): Promise<string | null> => {
+export const uploadImageFile = async (file: File, bucket = 'products', folder = ''): Promise<string> => {
+  const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  if (!allowedTypes.has(file.type)) {
+    throw new Error('Unsupported image type. Use PNG, JPG, WEBP, or GIF.');
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Image must be smaller than 5 MB.');
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExtension = /^[a-z0-9]+$/.test(extension) ? extension : 'jpg';
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExtension}`;
+  const cleanFolder = folder.replace(/^\/+|\/+$/g, '');
+  const path = `${cleanFolder ? `${cleanFolder}/` : ''}${fileName}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    upsert: false,
+    contentType: file.type,
+    cacheControl: '31536000',
+  });
+
+  if (error) throw new Error(error.message || 'Image upload failed.');
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  if (!data?.publicUrl) throw new Error('Supabase did not return a public image URL.');
+  return data.publicUrl;
+};
+
+// Upload data/blob image strings to Supabase Storage and return a public URL.
+const uploadImageIfNeeded = async (value: any, bucket = 'products', folder = ''): Promise<string | null> => {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw; // already an absolute URL
@@ -254,12 +664,24 @@ const uploadImageIfNeeded = async (value: any): Promise<string | null> => {
     // Convert data/blob URL to Blob
     const response = await fetch(raw);
     const blob = await response.blob();
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+    if (!allowedTypes.has(blob.type)) {
+      console.warn('Image upload rejected: unsupported MIME type.');
+      return null;
+    }
+    if (blob.size > 5 * 1024 * 1024) {
+      console.warn('Image upload rejected: file exceeds 5 MB.');
+      return null;
+    }
     const ext = (blob.type && blob.type.split('/')[1]) ? blob.type.split('/')[1].split(';')[0] : 'jpg';
     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-    const bucket = 'products';
-    const path = `${fileName}`; // flat filename inside bucket
+    const path = `${folder ? `${folder.replace(/^\/+|\/+$/g, '')}/` : ''}${fileName}`;
 
-    const uploadRes = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
+    const uploadRes = await supabase.storage.from(bucket).upload(path, blob, {
+      upsert: true,
+      contentType: blob.type,
+      cacheControl: '31536000',
+    });
     if (uploadRes.error) {
       console.warn('Image upload failed:', uploadRes.error.message || uploadRes.error);
       return null;
@@ -363,6 +785,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>(initial.products);
   const [priceRanges] = useState<PriceRange[]>(initial.priceRanges);
   const [orders, setOrders] = useState<Order[]>(initial.orders);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => ({ ...DEFAULT_SITE_SETTINGS, ...(readCachedSiteSettings() || {}) }));
 
   useEffect(() => {
     if (categories.length === 0 && products.length === 0 && brands.length === 0) {
@@ -382,6 +805,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [categories, brands, products, priceRanges, orders]);
 
+  const updateSiteSettings = async (updates: Partial<SiteSettings>) => {
+    const baseSettings = { ...DEFAULT_SITE_SETTINGS, ...siteSettings };
+    const nextState = { ...baseSettings, ...updates };
+    const onlyBannerTextUpdate = Object.keys(updates || {}).every((key) => key === 'promo_banner_text');
+
+    if (!onlyBannerTextUpdate && (updates.active_promo === 'none' || updates.is_free_shipping_active === false)) {
+      nextState.active_promo = 'none';
+      nextState.promo_rule = 'none';
+      nextState.is_free_shipping_active = false;
+      nextState.promo_banner_text = '';
+      nextState.promo_discount_percent = 0;
+      nextState.buy_x = 0;
+      nextState.get_y = 0;
+      nextState.promotion_scope = 'all';
+      nextState.free_shipping_threshold = 200;
+    }
+
+    const persistedState = getEffectiveSiteSettings(nextState);
+    setSiteSettings(persistedState);
+    writeCachedSiteSettings(persistedState);
+
+    if (!supabase) {
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .upsert([
+          {
+            key: 'site_config',
+            value: persistedState,
+            updated_at: new Date().toISOString(),
+          }
+        ], { onConflict: 'key' })
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Site settings update failed:', error.message || error);
+        setSiteSettings(persistedState);
+        return;
+      }
+
+      const nextValue = (data && (data as any).value) || persistedState;
+      const merged = getEffectiveSiteSettings(nextValue);
+      setSiteSettings(merged);
+      writeCachedSiteSettings(merged);
+      window.dispatchEvent(new CustomEvent('site-settings-updated', { detail: merged }));
+    } catch (error) {
+      console.warn('Site settings update exception:', error);
+      setSiteSettings(persistedState);
+    }
+  };
+
+  const applyPromoCommand = async (command: string): Promise<Partial<SiteSettings>> => {
+    const parsed = parseSitePromoCommand(command);
+    if (!Object.keys(parsed).length) {
+      return {};
+    }
+
+    await updateSiteSettings(parsed);
+    return parsed;
+  };
+
   // Sync initial data from Supabase when available. This runs once after mount.
   const [, setLoading] = useState(true);
   const [, setRemoteError] = useState<string | null>(null);
@@ -392,11 +880,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [brandsHaveCategory, setBrandsHaveCategory] = useState(false);
   // Use canonical subcategory column name; code expects `subcategory_id` to exist after migration
   const [productSubcategoryColumn, setProductSubcategoryColumn] = useState<string | null>('subcategory_id');
+  const didInitialFetchRef = useRef(false);
+  const productsRef = useRef(products);
+  const productSubcategoryColumnRef = useRef(productSubcategoryColumn);
 
   useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    productSubcategoryColumnRef.current = productSubcategoryColumn;
+  }, [productSubcategoryColumn]);
+
+  useEffect(() => {
+    const handleSiteSettingsUpdate = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      if (!detail || typeof detail !== 'object') return;
+
+      setSiteSettings((prev) => {
+        const merged = getEffectiveSiteSettings({ ...prev, ...detail });
+        writeCachedSiteSettings(merged);
+        return merged;
+      });
+    };
+
+    window.addEventListener('site-settings-updated', handleSiteSettingsUpdate);
+    return () => {
+      window.removeEventListener('site-settings-updated', handleSiteSettingsUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || didInitialFetchRef.current) return;
+    didInitialFetchRef.current = true;
+
     let mounted = true;
     const fetchRemote = async () => {
-      if (!supabase) return;
       setLoading(true);
       try {
         const [
@@ -405,20 +924,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           { data: categoriesData },
           { data: subcategoriesData },
           { data: brandsData },
+          { data: settingsData },
         ] = await Promise.all([
           supabase.from('products').select('*'),
           supabase.from('orders').select('*'),
           supabase.from('categories').select('*'),
           supabase.from('subcategories').select('*'),
           supabase.from('brands').select('*'),
+          supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
         ]);
 
         if (!mounted) return;
 
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
         const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
-        // Global brands (unscoped) should only include brands with no category_id
-        // Derive global brands (no category_id) and prepare per-category lists reliably
         const nextBrands = Array.isArray(brandsData)
           ? (brandsData as any[])
               .filter((brand: any) => !brand?.category_id)
@@ -438,18 +957,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
-        // Detect the exact subcategory column name present in product rows so we read/write the exact DB column.
-        let detectedColumn: string | null = productSubcategoryColumn;
+        let detectedColumn: string | null = productSubcategoryColumnRef.current;
         if (Array.isArray(productsData) && productsData.length > 0) {
           const sample = productsData[0] || {};
           const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
           const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
-          if (!productSubcategoryColumn) setProductSubcategoryColumn(detected);
-          detectedColumn = detected ?? productSubcategoryColumn;
+          if (!productSubcategoryColumnRef.current) setProductSubcategoryColumn(detected);
+          detectedColumn = detected ?? productSubcategoryColumnRef.current;
         }
 
+        let normalizedProducts: Product[] = [];
         if (Array.isArray(productsData) && productsData.length > 0) {
-          // Build a robust lookup for subcategories (id, slug, name -> canonical id)
           const subLookup: Record<string, string> = {};
           if (Array.isArray(subcategoriesData)) {
             (subcategoriesData as any[]).forEach((s: any) => {
@@ -463,10 +981,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          // Normalize product rows from DB into the app's Product shape and
-          // ensure category/subcategory reference uses canonical category id when possible.
-          const normalized = (productsData as any[]).map((r) => {
-            // resolve category: prefer category_id, else category (might be slug)
+          normalizedProducts = (productsData as any[]).map((r) => {
             let categoryVal: any = r.category_id ?? r.category ?? null;
             if (categoryVal && typeof categoryVal === 'string') {
               const key = categoryVal.trim();
@@ -476,8 +991,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
-            // resolve subcategory: prefer the exact detected DB column (detectedColumn),
-            // falling back to common names. Use subLookup to map any slug/name/id to canonical id.
             let subVal: any = null;
             const col = detectedColumn;
             const tryLookup = (v: string | undefined | null) => {
@@ -516,9 +1029,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             const dbSellingPrice = toNumberOrUndefined(r.selling_price);
             const dbMarketPrice = toNumberOrUndefined(r.market_price);
             const dbAdminCost = toNumberOrUndefined(r.admin_cost);
+            const dbStock = toNumberOrUndefined(r.stock);
             const normalizedImage = normalizeProductImage(imageValue);
 
-            // determine persisted subcategory id (if any) separately from the canonical `subcategory` used by UI
             let persistedSubId: string | null = null;
             if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
               if (/id$/i.test(col)) persistedSubId = String(r[col]);
@@ -538,14 +1051,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               brand: r.brand ?? r.brand_name ?? '',
               createdAt: r.created_at ?? r.createdAt ?? null,
               category: categoryVal ?? null,
-              // UI-facing `subcategory` remains the canonical id/slug used for comparisons
               subcategory: subVal ?? null,
-              // persisted canonical subcategory id (when present in DB)
               subcategoryId: persistedSubId ?? null,
               originalPrice: dbMarketPrice ?? null,
               sellingPrice: dbSellingPrice ?? null,
               marketPrice: dbMarketPrice ?? null,
               adminCost: dbAdminCost ?? null,
+              stock: dbStock ?? 0,
+              isHidden: Boolean(r.is_hidden),
               cost: dbAdminCost ?? null,
               rating: r.rating ?? 0,
               reviews: r.reviews ?? 0,
@@ -558,41 +1071,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               details: descriptionValue ?? null,
             } as any;
           });
-          setProducts(normalized as any);
 
-          // Debug: log sample of product subcategory values and a counts summary to aid diagnosis
-          try {
-            const sample = (normalized as any[]).slice(0, 10).map((p: any) => ({ id: p.id, subcategoryId: p.subcategoryId, matchesKnown: !!(p.subcategoryId && subLookup[String(p.subcategoryId)]) }));
-            console.debug('DataContext: product.subcategoryId sample (first 10)', sample);
-            const counts: Record<string, number> = {};
-            (normalized as any[]).forEach((p: any) => {
-              const key = p.subcategoryId ?? '<<none>>';
-              counts[String(key)] = (counts[String(key)] || 0) + 1;
-            });
-            console.debug('DataContext: product counts by subcategoryId (sample keys)', counts);
-          } catch (e) {
-            console.debug('DataContext: debug logging failed', e);
-          }
+          setProducts(normalizedProducts as any);
         }
-        // Supabase is the source of truth — replace local lists if remote data has categories
+
         if (nextCategories.length > 0) {
           setCategories(nextCategories);
         }
         setBrands(nextBrands);
-        // Determine whether brands are scoped to categories (brands have category_id)
+
         const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
         setBrandsHaveCategory(detectedBrandsHaveCategory);
 
-        // Always build per-category brand lists from the fetched `brandsData` rows.
-        // Categories with no brands will receive an empty array.
         if (Array.isArray(brandsData) && brandsData.length > 0) {
           setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
         }
         if (Array.isArray(ordersData)) {
           setOrders(ordersData.map((row: any) => {
             const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
-            // Normalize items against the freshly fetched product catalog so UI state always has unit_price/total_price
-            const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], products);
+            const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
             const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
             return {
               ...row,
@@ -602,6 +1099,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             };
           }) as any);
         }
+
+        const settingsMap = Array.isArray(settingsData) ? settingsData : [];
+        const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
+        const cachedSettings = readCachedSiteSettings() || {};
+        const remoteSettings = ((configRow?.value as Partial<SiteSettings>) || cachedSettings) as Partial<SiteSettings>;
+        const mergedSettings = getEffectiveSiteSettings({ ...cachedSettings, ...remoteSettings });
+        setSiteSettings(mergedSettings);
+        writeCachedSiteSettings(mergedSettings);
+
         setRemoteError(null);
         setLoading(false);
       } catch (err) {
@@ -613,7 +1119,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     void fetchRemote();
     return () => { mounted = false; };
-  }, [productSubcategoryColumn, products]);
+  }, []);
 
   // In-app confirmation modal state and helper
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; resolve?: (v: boolean) => void }>({ open: false, message: '' });
@@ -631,30 +1137,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Helper to verify admin permissions reliably
   const verifyAdminPermission = async (actionDesc = 'perform this action'): Promise<boolean> => {
-    // 1. Check local session
-    try {
-      const raw = localStorage.getItem('phermono_auth_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (checkIsAdminRole(parsed) || isAdminPhone(parsed?.phone)) return true;
-      }
-    } catch (_) {}
-
-    // 2. Check Supabase auth
+    // Authorization must come from the current Supabase session and protected
+    // profile fields, never from a serialized client-side session.
     if (supabase) {
       try {
         const { data } = await supabase.auth.getUser();
         const supaUser = (data as any)?.user;
         if (supaUser) {
-          if (checkIsAdminRole(supaUser) || isAdminPhone(supaUser?.phone)) return true;
-
           const { data: profile } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', supaUser.id)
             .maybeSingle();
 
-          if (profile && (checkIsAdminRole(profile) || isAdminPhone(profile?.phone))) {
+          if (profile && (
+            String(profile.role || '').toLowerCase() === 'admin' ||
+            String(profile.role || '').toLowerCase() === 'superadmin' ||
+            profile.is_admin === true
+          )) {
             return true;
           }
         }
@@ -678,7 +1178,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       let finalImage = String(cat.image || '').trim();
       if (finalImage && (finalImage.startsWith('data:') || finalImage.startsWith('blob:'))) {
         try {
-          const uploaded = await uploadImageIfNeeded(finalImage);
+          const uploaded = await uploadImageIfNeeded(finalImage, 'products', 'categories');
           if (uploaded) finalImage = uploaded;
         } catch (err) {
           console.warn('Category image storage upload failed, keeping inline data:', err);
@@ -686,7 +1186,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       const slug = slugify(label);
-      const payload: any = { name: label, slug, description: '', metadata: {}, image: finalImage };
+      const safeId = resolveCategoryIdForInsert(cat?.id);
+      const payload: any = { id: safeId, name: label, slug, description: '', metadata: {}, image: finalImage };
       const { data, error } = await supabase.from('categories').insert([payload]).select().single();
       if (error) {
         console.warn('Supabase category insert failed:', error.message || error);
@@ -754,7 +1255,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         let finalImage = String(updates.image || '').trim();
         if (finalImage && (finalImage.startsWith('data:') || finalImage.startsWith('blob:'))) {
           try {
-            const uploaded = await uploadImageIfNeeded(finalImage);
+            const uploaded = await uploadImageIfNeeded(finalImage, 'products', 'categories');
             if (uploaded) finalImage = uploaded;
           } catch (err) {
             console.warn('Category image storage upload failed, keeping inline data:', err);
@@ -1024,94 +1525,156 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const isAllowed = await verifyAdminPermission('create subcategories');
       if (!isAllowed) return;
 
-      // Normalize slug and check for existing subcategory within the category scope
-      const slug = slugify(label);
-      // Check existing subcategory within the category scope and log the query
-      console.debug('addSubcategory: checking existing subcategory for', { categoryId, slug });
-      const { data: existing, error: existingErr } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
-      if (existingErr) {
-        // fall through to attempt insert, but log
-        console.warn('addSubcategory: Error checking existing subcategory:', existingErr);
+      // ── Step 1: Resolve category_id to a confirmed-live UUID ──────────────────
+      // resolveCategoryIdForRelation:
+      //   • if input is already a UUID → checks local state first (no network),
+      //     then queries the DB to confirm the row exists before returning it
+      //   • if input is a slug/name → resolves via local state or DB query
+      //   • returns null if nothing resolves to a real, existing category row
+      const resolvedCategoryId = await resolveCategoryIdForRelation(categoryId, categories, supabase);
+
+      if (!resolvedCategoryId || !isUuid(resolvedCategoryId)) {
+        console.error('addSubcategory: could not resolve a valid category UUID', { categoryId, resolvedCategoryId });
+        alert(
+          `Cannot add subcategory: the parent category could not be found in the database.\n\n` +
+          `Value received: "${categoryId}"\n` +
+          `Resolved to: "${resolvedCategoryId ?? 'null'}"\n\n` +
+          `Ensure the parent category has been saved to Supabase before adding subcategories.`
+        );
+        return;
       }
+
+      // Proactively ensure the parent category exists in Supabase so foreign key constraints are met
+      const localCategory = categories.find((c) => c.id === resolvedCategoryId || c.id === categoryId);
+      if (localCategory) {
+        const catSlug = slugify(localCategory.label || localCategory.id);
+        try {
+          await supabase.from('categories').upsert(
+            [
+              {
+                id: resolvedCategoryId,
+                name: localCategory.label || 'Category',
+                label: localCategory.label || 'Category',
+                slug: catSlug,
+                icon: localCategory.icon || 'Sparkles',
+                color: localCategory.color || '',
+                accent: localCategory.accent || '',
+              },
+            ],
+            { onConflict: 'id' }
+          );
+        } catch (catUpsertErr) {
+          console.warn('Parent category ensure-upsert notice:', catUpsertErr);
+        }
+      }
+
+      // ── Step 2: Idempotency — check if this subcategory already exists ────────
+      const slug = slugify(label);
+      console.debug('addSubcategory: resolved', { input: categoryId, resolved: resolvedCategoryId, slug });
+
+      const { data: existing, error: existingErr } = await supabase
+        .from('subcategories')
+        .select('*')
+        .eq('category_id', resolvedCategoryId)
+        .eq('slug', slug)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingErr) {
+        console.warn('addSubcategory: duplicate-check query failed (non-fatal, proceeding to insert):', existingErr);
+      }
+
       if (existing) {
-        // ensure local state includes this subcategory
-        const inbound = { id: existing.id ?? sub.id, label: existing.name ?? label };
+        // Already exists — sync local state and return without inserting
+        const inbound = { id: String(existing.id), label: existing.name ?? label };
         setCategories(prev => prev.map(c => {
-          if (c.id !== categoryId) return c;
+          if (c.id !== resolvedCategoryId) return c;
           const arr = Array.isArray(c.subcategories) ? c.subcategories : [];
-          const existsLocally = arr.some(s => String(s.id) === String(inbound.id));
-          return { ...c, subcategories: existsLocally ? arr : [...arr, inbound] } as any;
+          return { ...c, subcategories: arr.some(s => s.id === inbound.id) ? arr : [...arr, inbound] } as any;
         }));
         return existing as any;
       }
 
-      // Not found — insert. Perform insert then explicitly verify returned row actually exists server-side.
-      const payload: any = { category_id: categoryId, name: label, slug, description: '', metadata: {} };
-      console.debug('addSubcategory: insert payload', payload);
+      // ── Step 3: Insert with a guaranteed-UUID category_id ────────────────────
+      const payload: Record<string, unknown> = {
+        id: createUuid(),
+        category_id: resolvedCategoryId,   // ← always a UUID confirmed to exist in DB
+        name: label,
+        slug,
+        description: '',
+        metadata: {},
+      };
+      console.debug('addSubcategory: inserting payload', payload);
+
       const insertRes = await supabase.from('subcategories').insert([payload]).select().single();
-      // Log full response for debugging visibility
-      console.debug('addSubcategory: Subcategory insert response:', { data: insertRes.data, error: insertRes.error });
+      console.debug('addSubcategory: insert response', { data: insertRes.data, error: insertRes.error });
 
       if (insertRes.error) {
-        console.warn('Supabase subcategory insert failed:', insertRes.error.message || insertRes.error);
-        // handle duplicate race: try to read existing
-        if ((insertRes.error as any)?.code === '23505' || String(insertRes.error?.message || '').toLowerCase().includes('duplicate')) {
-          const { data: fallback } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
+        // Race-condition duplicate: another request inserted the same slug concurrently
+        if (
+          (insertRes.error as any)?.code === '23505' ||
+          String(insertRes.error?.message ?? '').toLowerCase().includes('duplicate')
+        ) {
+          const { data: fallback } = await supabase
+            .from('subcategories')
+            .select('*')
+            .eq('category_id', resolvedCategoryId)
+            .eq('slug', slug)
+            .limit(1)
+            .maybeSingle();
           if (fallback) {
-            const inbound = { id: fallback.id ?? sub.id, label: fallback.name ?? label };
+            const inbound = { id: String(fallback.id), label: fallback.name ?? label };
             setCategories(prev => prev.map(c => {
-              if (c.id !== categoryId) return c;
+              if (c.id !== resolvedCategoryId) return c;
               const arr = Array.isArray(c.subcategories) ? c.subcategories : [];
-              const existsLocally = arr.some(s => String(s.id) === String(inbound.id));
-              return { ...c, subcategories: existsLocally ? arr : [...arr, inbound] } as any;
+              return { ...c, subcategories: arr.some(s => s.id === inbound.id) ? arr : [...arr, inbound] } as any;
             }));
             return fallback as any;
           }
         }
-        // Surface the real error to the user/developer
+        console.error('addSubcategory: insert failed', insertRes.error);
         alert('Failed to create subcategory: ' + (insertRes.error.message || String(insertRes.error)));
         return;
       }
 
+      // ── Step 4: Sync confirmed row into local state ───────────────────────────
       const created = insertRes.data as any;
-      // Defensive: ensure created row has an id and correct category_id/slug
-      if (!created || !created.id) {
-        // Try to verify by fetching by slug+category
-        const { data: verifyBySlug, error: verifyErr } = await supabase.from('subcategories').select('*').eq('slug', slug).eq('category_id', categoryId).limit(1).maybeSingle();
-        console.debug('addSubcategory: Verify subcategory by slug response:', { data: verifyBySlug, error: verifyErr });
-        if (verifyErr || !verifyBySlug) {
-          alert('Subcategory insert did not return a valid row and verification failed. Check server logs or RLS policies.');
+      if (!created?.id) {
+        // Supabase returned no row — verify by refetching
+        const { data: verify } = await supabase
+          .from('subcategories')
+          .select('*')
+          .eq('category_id', resolvedCategoryId)
+          .eq('slug', slug)
+          .limit(1)
+          .maybeSingle();
+        if (!verify) {
+          alert('Subcategory insert did not return a valid row. Check Supabase RLS policies.');
           return;
         }
-        // Use verified fallback
-        const inbound = { id: verifyBySlug.id, label: verifyBySlug.name ?? label };
+        const inbound = { id: String(verify.id), label: verify.name ?? label };
         setCategories(prev => prev.map(c => {
-          if (c.id !== categoryId) return c;
-          return { ...c, subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound] } as any;
+          if (c.id !== resolvedCategoryId) return c;
+          const arr = (Array.isArray(c.subcategories) ? c.subcategories : []).filter(s => s.id !== inbound.id);
+          return { ...c, subcategories: [...arr, inbound] } as any;
         }));
-        return verifyBySlug as any;
+        return verify as any;
       }
 
-      // Final verification: refetch the inserted row by id to ensure persistence
-      const { data: verify, error: verifyErr } = await supabase.from('subcategories').select('*').eq('id', created.id).limit(1).maybeSingle();
-      console.debug('addSubcategory: Verify subcategory by id response:', { data: verify, error: verifyErr });
-      if (verifyErr || !verify) {
-        // If verification fails, surface error and do not update local state
-        alert('Failed to verify newly created subcategory in the database. Insert may not have persisted.');
-        return;
-      }
-
-      const inbound = { id: verify.id ?? sub.id, label: verify.name ?? label };
+      const inbound = { id: String(created.id), label: created.name ?? label };
       setCategories(prev => prev.map(c => {
-        if (c.id !== categoryId) return c;
-        return { ...c, subcategories: [...(Array.isArray(c.subcategories) ? c.subcategories : []).filter(item => item.id !== inbound.id), inbound] } as any;
+        if (c.id !== resolvedCategoryId) return c;
+        const arr = (Array.isArray(c.subcategories) ? c.subcategories : []).filter(s => s.id !== inbound.id);
+        return { ...c, subcategories: [...arr, inbound] } as any;
       }));
-      return verify as any;
+      return created as any;
+
     } catch (e: any) {
-      console.warn('Supabase subcategory write error:', e?.message || e);
+      console.error('addSubcategory: unexpected error', e);
       alert('Failed to create subcategory: ' + (e?.message || String(e)));
     }
   };
+
   const updateSubcategory = async (categoryId: string, subId: string, updates: Partial<CategorySubcategory>) => {
     if (!supabase) return;
 
@@ -1209,20 +1772,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Brands
-  const addBrand = async (name: string, categoryId?: string) => {
+  const addBrand = async (name: string, categoryId?: string, logo?: string) => {
     const clean = String(name || '').trim();
     if (!clean || !supabase) return;
 
     try {
       const isAllowed = await verifyAdminPermission('create brands');
       if (!isAllowed) return;
+
+      const resolvedCategoryId = categoryId ? await resolveCategoryIdForRelation(categoryId, categories, supabase) : null;
+      if (categoryId && (!resolvedCategoryId || !isUuid(resolvedCategoryId))) {
+        alert('Could not resolve the parent category ID. Please choose a valid category before adding a brand.');
+        return;
+      }
+
       // Use normalized slug for lookups
       const slug = slugify(clean);
       const hasCategoryId = brandsHaveCategory;
 
       // Check for existing brand (avoid duplicates). If brands are scoped by category, check within that category.
       let existingQuery = supabase.from('brands').select('*').eq('slug', slug).limit(1);
-      if (hasCategoryId && categoryId) existingQuery = existingQuery.eq('category_id', categoryId);
+      if (hasCategoryId && resolvedCategoryId) existingQuery = existingQuery.eq('category_id', resolvedCategoryId);
       const { data: existing } = await existingQuery;
       if (Array.isArray(existing) && existing.length > 0 && existing[0]) {
         const row = existing[0] as any;
@@ -1265,37 +1835,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return existing[0] as any;
       }
 
-      // Not found — insert
-      const payload: any = { name: clean, slug, description: '', metadata: {} };
+      // Not found — insert. Always generate a real UUID to avoid null-id database errors.
+      const payload: any = {
+        id: createUuid(),
+        name: clean,
+        slug,
+        description: '',
+        metadata: {},
+      };
+
+      if (logo) {
+        const uploadedLogo = await uploadImageIfNeeded(logo, 'products', 'brands');
+        if (uploadedLogo) payload.logo = uploadedLogo;
+      }
 
       // If caller provided a categoryId, prefer to persist it into `category_id` so the brand is scoped.
       // Attempt to resolve the category id first; include it in the payload and fall back if the DB rejects.
-      if (categoryId) {
-        try {
-          const { data: catRow } = await supabase.from('categories').select('id').or(`id.eq.${categoryId},slug.eq.${categoryId},name.eq.${categoryId}`).limit(1).maybeSingle();
-          if (catRow && catRow.id) payload.category_id = String(catRow.id);
-          else payload.category_id = String(categoryId);
-        } catch (err) {
-          // If category resolution fails, still set the provided categoryId as a best-effort value
-          payload.category_id = String(categoryId);
-        }
+      if (resolvedCategoryId) {
+        payload.category_id = String(resolvedCategoryId);
       }
 
-      // Avoid sending a text `slug` into an `id` column that may be UUID. Only set payload.id when
-      // existing brand rows indicate the `id` column uses text keys (non-UUID). If the brand table
-      // appears to use UUIDs (common), omit `id` so the DB generates one.
-      try {
-        const { data: anyBrandRow } = await supabase.from('brands').select('id').limit(1).maybeSingle();
-        if (anyBrandRow && anyBrandRow.id) {
-          // if existing id is not a UUID, assume text ids are allowed and set slug as id
-          if (!isUuid(String(anyBrandRow.id))) payload.id = slug;
-        } else {
-          // no rows — safer to let DB assign id (do not set)
-        }
-      } catch (err) {
-        // on error, do not set id to avoid sending slug into possible uuid column
-        console.debug('Could not inspect brands table id type; omitting client id on insert', err);
-      }
+      // Do not use slug/text values as the id. A generated UUID is required to satisfy the DB schema.
 
       // Try inserting including `category_id` when provided. If the insert fails due to a missing column,
       // retry without `category_id` to preserve compatibility with older schemas.
@@ -1337,8 +1897,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             // If caller provided a categoryId and the DB supports category scoping, try to attach the existing brand
             // to that category. Prefer updating the brands row to set category_id; if that fails (missing column),
             // try creating a category_brands junction row.
-            if (categoryId) {
-              const desiredCatId = String(categoryId);
+            if (resolvedCategoryId) {
+              const desiredCatId = String(resolvedCategoryId);
               if (existingBrandCategory && String(existingBrandCategory) === desiredCatId) {
                 // already scoped correctly
                 setCategories(prev => prev.map(c => {
@@ -1399,7 +1959,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const brandName = data?.name ?? clean;
       // Determine an effective category scope: prefer the DB-returned `category_id`, fall back to the caller-provided `categoryId`.
       const insertedCategoryId = (data && data.category_id) ? String(data.category_id) : null;
-      const effectiveCategoryId = insertedCategoryId ?? (categoryId ? String(categoryId) : null);
+      const effectiveCategoryId = insertedCategoryId ?? (resolvedCategoryId ? String(resolvedCategoryId) : null);
 
       if (effectiveCategoryId) {
         // Attach the new brand only to the effective category locally (do not make it global)
@@ -1445,6 +2005,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       'description',
       'tag',
       'hero',
+              'is_hidden',
       'created_at',
       'updated_at',
     ]);
@@ -1498,6 +2059,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (rawMarket !== undefined) row.market_price = rawMarket;
     if (updates.tag !== undefined) row.tag = updates.tag;
     if (updates.hero !== undefined) row.hero = updates.hero;
+    if (updates.isHidden !== undefined) row.is_hidden = Boolean(updates.isHidden);
 
     // Map cost if provided (from form.adminCost or updates.cost), using the actual DB column name.
     const rawCost = toNumberOrUndefined((updates as any).adminCost ?? (updates as any).cost);
@@ -1603,6 +2165,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
       // Map adminCost to the actual product column in the live schema.
       if (parsedAdmin !== undefined) payload.admin_cost = parsedAdmin;
+      if (prod.stock !== undefined) payload.stock = Math.max(0, Math.floor(Number(prod.stock) || 0));
+      if (prod.isHidden !== undefined) payload.is_hidden = Boolean(prod.isHidden);
 
       if (prod.hero !== undefined) payload.hero = prod.hero;
       payload.created_at = new Date().toISOString();
@@ -1628,6 +2192,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const dbSellingPrice = toNumberOrUndefined(returned.selling_price);
       const dbMarketPrice = toNumberOrUndefined(returned.market_price);
       const dbAdminCost = toNumberOrUndefined(returned.admin_cost);
+      const dbStock = toNumberOrUndefined(returned.stock);
       // Derive persisted subcategory id from returned row when available
       let returnedSubId: string | null = null;
       if (productSubcategoryColumn && returned[productSubcategoryColumn] !== undefined && returned[productSubcategoryColumn] !== null && String(returned[productSubcategoryColumn]).trim() !== '') {
@@ -1656,6 +2221,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         sellingPrice: dbSellingPrice ?? null,
         marketPrice: dbMarketPrice ?? null,
         adminCost: dbAdminCost ?? null,
+        stock: dbStock ?? 0,
+        isHidden: Boolean(returned.is_hidden),
         cost: dbAdminCost ?? null,
         rating: returned.rating ?? 0,
         reviews: returned.reviews ?? 0,
@@ -2073,67 +2640,54 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   
 
   // Orders
-  const addOrder = (order: Omit<Order, 'id' | 'createdAt'> & { createdAt?: number | string }) => {
-    const id = Date.now();
+  const addOrder = (order: Omit<Order, 'id' | 'createdAt'> & { id?: number | string; createdAt?: number | string }) => {
+    const rawId = (order as any).id ?? Date.now();
+    const id = String(rawId);
     const createdAt = (order as any).createdAt || (order as any).created_at || (order as any).date || (order as any).order_date || new Date().toISOString();
     // Normalize items immediately for local state so UI shows prices right away
     const itemsNormalizedLocal = normalizeOrderItems(Array.isArray((order as any).items) ? (order as any).items : [], products || []);
     const o: Order = { ...order, id, createdAt, status: order.status || 'pending', items: itemsNormalizedLocal } as Order;
     setOrders(prev => [...prev, o]);
-    // Persist order to Supabase (best-effort) with proper mapping
-    try {
-      if (supabase) {
-        (async () => {
-          try {
-            // Do NOT send a client-generated `id` to Supabase. Let the DB generate UUID via default.
-            // Normalize items to ensure unit_price and total_price are persisted (use different keys than `price`)
-            const itemsNormalized = normalizeOrderItems(Array.isArray(o.items) ? o.items : [], products);
-            const itemsForPersist = (itemsNormalized || []).map((it: any) => {
-              const qty = Number(it.qty) || 1;
-              const unit = Number(it.unit_price ?? it.unitPrice ?? it.price) || 0;
-              const totalP = Number(it.total_price ?? it.totalPrice) || +(unit * qty).toFixed(2);
-              // Keep item identifiers and metadata but persist explicit unit_price and total_price keys
-              const { price, unitPrice, totalPrice, total_price, ...rest } = it as any;
-              return {
-                ...rest,
-                unit_price: unit,
-                total_price: totalP,
-              };
-            });
 
-            const payload = {
-              name: o.name,
-              phone: o.phone,
-              governorate: o.governorate || null,
-              address: o.address || null,
-              items: removePriceKeys(itemsForPersist),
-              total: Number(o.total) || (itemsNormalized || []).reduce((s: number, it: any) => s + Number(it.total_price || 0), 0),
-              shipping: (o as any).shipping ?? 0,
-              status: o.status || 'pending',
-              created_at: new Date().toISOString(),
-            } as any;
+    // Persist order to Supabase with proper mapping and error surfacing
+    if (supabase) {
+      (async () => {
+        try {
+          const itemsNormalized = normalizeOrderItems(Array.isArray(o.items) ? o.items : [], products);
+          const rpcItems = (itemsNormalized || []).map((item: any) => ({
+            id: item.id,
+            qty: Number(item.qty) || 1,
+          }));
 
-            const { data, error } = await supabase.from('orders').insert([payload]).select();
-            if (error) {
-              console.warn('Supabase order insert failed:', error.message || error);
-              if ((error as any)?.message?.toLowerCase().includes('permission')) {
-                console.warn('Possible RLS or permission issue: ensure anon role can insert orders or use a server-side function.');
-              }
-            } else {
-              // optionally sync representation
-              if (Array.isArray(data) && data[0]) {
-                const returned = data[0] as any;
-                setOrders(prev => prev.map(p => p.id === o.id ? ({ ...p, id: returned.id, createdAt: returned.created_at || returned.createdAt || p.createdAt }) : p));
-              }
-            }
-          } catch (e: any) {
-            console.warn('Supabase order write error:', e?.message || e);
+          // Pricing, availability, stock decrement, and order insertion happen
+          // together in the database transaction. Client prices are ignored.
+          const { data, error } = await supabase.rpc('create_order_with_stock', {
+            p_name: String(o.name || 'Customer').trim(),
+            p_phone: String(o.phone || '').trim(),
+            p_governorate: o.governorate || null,
+            p_address: o.address || null,
+            p_items: rpcItems,
+            p_shipping: Number((o as any).shipping) || 0,
+          });
+
+          const returned = (Array.isArray(data) ? data[0] : data) as any;
+          if (error || !returned) {
+            setOrders(prev => prev.filter(item => String(item.id) !== String(o.id)));
+            console.error('Transactional order creation failed:', error?.message || error);
+            alert('Order could not be placed: ' + (error?.message || 'Please try again.'));
+          } else {
+            setOrders(prev => prev.map(item => String(item.id) === String(o.id)
+              ? ({ ...item, ...returned, id: returned.id, createdAt: returned.created_at || returned.createdAt || item.createdAt })
+              : item));
+            console.debug('DataContext:addOrder successfully persisted order:', returned.id);
           }
-        })();
-      }
-    } catch (e) {
-      console.warn('Supabase order write error', e);
+        } catch (e: any) {
+          console.error('Supabase order write exception:', e?.message || e);
+          alert('Warning: Order displayed in UI, but database save encountered an error: ' + (e?.message || String(e)));
+        }
+      })();
     }
+
     return id;
   };
   const updateOrder = (id: number | string, updates: Partial<Order>) => {
@@ -2187,9 +2741,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           .select();
 
         if (error) {
-          // If code is 22P02 (invalid uuid syntax), it might be a client-side temporary numeric ID not in Supabase
-          if (error.code === '22P02' && typeof id === 'number') {
-            console.warn('Order has numeric client-side ID not present in Supabase UUID column. Removing from local state only.', id);
+          // If code is 22P02 (invalid type/uuid/bigint syntax), the ID format is incompatible with the DB column type
+          // or is a client-side temporary ID not present in Supabase. Remove from local state gracefully.
+          if (error.code === '22P02') {
+            console.warn('Order ID type mismatch in database (code 22P02). Removing from local state only.', id);
             setOrders(prev => prev.filter(o => String(o.id) !== String(id)));
             return;
           }
@@ -2248,7 +2803,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, getBrandsForCategory, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
+    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
       {children}
       <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>
