@@ -99,17 +99,21 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         }}
         onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-        className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
-          String(activeCategory) === "home" ? "active bg-brand-black text-white shadow-luxury" : "text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black"
+        className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-semibold tracking-[0.02em] transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
+          String(activeCategory) === "home"
+            ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)]"
+            : "border-transparent bg-white/40 text-stone-700 hover:border-[#f4e3c4] hover:bg-[#fffdf9] hover:text-brand-black"
         }`}
         data-active={String(activeCategory) === "home"}
       >
         <div className="flex items-center justify-between w-full pointer-events-none">
           <div className="flex items-center gap-3 pointer-events-none">
-            <Home size={18} className={`pointer-events-none ${String(activeCategory) === "home" ? "text-brand-gold" : "text-stone-400"}`} />
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-colors pointer-events-none ${String(activeCategory) === "home" ? "border-[#d8b567] bg-[#f4d899] text-brand-black" : "border-[#f1e5d3] bg-[#f7f2ea] text-stone-500"}`}>
+              <Home size={16} className="pointer-events-none" />
+            </div>
             <span className="pointer-events-none">Home Overview</span>
           </div>
-          {String(activeCategory) === "home" && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
+          {String(activeCategory) === "home" && <span className="h-2.5 w-2.5 rounded-full bg-brand-gold shadow-[0_0_0_4px_rgba(208,166,88,0.15)] pointer-events-none" />}
         </div>
       </button>
 
@@ -125,25 +129,29 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           }}
           onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-          className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
-            String(activeCategory) === 'orders' ? 'active bg-brand-black text-white shadow-luxury' : 'text-stone-600 hover:bg-brand-gold-light/60 hover:text-brand-black'
+          className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-semibold tracking-[0.02em] transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
+            String(activeCategory) === 'orders'
+              ? 'active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)]'
+              : 'border-transparent bg-white/40 text-stone-700 hover:border-[#f4e3c4] hover:bg-[#fffdf9] hover:text-brand-black'
           }`}
           data-active={String(activeCategory) === 'orders'}
         >
           <div className="flex items-center justify-between w-full pointer-events-none">
             <div className="flex items-center gap-3 pointer-events-none">
-              <ClipboardList size={18} className={`pointer-events-none ${String(activeCategory) === 'orders' ? 'text-brand-gold' : 'text-stone-400'}`} />
+              <div className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-colors pointer-events-none ${String(activeCategory) === 'orders' ? 'border-[#d8b567] bg-[#f4d899] text-brand-black' : 'border-[#f1e5d3] bg-[#f7f2ea] text-stone-500'}`}>
+                <ClipboardList size={16} className="pointer-events-none" />
+              </div>
               <span className="pointer-events-none">Orders Management</span>
             </div>
-            {String(activeCategory) === 'orders' && <span className="w-1.5 h-1.5 rounded-full bg-brand-gold pointer-events-none" />}
+            {String(activeCategory) === 'orders' && <span className="h-2.5 w-2.5 rounded-full bg-brand-gold shadow-[0_0_0_4px_rgba(208,166,88,0.15)] pointer-events-none" />}
           </div>
         </button>
       )}
 
       {/* Departments Label */}
-      <div className="flex items-center justify-between px-3 mt-5 mb-3">
+      <div className="mt-5 mb-3 flex items-center justify-between rounded-full border border-[#f1e4cf] bg-[linear-gradient(135deg,rgba(255,255,255,0.8),rgba(249,242,233,0.8))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
         <div className="flex items-center gap-3 pointer-events-none">
-          <span className="text-[10px] font-bold tracking-widest text-brand-darkgray uppercase pointer-events-none">Departments</span>
+          <span className="text-[10px] font-black tracking-[0.22em] text-[#5e4638] uppercase pointer-events-none">Departments</span>
           {isAdmin && (
             <button
               type="button"
@@ -154,16 +162,16 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
               }}
               onClick={(e) => e.stopPropagation()}
               style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-              className="text-brand-gold cursor-pointer pointer-events-auto p-1 hover:bg-brand-gold-light/50 rounded-full transition-colors flex items-center justify-center touch-target"
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#efd7ab] bg-[#fffaf2] text-brand-gold transition-colors hover:bg-[#f9efdc] pointer-events-auto touch-target"
               title="Add Category"
             >
               <div className="pointer-events-none flex items-center justify-center">
-                <PlusCircle size={18} className="pointer-events-none" />
+                <PlusCircle size={14} className="pointer-events-none" />
               </div>
             </button>
           )}
         </div>
-        <span className="text-[10px] font-medium text-brand-gold-dark bg-brand-gold-light px-2 py-0.5 rounded-full pointer-events-none">PhM Curated</span>
+        <span className="pointer-events-none rounded-full bg-[#f7ebd8] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#7d6147]">PhM Curated</span>
       </div>
 
       {/* Category Links */}
@@ -184,14 +192,16 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                 }}
                 onClick={(e) => e.stopPropagation()}
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
-                  isActive ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold" : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
+                className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-medium tracking-[0.02em] transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
+                  isActive
+                    ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)] font-semibold"
+                    : "border-transparent bg-white/40 text-stone-700 hover:border-[#f4e3c4] hover:bg-[#fffdf9] hover:text-brand-black"
                 }`}
                 data-active={isActive}
               >
                 {/* Left Side (Icon + Text) */}
                 <div className="flex items-center gap-3.5 pointer-events-none">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${isActive ? "bg-brand-gold text-brand-black shadow-sm" : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-transform duration-300 group-hover:scale-110 pointer-events-none ${isActive ? "border-[#d8b567] bg-[#f4d899] text-brand-black shadow-sm" : "border-[#f1e5d3] bg-[#f7f2ea] text-stone-500 group-hover:bg-white group-hover:text-brand-gold-dark"}`}>
                     <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="pointer-events-none" />
                   </div>
                   <span className="pointer-events-none">{cat.label}</span>
@@ -200,13 +210,13 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
                 {/* Right Side — spacer + arrow */}
                 <div className="flex items-center gap-2 pointer-events-none">
                   {isAdmin && (
-                    <div className="flex gap-1 mr-1 invisible" aria-hidden="true">
-                      <div className="p-1 w-5 h-5" />
-                      <div className="p-1 w-5 h-5" />
+                    <div className="mr-1 flex gap-1 invisible" aria-hidden="true">
+                      <div className="h-5 w-5 p-1" />
+                      <div className="h-5 w-5 p-1" />
                     </div>
                   )}
                   <div className="pointer-events-none">
-                    <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "text-brand-gold translate-x-0.5 opacity-100" : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"}`} />
+                    <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${isActive ? "translate-x-0.5 text-brand-gold opacity-100" : "text-stone-300 opacity-0 group-hover:translate-x-0.5 group-hover:opacity-100"}`} />
                   </div>
                 </div>
               </button>
@@ -265,18 +275,18 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           }}
           onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-          className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
+          className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-medium tracking-[0.02em] transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
-              ? "active bg-gradient-to-r from-brand-black to-brand-charcoal text-white shadow-luxury font-semibold"
-              : "text-stone-600 hover:bg-brand-gold-light/70 hover:text-brand-black"
+              ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)] font-semibold"
+              : "border-transparent bg-white/40 text-stone-700 hover:border-[#f4e3c4] hover:bg-[#fffdf9] hover:text-brand-black"
           }`}
           data-active={String(activeCategory) === "about"}
         >
           <div className="flex items-center gap-3.5 pointer-events-none">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 pointer-events-none ${
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl border transition-transform duration-300 group-hover:scale-110 pointer-events-none ${
               String(activeCategory) === "about"
-                ? "bg-brand-gold text-brand-black shadow-sm"
-                : "bg-brand-sand text-stone-600 group-hover:bg-white group-hover:text-brand-gold-dark"
+                ? "border-[#d8b567] bg-[#f4d899] text-brand-black shadow-sm"
+                : "border-[#f1e5d3] bg-[#f7f2ea] text-stone-500 group-hover:bg-white group-hover:text-brand-gold-dark"
             }`}>
               <Info size={16} strokeWidth={String(activeCategory) === "about" ? 2.5 : 2} className="pointer-events-none" />
             </div>
@@ -286,8 +296,8 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
           <div className="pointer-events-none">
             <ChevronRight size={14} className={`transition-all duration-200 pointer-events-none ${
               String(activeCategory) === "about"
-                ? "text-brand-gold translate-x-0.5 opacity-100"
-                : "text-stone-300 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5"
+                ? "translate-x-0.5 text-brand-gold opacity-100"
+                : "text-stone-300 opacity-0 group-hover:translate-x-0.5 group-hover:opacity-100"
             }`} />
           </div>
         </button>
@@ -313,7 +323,7 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-        className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full bg-white z-[95] flex flex-col shadow-2xl transition-transform duration-300 ease-out md:hidden ${
+        className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full z-[95] flex flex-col border-r border-[#f0e2c9] bg-[linear-gradient(180deg,rgba(255,253,251,0.96)_0%,rgba(248,242,233,0.97)_100%)] shadow-[0_24px_80px_rgba(35,25,18,0.18)] backdrop-blur-xl transition-transform duration-300 ease-out md:hidden ${
           isOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
         }`}
         aria-label="Mobile categories navigation"
@@ -345,8 +355,10 @@ export default function Sidebar({ activeCategory, onSelect, mobileOpen = false, 
       </aside>
 
       {/* Desktop sidebar — untouched */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/90 backdrop-blur-md border-r border-brand-gold-border/40 min-h-[calc(100vh-5rem)] sticky top-28 overflow-y-auto px-4 py-6">
-        <SidebarBody />
+      <aside className="hidden md:flex flex-col w-72 shrink-0 border-r border-[#f0e2c9] bg-[linear-gradient(180deg,rgba(255,253,251,0.92)_0%,rgba(248,242,233,0.96)_100%)] backdrop-blur-xl shadow-[inset_-1px_0_0_rgba(240,226,201,0.9)] min-h-[calc(100vh-5rem)] sticky top-28 overflow-y-auto px-4 py-6">
+        <div className="flex w-full flex-col rounded-[28px] border border-[#f4e7d3] bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.9),rgba(255,250,244,0.7)_38%,rgba(246,236,223,0.6)_100%)] p-3 shadow-[0_18px_42px_rgba(32,24,18,0.08)]">
+          <SidebarBody />
+        </div>
       </aside>
 
       {/* Admin Add/Edit Category Modal — portaled once directly to document.body */}

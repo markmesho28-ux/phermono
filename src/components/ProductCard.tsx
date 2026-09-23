@@ -32,6 +32,7 @@ export default function ProductCard({
 }: ProductCardProps) {
   const [hovered, setHovered] = useState(false);
   const [addedAnim, setAddedAnim] = useState(false);
+  const addActionLockRef = useRef(false);
   const { user } = useAuth();
   const { actions } = useData();
 
@@ -44,13 +45,27 @@ export default function ProductCard({
   const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
-  const handleAddClick = (e?: React.MouseEvent<HTMLButtonElement>) => {
-    if (e && typeof e.stopPropagation === 'function') {
-      e.stopPropagation();
+  const handleAddClick = (e?: React.SyntheticEvent<HTMLButtonElement>) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+      if (typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
     }
+
+    if (addActionLockRef.current) {
+      return;
+    }
+
+    addActionLockRef.current = true;
     onAddToCart(product);
     setAddedAnim(true);
-    setTimeout(() => setAddedAnim(false), 1200);
+    window.setTimeout(() => {
+      addActionLockRef.current = false;
+      setAddedAnim(false);
+    }, 1200);
   };
 
   const lastWishlistActionRef = useRef(0);
@@ -196,6 +211,9 @@ export default function ProductCard({
 
             <div className="w-full">
               <button
+                type="button"
+                onPointerDown={handleAddClick}
+                onTouchStart={handleAddClick}
                 onClick={handleAddClick}
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`card-add-btn flex w-full items-center justify-center gap-1 rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] transition-all duration-300 active:scale-95 touch-target md:px-4 md:py-2.5 md:text-[11px] ${
