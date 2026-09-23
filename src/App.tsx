@@ -44,9 +44,9 @@ export function GlobalFooter() {
   const instagramUrl = 'https://www.instagram.com/phermonostore3?stkn=ZmlsZ3NsZXh0cW52';
   const facebookUrl = 'https://www.facebook.com/share/14pshxhK3vA/?mibextid=wwXIfr';
 
-  const handleFooterLinkPress = (event: React.PointerEvent<HTMLAnchorElement> | React.TouchEvent<HTMLAnchorElement> | React.MouseEvent<HTMLAnchorElement>) => {
-    if (event.defaultPrevented) {
-      return;
+  const handleFooterLinkPress = (event: React.MouseEvent<HTMLAnchorElement> | React.TouchEvent<HTMLAnchorElement> | React.PointerEvent<HTMLAnchorElement>) => {
+    if (typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
     }
   };
 

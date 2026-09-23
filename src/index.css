@@ -537,12 +537,15 @@ form input:not([type="search"]):not([type="hidden"]) {
 }
 
 .card-add-btn:active,
-.footer-social-link:active,
 form button:active,
 form input[type="submit"]:active,
 form input[type="button"]:active,
 form input[type="reset"]:active {
   transform: scale(0.98);
+}
+
+.footer-social-link:active {
+  transform: none;
 }
 
 button,
