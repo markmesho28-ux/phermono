@@ -45,11 +45,8 @@ export function GlobalFooter() {
   const facebookUrl = 'https://www.facebook.com/share/14pshxhK3vA/?mibextid=wwXIfr';
 
   const handleFooterLinkPress = (event: React.PointerEvent<HTMLAnchorElement> | React.TouchEvent<HTMLAnchorElement> | React.MouseEvent<HTMLAnchorElement>) => {
-    if (typeof event.stopPropagation === 'function') {
-      event.stopPropagation();
-    }
-    if (typeof event.preventDefault === 'function') {
-      event.preventDefault();
+    if (event.defaultPrevented) {
+      return;
     }
   };
 
