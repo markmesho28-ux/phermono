@@ -604,21 +604,27 @@ export default function App(){
     setTimeout(()=> setToast(t => ({ ...t, visible: false })), 2500);
   }, []);
 
+  const scrollToTop = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0 });
+    }
+  }, []);
+
   const handleCategorySelect = useCallback((id: string) => {
     setActiveCategory(id);
     setSelectedBrand(null);
     setSearchQuery('');
     setMobileMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+    scrollToTop();
+  }, [scrollToTop]);
   const handleBrandSelect = useCallback((brandName: string) => {
     const matching = products.find(p=>p.brand===brandName);
     const targetCategory = matching ? matching.category : 'skincare';
     setSelectedBrand(brandName);
     setActiveCategory(targetCategory);
     setSearchQuery('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [products]);
+    scrollToTop();
+  }, [products, scrollToTop]);
 
   const handleAddToCart = useCallback((product: Product) => {
     setCartItems(prev => {
@@ -726,12 +732,16 @@ export default function App(){
       }
     };
 
-    applyAvatarStyle();
-    const header = document.querySelector('header');
-    if (!header) return;
-    const mo = new MutationObserver(() => applyAvatarStyle());
-    mo.observe(header, { childList: true, subtree: true, characterData: true });
-    return () => mo.disconnect();
+    const runAvatarStyle = () => {
+      if (typeof window === 'undefined') return;
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(applyAvatarStyle);
+      } else {
+        applyAvatarStyle();
+      }
+    };
+
+    runAvatarStyle();
   }, [user]);
 
   return (
@@ -760,13 +770,13 @@ export default function App(){
           setActiveCategory('assistant');
           setSelectedBrand(null);
           setSearchQuery('');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollToTop();
         }}
         onProfileOpen={() => { if(user) setActiveCategory('profile'); else { setAuthIntent('openProfile'); setAuthOpen(true); } }}
         onWishlistOpen={() => setActiveCategory('favorites')}
         searchQuery={searchQuery}
         onSearchChange={(q)=>{ setSearchQuery(q); if(q && activeCategory==='home'){ setActiveCategory('skincare'); setSelectedBrand(null); } }}
-        onHomeClick={() => { setActiveCategory('home'); setSelectedBrand(null); setSearchQuery(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onHomeClick={() => { setActiveCategory('home'); setSelectedBrand(null); setSearchQuery(''); scrollToTop(); }}
         onAuthOpen={(v)=>{
           // If user is already signed in, navigate to profile page instead of showing auth modal
           if (user) {
@@ -799,8 +809,8 @@ export default function App(){
             <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
           ) : activeCategory === 'about' ? (
             <AboutPage
-              onNavigateHome={() => { setActiveCategory('home'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              onNavigateAssistant={() => { setActiveCategory('assistant'); setSelectedBrand(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              onNavigateHome={() => { setActiveCategory('home'); setSelectedBrand(null); scrollToTop(); }}
+              onNavigateAssistant={() => { setActiveCategory('assistant'); setSelectedBrand(null); scrollToTop(); }}
             />
           ) : activeCategory === 'tracking' ? (
             <TrackingPage />

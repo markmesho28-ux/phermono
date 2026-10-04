@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import ProductCard from "./ProductCard";
 import CategoryBar from "./CategoryBar";
@@ -33,22 +33,67 @@ export default function Homepage({
   const { products, categories } = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const visibleProducts = isAdmin ? products : products.filter((product) => !product.isHidden);
+  const visibleProducts = useMemo(
+    () => (isAdmin ? products : products.filter((product) => !product.isHidden)),
+    [isAdmin, products],
+  );
+  const [featuredProducts, setFeaturedProducts] = useState({ bestSellers: [] as Product[], newArrivals: [] as Product[] });
+  const [isFeatureLoading, setIsFeatureLoading] = useState(true);
 
-  // New arrivals: strictly by creation date (most recent first). Only include rows that have a valid `createdAt`.
-  const sortedProductsByNewest = [...visibleProducts]
-    .filter((p) => p.createdAt)
-    .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
-  const newArrivals = sortedProductsByNewest.slice(0, 8);
+  useEffect(() => {
+    let isCancelled = false;
 
-  // Best sellers: strictly products explicitly flagged by admin. Do NOT fallback to random products.
-  const bestSellers = [...visibleProducts]
-    .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
-    .slice(0, 8);
+    const prepareFeaturedProducts = () => {
+      const sortedProductsByNewest = [...visibleProducts]
+        .filter((p) => p.createdAt)
+        .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
 
-  const renderedBestSellers = bestSellers; // intentionally no fallback
-  const renderedNewArrivals = newArrivals; // intentionally no fallback
+      const bestSellers = [...visibleProducts]
+        .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
+        .slice(0, 8);
 
+      if (isCancelled) return;
+      setFeaturedProducts({
+        bestSellers,
+        newArrivals: sortedProductsByNewest.slice(0, 8),
+      });
+      setIsFeatureLoading(false);
+    };
+
+    setIsFeatureLoading(true);
+
+    const schedulePreparation = () => {
+      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        const idleId = window.requestIdleCallback(prepareFeaturedProducts, { timeout: 150 });
+        return () => {
+          if (typeof window.cancelIdleCallback === 'function') {
+            window.cancelIdleCallback(idleId);
+          }
+        };
+      }
+
+      const timeoutId = window.setTimeout(prepareFeaturedProducts, 0);
+      return () => window.clearTimeout(timeoutId);
+    };
+
+    const cancelPreparation = schedulePreparation();
+    return () => {
+      isCancelled = true;
+      cancelPreparation();
+    };
+  }, [visibleProducts]);
+
+  const renderedBestSellers = featuredProducts.bestSellers;
+  const renderedNewArrivals = featuredProducts.newArrivals;
+
+  const renderProductSkeletons = (count = 4) =>
+    Array.from({ length: count }, (_, index) => (
+      <div
+        key={`product-skeleton-${index}`}
+        className="h-[240px] animate-pulse rounded-[24px] border border-stone-200 bg-stone-200/70"
+        aria-label="Loading products"
+      />
+    ));
 
   // ---------------------------------------------------------------------------
   // Stale-while-revalidate banner cache
@@ -363,17 +408,19 @@ export default function Homepage({
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
-            {renderedBestSellers.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAddToCart={onAddToCart}
-                onQuickView={onQuickView}
-                onWishlist={onWishlist}
-                isWishlisted={wishlist.some((w) => w.id === product.id)}
-                showStatusBadges={false}
-              />
-            ))}
+            {isFeatureLoading
+              ? renderProductSkeletons(4)
+              : renderedBestSellers.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={onAddToCart}
+                    onQuickView={onQuickView}
+                    onWishlist={onWishlist}
+                    isWishlisted={wishlist.some((w) => w.id === product.id)}
+                    showStatusBadges={false}
+                  />
+                ))}
           </div>
         </section>
 
@@ -386,17 +433,19 @@ export default function Homepage({
           </div>
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5">
-            {renderedNewArrivals.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAddToCart={onAddToCart}
-                onQuickView={onQuickView}
-                onWishlist={onWishlist}
-                isWishlisted={wishlist.some((w) => w.id === product.id)}
-                showStatusBadges={false}
-              />
-            ))}
+            {isFeatureLoading
+              ? renderProductSkeletons(4)
+              : renderedNewArrivals.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={onAddToCart}
+                    onQuickView={onQuickView}
+                    onWishlist={onWishlist}
+                    isWishlisted={wishlist.some((w) => w.id === product.id)}
+                    showStatusBadges={false}
+                  />
+                ))}
           </div>
         </section>
       </div>
