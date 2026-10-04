@@ -1,11 +1,32 @@
 import React from 'react';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Header from './Header';
 import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
+import { DEFAULT_PROMO_BANNER, fetchPromoBannerConfig, savePromoBannerContent } from '../utils/promoBanner';
 import initFastTouch from '../utils/fastTouch';
 
 jest.mock('../contexts/AuthContext');
+jest.mock('../contexts/DataContext');
+jest.mock('../utils/promoBanner', () => ({
+  DEFAULT_PROMO_BANNER: {
+    bannerId: 'banner-1',
+    products: [
+      { id: undefined, image: '', alt: 'Left', enabled: false },
+      { id: 'middle-id', image: '', alt: 'Middle', enabled: false },
+      { id: undefined, image: '', alt: 'Right', enabled: false },
+    ],
+    content: {
+      campaignLabel: 'WINTER SALE',
+      headline: 'Up to 60% off curated essentials',
+      badge: 'LIMITED TIME',
+    },
+    cta: { enabled: false, text: '', url: '' },
+  },
+  fetchPromoBannerConfig: jest.fn(),
+  savePromoBannerContent: jest.fn(),
+}));
 
 describe('Header Action Buttons', () => {
   const defaultProps = {
@@ -26,6 +47,12 @@ describe('Header Action Buttons', () => {
       user: null,
       logout: jest.fn(),
     });
+    (useData as jest.Mock).mockReturnValue({
+      siteSettings: { promo_banner_text: 'Up to 60% off curated essentials' },
+      updateSiteSettings: jest.fn().mockResolvedValue(undefined),
+    });
+    (fetchPromoBannerConfig as jest.Mock).mockResolvedValue(DEFAULT_PROMO_BANNER);
+    (savePromoBannerContent as jest.Mock).mockResolvedValue(DEFAULT_PROMO_BANNER);
     jest.clearAllMocks();
   });
 
@@ -115,6 +142,44 @@ describe('Header Action Buttons', () => {
 
     expect(defaultProps.onMenuToggle).toHaveBeenCalledTimes(1);
     expect(defaultProps.onMenuToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('keeps the banner editor open until the banner database save resolves', async () => {
+    const updateSiteSettings = jest.fn().mockResolvedValue(undefined);
+    let resolveBannerSave: ((value: any) => void) | null = null;
+
+    (useData as jest.Mock).mockReturnValue({
+      siteSettings: { promo_banner_text: 'Up to 60% off curated essentials' },
+      updateSiteSettings,
+    });
+    (savePromoBannerContent as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => { resolveBannerSave = resolve; })
+    );
+
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { role: 'admin' },
+      logout: jest.fn(),
+    });
+
+    render(<Header {...defaultProps} />);
+    fireEvent.click(screen.getByLabelText('Edit promotional text'));
+    fireEvent.change(screen.getByLabelText('Edit promotional announcement text'), {
+      target: { value: 'New flagship drop' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByLabelText('Edit promotional announcement text')).toBeInTheDocument();
+    expect(savePromoBannerContent).toHaveBeenCalledTimes(1);
+
+    resolveBannerSave?.({
+      ...DEFAULT_PROMO_BANNER,
+      content: { ...DEFAULT_PROMO_BANNER.content, headline: 'New flagship drop' },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Edit promotional announcement text')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps the native tap behavior for black buttons without synthetic touch interception', () => {

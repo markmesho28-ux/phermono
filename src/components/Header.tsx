@@ -171,7 +171,6 @@ export default function Header({
                             }
 
                             try {
-                              await updateSiteSettings({ promo_banner_text: nextText });
                               const updated: PromoBannerConfig = {
                                 ...bannerConfig,
                                 content: {
@@ -179,9 +178,13 @@ export default function Header({
                                   headline: nextText,
                                 },
                               };
-                              setBannerConfig(updated);
-                              try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(updated)); } catch (_) {}
-                              savePromoBannerContent(updated).catch(console.error);
+
+                              const persisted = await savePromoBannerContent(updated);
+                              const resolvedBanner = persisted && persisted.content?.headline ? persisted : updated;
+
+                              await updateSiteSettings({ promo_banner_text: resolvedBanner.content.headline });
+                              setBannerConfig(resolvedBanner);
+                              try { localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(resolvedBanner)); } catch (_) {}
                               setIsBannerEditing(false);
                             } catch (error) {
                               console.warn('Banner update failed:', error);
