@@ -921,10 +921,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const lastCatalogFetchRef = useRef(0);
   const lastCatalogRefreshTriggerRef = useRef(0);
   const inFlightCatalogFetchRef = useRef<Promise<void> | null>(null);
+  const latestCatalogRequestIdRef = useRef(0);
 
   const fetchRemote = async (isBackground = false) => {
     if (!supabase) return;
     didInitialFetchRef.current = true;
+    const requestId = ++latestCatalogRequestIdRef.current;
     const now = Date.now();
     if (inFlightCatalogFetchRef.current) {
       return inFlightCatalogFetchRef.current;
@@ -942,6 +944,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     inFlightCatalogFetchRef.current = (async () => {
       try {
+        if (requestId !== latestCatalogRequestIdRef.current) {
+          return;
+        }
+
         const [
           { data: productsData },
           { data: ordersData },
@@ -958,7 +964,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
         ]);
 
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== latestCatalogRequestIdRef.current) {
+          return;
+        }
 
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
         const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
@@ -1101,6 +1109,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setProducts([]);
         }
 
+        if (requestId !== latestCatalogRequestIdRef.current || !mountedRef.current) {
+          return;
+        }
+
         if (nextCategories.length > 0) {
           setCategories(nextCategories);
         } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
@@ -1128,6 +1140,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }) as any);
         }
 
+        if (requestId !== latestCatalogRequestIdRef.current || !mountedRef.current) {
+          return;
+        }
+
         const settingsMap = Array.isArray(settingsData) ? settingsData : [];
         const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
         const cachedSettings = readCachedSiteSettings() || {};
@@ -1143,9 +1159,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setRemoteError(String(err));
         setLoading(false);
       } finally {
-        isFetchingRef.current = false;
-        inFlightCatalogFetchRef.current = null;
-        if (fetchQueuedRef.current && mountedRef.current) {
+        if (requestId === latestCatalogRequestIdRef.current) {
+          isFetchingRef.current = false;
+          inFlightCatalogFetchRef.current = null;
+        }
+        if (fetchQueuedRef.current && mountedRef.current && requestId === latestCatalogRequestIdRef.current) {
           fetchQueuedRef.current = false;
           void fetchRemote(true);
         }
@@ -1201,49 +1219,54 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }, 700);
 
     // Set up Supabase Realtime channel for instant multi-client synchronization
-    const channel = supabase
-      .channel('phermono-realtime-catalog-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'products' },
-        (payload) => {
-          console.debug('Realtime update: products changed', payload);
-          lastCatalogRefreshTriggerRef.current = Date.now();
-          scheduleRefetch(100);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'categories' },
-        (payload) => {
-          console.debug('Realtime update: categories changed', payload);
-          lastCatalogRefreshTriggerRef.current = Date.now();
-          scheduleRefetch(100);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'subcategories' },
-        (payload) => {
-          console.debug('Realtime update: subcategories changed', payload);
-          lastCatalogRefreshTriggerRef.current = Date.now();
-          scheduleRefetch(100);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'brands' },
-        (payload) => {
-          console.debug('Realtime update: brands changed', payload);
-          lastCatalogRefreshTriggerRef.current = Date.now();
-          scheduleRefetch(100);
-        }
-      )
-      .subscribe((status, err) => {
-        if (err) {
-          console.warn('Realtime subscription error:', err);
-        }
-      });
+    const channel = supabase && typeof supabase.channel === 'function'
+      ? supabase.channel('phermono-realtime-catalog-sync')
+      : null;
+
+    if (channel) {
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products' },
+          (payload) => {
+            console.debug('Realtime update: products changed', payload);
+            lastCatalogRefreshTriggerRef.current = Date.now();
+            scheduleRefetch(100);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'categories' },
+          (payload) => {
+            console.debug('Realtime update: categories changed', payload);
+            lastCatalogRefreshTriggerRef.current = Date.now();
+            scheduleRefetch(100);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'subcategories' },
+          (payload) => {
+            console.debug('Realtime update: subcategories changed', payload);
+            lastCatalogRefreshTriggerRef.current = Date.now();
+            scheduleRefetch(100);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'brands' },
+          (payload) => {
+            console.debug('Realtime update: brands changed', payload);
+            lastCatalogRefreshTriggerRef.current = Date.now();
+            scheduleRefetch(100);
+          }
+        )
+        .subscribe((status, err) => {
+          if (err) {
+            console.warn('Realtime subscription error:', err);
+          }
+        });
+    }
 
     // Re-synchronize when tab becomes visible or focused only after a real idle gap,
     // not during normal browsing or quick tab switches.
@@ -2988,8 +3011,77 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return [] as string[];
   };
 
+  const actionsRef = useRef<{
+    addCategory: typeof addCategory;
+    updateCategory: typeof updateCategory;
+    deleteCategory: typeof deleteCategory;
+    addSubcategory: typeof addSubcategory;
+    updateSubcategory: typeof updateSubcategory;
+    deleteSubcategory: typeof deleteSubcategory;
+    addBrand: typeof addBrand;
+    updateBrand: typeof updateBrand;
+    deleteBrand: typeof deleteBrand;
+    addProduct: typeof addProduct;
+    updateProduct: typeof updateProduct;
+    deleteProduct: typeof deleteProduct;
+    toggleHero: typeof toggleHero;
+    addOrder: typeof addOrder;
+    updateOrder: typeof updateOrder;
+    deleteOrder: typeof deleteOrder;
+    adminClearDatabase: typeof adminClearDatabase;
+    refreshCatalog: () => Promise<void>;
+  } | null>(null);
+
+  if (!actionsRef.current) {
+    actionsRef.current = {
+      addCategory,
+      updateCategory,
+      deleteCategory,
+      addSubcategory,
+      updateSubcategory,
+      deleteSubcategory,
+      addBrand,
+      updateBrand,
+      deleteBrand,
+      addProduct,
+      updateProduct,
+      deleteProduct,
+      toggleHero,
+      addOrder,
+      updateOrder,
+      deleteOrder,
+      adminClearDatabase,
+      refreshCatalog: async () => {
+        await fetchRemote(true);
+      },
+    };
+  } else {
+    actionsRef.current.addCategory = addCategory;
+    actionsRef.current.updateCategory = updateCategory;
+    actionsRef.current.deleteCategory = deleteCategory;
+    actionsRef.current.addSubcategory = addSubcategory;
+    actionsRef.current.updateSubcategory = updateSubcategory;
+    actionsRef.current.deleteSubcategory = deleteSubcategory;
+    actionsRef.current.addBrand = addBrand;
+    actionsRef.current.updateBrand = updateBrand;
+    actionsRef.current.deleteBrand = deleteBrand;
+    actionsRef.current.addProduct = addProduct;
+    actionsRef.current.updateProduct = updateProduct;
+    actionsRef.current.deleteProduct = deleteProduct;
+    actionsRef.current.toggleHero = toggleHero;
+    actionsRef.current.addOrder = addOrder;
+    actionsRef.current.updateOrder = updateOrder;
+    actionsRef.current.deleteOrder = deleteOrder;
+    actionsRef.current.adminClearDatabase = adminClearDatabase;
+    actionsRef.current.refreshCatalog = async () => {
+      await fetchRemote(true);
+    };
+  }
+
+  const actions = actionsRef.current;
+
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase, refreshCatalog: () => fetchRemote(true) } }}>
+    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions }}>
       {children}
       <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>

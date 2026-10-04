@@ -543,26 +543,35 @@ export default function App(){
       // ignore storage errors
     }
   }, [activeCategory]);
-  const deferUiAction = useCallback((callback: () => void) => {
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(callback);
-      return;
-    }
-    callback();
+  const closeAuthModal = useCallback(() => {
+    setAuthIntent(null);
+    setAuthOpen(false);
   }, []);
 
+  const resetTransientOverlays = useCallback(() => {
+    closeAuthModal();
+    setCartOpen(false);
+    setCartCheckoutMode(false);
+    setQuickViewProduct(null);
+    setMobileMenuOpen(false);
+  }, [closeAuthModal]);
+
   const handleMenuToggle = useCallback((forceOpen?: boolean) => {
-    deferUiAction(() => {
-      setMobileMenuOpen(prev => {
-        if (typeof forceOpen === 'boolean') return forceOpen;
-        return !prev;
-      });
+    if (authOpen || cartOpen || quickViewProduct) {
+      closeAuthModal();
+      setCartOpen(false);
+      setCartCheckoutMode(false);
+      setQuickViewProduct(null);
+    }
+    setMobileMenuOpen((prev) => {
+      if (typeof forceOpen === 'boolean') return forceOpen;
+      return !prev;
     });
-  }, [deferUiAction]);
+  }, [authOpen, cartOpen, quickViewProduct, closeAuthModal]);
 
   const handleSidebarClose = useCallback(() => {
-    deferUiAction(() => setMobileMenuOpen(false));
-  }, [deferUiAction]);
+    resetTransientOverlays();
+  }, [resetTransientOverlays]);
 
   const { products, actions } = useData();
   const { user } = useAuth();
@@ -629,22 +638,21 @@ export default function App(){
   }, []);
 
   const handleCategorySelect = useCallback((id: string) => {
+    resetTransientOverlays();
     setActiveCategory(id);
     setSelectedBrand(null);
     setSearchQuery('');
-    deferUiAction(() => {
-      setMobileMenuOpen(false);
-      scrollToTop();
-    });
-  }, [deferUiAction, scrollToTop]);
+    scrollToTop();
+  }, [resetTransientOverlays, scrollToTop]);
   const handleBrandSelect = useCallback((brandName: string) => {
+    resetTransientOverlays();
     const matching = products.find(p=>p.brand===brandName);
     const targetCategory = matching ? matching.category : 'skincare';
     setSelectedBrand(brandName);
     setActiveCategory(targetCategory);
     setSearchQuery('');
-    deferUiAction(() => scrollToTop());
-  }, [deferUiAction, products, scrollToTop]);
+    scrollToTop();
+  }, [products, resetTransientOverlays, scrollToTop]);
 
   const handleAddToCart = useCallback((product: Product) => {
     setCartItems(prev => {
@@ -785,19 +793,23 @@ export default function App(){
         cartCount={totalCartCount}
         wishlistCount={visibleWishlist.length}
         cartOpen={cartOpen}
-        onCartOpen={() => { if(user) setCartOpen(true); else { setAuthIntent('openCart'); setAuthOpen(true); } }}
-        onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { setAuthIntent('openTracking'); setAuthOpen(true); } }}
+        onCartOpen={() => { if(user) { setCartOpen(true); } else { resetTransientOverlays(); setAuthIntent('openCart'); setAuthOpen(true); } }}
+        onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { resetTransientOverlays(); setAuthIntent('openTracking'); setAuthOpen(true); } }}
         onAssistantOpen={() => {
+          resetTransientOverlays();
           setActiveCategory('assistant');
           setSelectedBrand(null);
           setSearchQuery('');
           scrollToTop();
         }}
-        onProfileOpen={() => { if(user) setActiveCategory('profile'); else { setAuthIntent('openProfile'); setAuthOpen(true); } }}
-        onWishlistOpen={() => setActiveCategory('favorites')}
+        onProfileOpen={() => { if(user) setActiveCategory('profile'); else { resetTransientOverlays(); setAuthIntent('openProfile'); setAuthOpen(true); } }}
+        onWishlistOpen={() => {
+          resetTransientOverlays();
+          setActiveCategory('favorites');
+        }}
         searchQuery={searchQuery}
-        onSearchChange={(q)=>{ setSearchQuery(q); if(q && activeCategory==='home'){ setActiveCategory('skincare'); setSelectedBrand(null); } }}
-        onHomeClick={() => { setActiveCategory('home'); setSelectedBrand(null); setSearchQuery(''); scrollToTop(); }}
+        onSearchChange={(q)=>{ resetTransientOverlays(); setSearchQuery(q); if(q && activeCategory==='home'){ setActiveCategory('skincare'); setSelectedBrand(null); } }}
+        onHomeClick={() => { resetTransientOverlays(); setActiveCategory('home'); setSelectedBrand(null); setSearchQuery(''); scrollToTop(); }}
         onAuthOpen={(v)=>{
           // If user is already signed in, navigate to profile page instead of showing auth modal
           if (user) {
@@ -806,6 +818,7 @@ export default function App(){
             setAuthOpen(false);
             return;
           }
+          resetTransientOverlays();
           setAuthIntent(null);
           setAuthOpen(!!v);
         }}
@@ -874,7 +887,7 @@ export default function App(){
         onBackToBag={() => setCartCheckoutMode(false)}
         onPlaceOrder={handlePlaceOrder}
         onCheckout={() => {
-          if(user){ setCartCheckoutMode(true); } else { setAuthIntent('checkout'); setAuthOpen(true); }
+          if(user){ setCartCheckoutMode(true); } else { resetTransientOverlays(); setAuthIntent('checkout'); setAuthOpen(true); }
         }}
       />
 

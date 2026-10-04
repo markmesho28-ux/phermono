@@ -1,5 +1,50 @@
-import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation } from './DataContext';
+import React, { useRef, useState } from 'react';
+import { render, fireEvent, screen } from '@testing-library/react';
+import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData } from './DataContext';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
+
+jest.mock('../lib/supabase', () => {
+  const makeQueryChain = () => ({
+    select: jest.fn(() => Promise.resolve({ data: [] })),
+    eq: jest.fn(() => ({
+      select: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null })),
+      limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      single: jest.fn(() => Promise.resolve({ data: null, error: null })),
+    })),
+    maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null })),
+    limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
+    single: jest.fn(() => Promise.resolve({ data: null, error: null })),
+    order: jest.fn(() => ({
+      limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      select: jest.fn(() => Promise.resolve({ data: [], error: null })),
+    })),
+    upsert: jest.fn(() => ({
+      select: jest.fn(() => ({ single: jest.fn(() => Promise.resolve({ data: null, error: null })) })),
+    })),
+  });
+
+  const makeChannel = () => {
+    const channel: any = {
+      on: jest.fn(() => channel),
+      subscribe: jest.fn(() => undefined),
+    };
+    return channel;
+  };
+
+  return {
+    __esModule: true,
+    default: {
+      from: jest.fn(() => makeQueryChain()),
+      channel: jest.fn(() => makeChannel()),
+      removeChannel: jest.fn(),
+      auth: {
+        getUser: jest.fn(() => Promise.resolve({ data: { user: null } })),
+      },
+    },
+    SUPABASE_URL: 'https://example.com',
+  };
+});
 
 describe('isPermissionDeniedOrRlsError', () => {
   it('detects admin permission and row-level security rejections', () => {
@@ -80,6 +125,33 @@ describe('looksLikeAdminCommandIntent', () => {
     expect(looksLikeAdminCommandIntent('50% discount on all orders')).toBe(true);
     expect(looksLikeAdminCommandIntent('what are your hair products?')).toBe(false);
     expect(looksLikeAdminCommandIntent('Hi, I need a serum for dry skin')).toBe(false);
+  });
+});
+
+describe('DataProvider action stability', () => {
+  it('keeps the actions object stable across unrelated rerenders so click-driven updates do not cascade the full app', () => {
+    function ActionProbe() {
+      const { actions } = useData();
+      const [count, setCount] = useState(0);
+      const previous = useRef(actions);
+      const changed = previous.current !== actions;
+      previous.current = actions;
+
+      return React.createElement(
+        'div',
+        null,
+        React.createElement('span', { 'data-testid': 'action-state' }, String(changed)),
+        React.createElement('button', { type: 'button', onClick: () => setCount((value) => value + 1) }, String(count))
+      );
+    }
+
+    render(
+      React.createElement(DataProvider, null, React.createElement(ActionProbe))
+    );
+
+    expect(screen.getByTestId('action-state')).toHaveTextContent('false');
+    fireEvent.click(screen.getByRole('button', { name: '0' }));
+    expect(screen.getByTestId('action-state')).toHaveTextContent('false');
   });
 });
 
