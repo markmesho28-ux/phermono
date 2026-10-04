@@ -367,6 +367,34 @@ const slugify = (value: string) => {
   return normalized || `item-${Date.now()}`;
 };
 
+const resolveSingleRowByField = async (table: string, field: string, value: string, supabaseClient: any = supabase): Promise<any | null> => {
+  try {
+    const baseQuery = supabaseClient.from(table).select('id');
+    const matchedQuery = typeof baseQuery?.eq === 'function' ? baseQuery.eq(field, value) : baseQuery;
+    const limitedQuery = typeof matchedQuery?.limit === 'function' ? matchedQuery.limit(1) : matchedQuery;
+
+    if (limitedQuery && typeof limitedQuery.then === 'function') {
+      const result = await limitedQuery;
+      const rows = Array.isArray(result?.data) ? result.data : result?.data ? [result.data] : [];
+      return rows[0] ?? result?.data ?? null;
+    }
+
+    if (limitedQuery && typeof limitedQuery.maybeSingle === 'function') {
+      const result = await limitedQuery.maybeSingle();
+      return result?.data ?? result ?? null;
+    }
+
+    if (matchedQuery && typeof matchedQuery.maybeSingle === 'function') {
+      const result = await matchedQuery.maybeSingle();
+      return result?.data ?? result ?? null;
+    }
+
+    return null;
+  } catch (_) {
+    return null;
+  }
+};
+
 export const createUuid = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -446,17 +474,10 @@ export const resolveCategoryIdForRelation = async (
   const raw = String(candidateId ?? '').trim();
   if (!raw) return null;
 
-  // If the value is already a UUID, verify it actually exists as a row in the
-  // categories table before returning it. Returning a locally-generated UUID that
-  // has not yet been committed to Supabase (or was since deleted) will cause a
-  // foreign key constraint violation on the subcategories insert.
   if (isUuid(raw)) {
-    // Fast-path: check local categories state first (no network round-trip needed
-    // when the category was already fetched/inserted in this session).
     const localHit = currentCategories.find((c) => c.id === raw && isUuid(c.id));
     if (localHit) return raw;
 
-    // Not found locally — do a targeted DB lookup to confirm the row exists.
     try {
       const { data, error } = await supabaseClient
         .from('categories')
@@ -466,36 +487,29 @@ export const resolveCategoryIdForRelation = async (
         .maybeSingle();
       if (!error && data?.id) return String(data.id);
     } catch (_) {}
-
-    // UUID not found in DB — fall through to slug/name resolution below.
   }
 
-  // Non-UUID input: try to resolve via local state label/slug match.
-  const localMatch = currentCategories.find(
-    (category) =>
+  const localMatch = currentCategories.find((category) => {
+    const label = String(category.label || '').trim();
+    const slug = slugify(label);
+    return (
       String(category.id) === raw ||
-      slugify(category.label) === raw ||
-      category.label.toLowerCase() === raw.toLowerCase(),
-  );
+      (label && label.toLowerCase() === raw.toLowerCase()) ||
+      (slug && slug.toLowerCase() === raw.toLowerCase())
+    );
+  });
   if (localMatch && isUuid(localMatch.id)) return localMatch.id;
 
-  // Final fallback: query Supabase by slug or name.
   const candidates = Array.from(new Set([raw, slugify(raw)]));
   for (const value of candidates) {
     if (!value) continue;
-    try {
-      const { data, error } = await supabaseClient
-        .from('categories')
-        .select('id')
-        .or(`id.eq.${value},slug.eq.${value},name.eq.${value}`)
-        .limit(1)
-        .maybeSingle();
-      if (!error && data?.id) return String(data.id);
-    } catch (_) {}
+
+    for (const field of ['slug', 'name', 'id']) {
+      const found = await resolveSingleRowByField('categories', field, value, supabaseClient);
+      if (found?.id) return String(found.id);
+    }
   }
 
-  // All resolution attempts exhausted — return null. Callers must treat null as
-  // "category not found" and must NOT proceed with a subcategory insert.
   return null;
 };
 
@@ -588,30 +602,16 @@ const resolveSubcategoryId = async (value: any): Promise<string | null> => {
   // If it's already a UUID, return as-is
   if (isUuid(raw)) return raw;
 
-  // Try a few prioritized lookups: exact slug, exact name, slugified, then case-insensitive partial matches.
   const slugCandidate = slugify(raw);
   try {
-    // Exact slug
-    try {
-      const { data: bySlug } = await supabase.from('subcategories').select('id').eq('slug', raw).limit(1).maybeSingle();
-      if (bySlug && (bySlug as any).id) return String((bySlug as any).id);
-    } catch (_) {}
-
-    // Exact name
-    try {
-      const { data: byName } = await supabase.from('subcategories').select('id').eq('name', raw).limit(1).maybeSingle();
-      if (byName && (byName as any).id) return String((byName as any).id);
-    } catch (_) {}
-
-    // Slugified match
-    if (slugCandidate && slugCandidate !== raw) {
-      try {
-        const { data: bySlug2 } = await supabase.from('subcategories').select('id').eq('slug', slugCandidate).limit(1).maybeSingle();
-        if (bySlug2 && (bySlug2 as any).id) return String((bySlug2 as any).id);
-      } catch (_) {}
+    for (const candidate of [raw, slugCandidate]) {
+      if (!candidate) continue;
+      for (const field of ['slug', 'name']) {
+        const found = await resolveSingleRowByField('subcategories', field, candidate, supabase);
+        if (found?.id) return String(found.id);
+      }
     }
 
-    // Case-insensitive contains on slug and name as a last resort
     try {
       const { data: bySlugIlike } = await supabase.from('subcategories').select('id').ilike('slug', `%${raw}%`).limit(1).maybeSingle();
       if (bySlugIlike && (bySlugIlike as any).id) return String((bySlugIlike as any).id);
@@ -1073,8 +1073,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          normalizedProducts = await processProductRowsInChunks(productsData as any[], (chunk) => {
-            return chunk.map((r) => {
+          const seenIds = new Set<string>();
+          const flushChunk = (chunk: any[]) => {
+            const batch = chunk.map((r) => {
               let categoryVal: any = r.category_id ?? r.category ?? null;
               if (categoryVal && typeof categoryVal === 'string') {
                 const key = categoryVal.trim();
@@ -1138,7 +1139,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 persistedSubId = String(r.subcategory);
               }
 
-              return {
+              const item = {
                 id: r.id ?? Date.now(),
                 name: r.name ?? r.label ?? '',
                 brand: r.brand ?? r.brand_name ?? '',
@@ -1163,10 +1164,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 description: descriptionValue ?? null,
                 details: descriptionValue ?? null,
               } as any;
-            });
-          }, 200);
 
-          setProducts(normalizedProducts as any);
+              const key = String(item.id);
+              if (!seenIds.has(key)) {
+                seenIds.add(key);
+                return item;
+              }
+              return null;
+            }).filter(Boolean) as Product[];
+
+            if (batch.length > 0) {
+              normalizedProducts.push(...batch);
+              setProducts((prev) => {
+                const merged = [...prev];
+                const existing = new Set(merged.map((product) => String(product.id)));
+                for (const product of batch) {
+                  const key = String(product.id);
+                  if (!existing.has(key)) {
+                    merged.push(product);
+                    existing.add(key);
+                  }
+                }
+                return merged;
+              });
+            }
+          };
+
+          for (let index = 0; index < productsData.length; index += 200) {
+            const chunk = (productsData as any[]).slice(index, index + 200);
+            flushChunk(chunk);
+            if (index + 200 < productsData.length) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
         } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
           setProducts([]);
         }
@@ -2410,8 +2440,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         payload.brand = prod.brand ?? null;
       }
 
-      if (schemaInfo.productsHasCategoryId) payload.category_id = prod.category ?? null;
-      else if (schemaInfo.productsHasCategory) payload.category = prod.category ?? null;
+      const resolvedCategoryId = prod.category ? await resolveCategoryIdForRelation(prod.category, categories, supabase) : null;
+      if (prod.category && !resolvedCategoryId) {
+        alert('Failed to persist product: selected category could not be resolved to a database id.');
+        return tempId;
+      }
+
+      if (schemaInfo.productsHasCategoryId) payload.category_id = resolvedCategoryId ?? (isUuid(String(prod.category)) ? String(prod.category) : null);
+      else if (schemaInfo.productsHasCategory) payload.category = resolvedCategoryId ?? prod.category ?? null;
 
       // Determine exact subcategory DB value and require a canonical id when persisting
       if (productSubcategoryColumn && /id$/i.test(String(productSubcategoryColumn))) {
@@ -2419,12 +2455,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (prod.subcategory) {
           if (isUuid(String(prod.subcategory))) subId = String(prod.subcategory);
           else {
-            try {
-              const { data: found } = await supabase.from('subcategories').select('id').or(`slug.eq.${String(prod.subcategory)},name.eq.${String(prod.subcategory)}`).limit(1).maybeSingle();
-              if (found && found.id) subId = String(found.id);
-            } catch (e) {
-              // ignore resolution errors
-            }
+            subId = await resolveSubcategoryId(prod.subcategory);
           }
         }
 
@@ -2550,6 +2581,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
       // any incoming subcategory value (slug/name) to the canonical id first.
       const updatesForMapping: Partial<Product> = { ...updates };
+      if ((updatesForMapping as any).category !== undefined && (updatesForMapping as any).category !== null) {
+        const rawCategory = String((updatesForMapping as any).category).trim();
+        const resolvedCategory = rawCategory ? await resolveCategoryIdForRelation(rawCategory, categories, supabase) : null;
+        if (rawCategory && !resolvedCategory) {
+          alert('Failed to update product: selected category could not be resolved to a database id.');
+          return;
+        }
+        if (resolvedCategory) (updatesForMapping as any).category = resolvedCategory;
+      }
+
       if (schemaInfo.productsHasSubcategoryId && (updatesForMapping as any).subcategory !== undefined && (updatesForMapping as any).subcategory !== null) {
         const rawSub = String((updatesForMapping as any).subcategory);
         if (!isUuid(rawSub)) {

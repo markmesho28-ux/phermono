@@ -241,6 +241,112 @@ describe('DataProvider action stability', () => {
     });
   });
 
+  it('resolves a category name to the canonical category UUID before inserting a product', async () => {
+    const supabaseClient = require('../lib/supabase').default;
+    const categoryUuid = '123e4567-e89b-42d3-a456-426614174000';
+    const productInsertPayload: any = {};
+
+    supabaseClient.auth.getUser = jest.fn(() => Promise.resolve({ data: { user: { id: 'admin-1' } } }));
+    const profileRow = { id: 'admin-1', role: 'admin', is_admin: true };
+
+    supabaseClient.from.mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              maybeSingle: jest.fn(() => Promise.resolve({ data: profileRow, error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === 'categories') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              limit: jest.fn(() => Promise.resolve({ data: [{ id: categoryUuid, name: 'Hair care', slug: 'hair-care' }], error: null })),
+              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: categoryUuid, name: 'Hair care', slug: 'hair-care' }, error: null })),
+            })),
+            or: jest.fn(() => ({
+              limit: jest.fn(() => Promise.resolve({ data: [{ id: categoryUuid, name: 'Hair care', slug: 'hair-care' }], error: null })),
+              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: categoryUuid, name: 'Hair care', slug: 'hair-care' }, error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === 'subcategories') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              limit: jest.fn(() => Promise.resolve({ data: [{ id: 'sub-1', name: 'Gel', slug: 'gel' }], error: null })),
+              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: 'sub-1', name: 'Gel', slug: 'gel' }, error: null })),
+            })),
+            ilike: jest.fn(() => ({
+              limit: jest.fn(() => Promise.resolve({ data: [{ id: 'sub-1', name: 'Gel', slug: 'gel' }], error: null })),
+              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: 'sub-1', name: 'Gel', slug: 'gel' }, error: null })),
+            })),
+            or: jest.fn(() => ({
+              limit: jest.fn(() => Promise.resolve({ data: [{ id: 'sub-1', name: 'Gel', slug: 'gel' }], error: null })),
+              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: 'sub-1', name: 'Gel', slug: 'gel' }, error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === 'products') {
+        return {
+          insert: jest.fn((values) => {
+            productInsertPayload.payload = values[0];
+            return {
+              select: jest.fn(() => ({
+                single: jest.fn(() => Promise.resolve({ data: { ...values[0], id: 1 }, error: null })),
+              })),
+            };
+          }),
+          select: jest.fn(() => Promise.resolve({ data: [] })),
+        };
+      }
+      if (table === 'brands') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'orders') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'site_settings') return { select: jest.fn(() => ({ order: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve({ data: [] })) })) })) };
+      return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+    });
+
+    function ProductInsertProbe() {
+      const { categories, actions } = useData();
+      return React.createElement(
+        'button',
+        { type: 'button', onClick: () => actions.addProduct({
+          id: Date.now(),
+          name: 'Glow Serum',
+          brand: 'Aesop',
+          category: 'Hair care',
+          subcategory: 'Gel',
+          sellingPrice: 120,
+          marketPrice: 150,
+          image: '',
+          description: 'Hydrating daily serum',
+          rating: 5,
+          reviews: 1,
+          stock: 10,
+          isHidden: false,
+        } as any) },
+        categories[0]?.id || 'no-cat'
+      );
+    }
+
+    render(
+      React.createElement(AuthProvider, null,
+        React.createElement(DataProvider, null, React.createElement(ProductInsertProbe))
+      )
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: categoryUuid }));
+
+    await waitFor(() => {
+      expect(productInsertPayload.payload.category_id).toBe(categoryUuid);
+      expect(productInsertPayload.payload.subcategory_id).toBe('sub-1');
+    });
+  });
+
   it('keeps a newly inserted product in its category after refresh and keeps it visible in CategoryView', async () => {
     const supabaseClient = require('../lib/supabase').default;
     const productRow = {
