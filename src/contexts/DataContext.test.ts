@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData } from './DataContext';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
 
@@ -152,6 +152,27 @@ describe('DataProvider action stability', () => {
     expect(screen.getByTestId('action-state')).toHaveTextContent('false');
     fireEvent.click(screen.getByRole('button', { name: '0' }));
     expect(screen.getByTestId('action-state')).toHaveTextContent('false');
+  });
+
+  it('does not persist the full product catalog to localStorage because that synchronous serialization blocks the UI thread during catalog refreshes', async () => {
+    localStorage.clear();
+    localStorage.setItem('phermono_data_v1', JSON.stringify({
+      categories: [{ id: 'cat-1', label: 'Skincare', icon: 'Sparkles', color: '', accent: '', subcategories: [], brands: [] }],
+      brands: [],
+      products: [{ id: 1, name: 'Alpha Serum' }],
+      priceRanges: [],
+      orders: [],
+    }));
+
+    render(
+      React.createElement(DataProvider, null, React.createElement('div', null, 'boot'))
+    );
+
+    await waitFor(() => {
+      const raw = localStorage.getItem('phermono_data_v1');
+      expect(raw).not.toBeNull();
+      expect(JSON.parse(raw || '{}')).not.toHaveProperty('products');
+    });
   });
 });
 

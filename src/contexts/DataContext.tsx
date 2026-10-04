@@ -14,6 +14,27 @@ const EMPTY_DATA = {
   orders: [] as Order[],
 };
 
+export async function processProductRowsInChunks<T>(
+  rows: T[],
+  transformer: (chunk: T[]) => Product[],
+  chunkSize = 200,
+): Promise<Product[]> {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  const normalized: Product[] = [];
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    normalized.push(...transformer(chunk));
+    if (index + chunkSize < rows.length) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  return normalized;
+}
+
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
   free_shipping_threshold: 200,
   active_promo: 'none',
@@ -764,10 +785,11 @@ function getInitialData() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
+        const { products: _ignoredProducts, ...safeParsed } = parsed;
         return {
           ...EMPTY_DATA,
-          ...parsed,
-          categories: Array.isArray(parsed.categories) ? parsed.categories : [],
+          ...safeParsed,
+          categories: Array.isArray(safeParsed.categories) ? safeParsed.categories : [],
         };
       }
     }
@@ -800,13 +822,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const payload = { categories, brands, products, priceRanges, orders };
+    const payload = { categories, brands, priceRanges, orders };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
       console.warn('LocalStorage save error:', e);
     }
-  }, [categories, brands, products, priceRanges, orders]);
+  }, [categories, brands, products.length, priceRanges, orders]);
 
   const updateSiteSettings = async (updates: Partial<SiteSettings>) => {
     const baseSettings = { ...DEFAULT_SITE_SETTINGS, ...siteSettings };
@@ -1015,96 +1037,98 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          normalizedProducts = (productsData as any[]).map((r) => {
-            let categoryVal: any = r.category_id ?? r.category ?? null;
-            if (categoryVal && typeof categoryVal === 'string') {
-              const key = categoryVal.trim();
-              const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
-              if (mappedCategory) {
-                categoryVal = mappedCategory.id;
+          normalizedProducts = await processProductRowsInChunks(productsData as any[], (chunk) => {
+            return chunk.map((r) => {
+              let categoryVal: any = r.category_id ?? r.category ?? null;
+              if (categoryVal && typeof categoryVal === 'string') {
+                const key = categoryVal.trim();
+                const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
+                if (mappedCategory) {
+                  categoryVal = mappedCategory.id;
+                }
               }
-            }
 
-            let subVal: any = null;
-            const col = detectedColumn;
-            const tryLookup = (v: string | undefined | null) => {
-              if (!v) return null;
-              const raw = String(v).trim();
-              if (!raw) return null;
-              if (subLookup[raw]) return String(subLookup[raw]);
-              const lower = raw.toLowerCase();
-              if (subLookup[lower]) return String(subLookup[lower]);
-              return null;
-            };
+              let subVal: any = null;
+              const col = detectedColumn;
+              const tryLookup = (v: string | undefined | null) => {
+                if (!v) return null;
+                const raw = String(v).trim();
+                if (!raw) return null;
+                if (subLookup[raw]) return String(subLookup[raw]);
+                const lower = raw.toLowerCase();
+                if (subLookup[lower]) return String(subLookup[lower]);
+                return null;
+              };
 
-            if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-              const val = r[col];
-              if (/id$/i.test(col)) {
-                subVal = String(val);
-                const mapped = tryLookup(subVal);
-                if (mapped) subVal = mapped;
-              } else {
-                const candidate = String(val).trim();
+              if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+                const val = r[col];
+                if (/id$/i.test(col)) {
+                  subVal = String(val);
+                  const mapped = tryLookup(subVal);
+                  if (mapped) subVal = mapped;
+                } else {
+                  const candidate = String(val).trim();
+                  const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
+                  subVal = mapped ?? candidate;
+                }
+              } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+                const candidate = String(r.subcategory_id).trim();
+                subVal = tryLookup(candidate) || candidate;
+              } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
+                const candidate = String(r.subcategory).trim();
                 const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
                 subVal = mapped ?? candidate;
               }
-            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-              const candidate = String(r.subcategory_id).trim();
-              subVal = tryLookup(candidate) || candidate;
-            } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
-              const candidate = String(r.subcategory).trim();
-              const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
-              subVal = mapped ?? candidate;
-            }
 
-            const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
-            const imageValue = resolvePersistedProductImage(r);
-            const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
-            const dbSellingPrice = toNumberOrUndefined(r.selling_price);
-            const dbMarketPrice = toNumberOrUndefined(r.market_price);
-            const dbAdminCost = toNumberOrUndefined(r.admin_cost);
-            const dbStock = toNumberOrUndefined(r.stock);
-            const normalizedImage = normalizeProductImage(imageValue);
+              const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
+              const imageValue = resolvePersistedProductImage(r);
+              const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
+              const dbSellingPrice = toNumberOrUndefined(r.selling_price);
+              const dbMarketPrice = toNumberOrUndefined(r.market_price);
+              const dbAdminCost = toNumberOrUndefined(r.admin_cost);
+              const dbStock = toNumberOrUndefined(r.stock);
+              const normalizedImage = normalizeProductImage(imageValue);
 
-            let persistedSubId: string | null = null;
-            if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-              if (/id$/i.test(col)) persistedSubId = String(r[col]);
-              else {
-                const candidate = String(r[col]).trim();
-                if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
+              let persistedSubId: string | null = null;
+              if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+                if (/id$/i.test(col)) persistedSubId = String(r[col]);
+                else {
+                  const candidate = String(r[col]).trim();
+                  if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
+                }
+              } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+                persistedSubId = String(r.subcategory_id);
+              } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
+                persistedSubId = String(r.subcategory);
               }
-            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-              persistedSubId = String(r.subcategory_id);
-            } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
-              persistedSubId = String(r.subcategory);
-            }
 
-            return {
-              id: r.id ?? Date.now(),
-              name: r.name ?? r.label ?? '',
-              brand: r.brand ?? r.brand_name ?? '',
-              createdAt: r.created_at ?? r.createdAt ?? null,
-              category: categoryVal ?? null,
-              subcategory: subVal ?? null,
-              subcategoryId: persistedSubId ?? null,
-              originalPrice: dbMarketPrice ?? null,
-              sellingPrice: dbSellingPrice ?? null,
-              marketPrice: dbMarketPrice ?? null,
-              adminCost: dbAdminCost ?? null,
-              stock: dbStock ?? 0,
-              isHidden: Boolean(r.is_hidden),
-              cost: dbAdminCost ?? null,
-              rating: r.rating ?? 0,
-              reviews: r.reviews ?? 0,
-              skinType: r.skin_type ?? null,
-              tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
-              hero: r.hero ?? bestSellerFlag,
-              image: normalizedImage,
-              image_url: normalizedImage,
-              description: descriptionValue ?? null,
-              details: descriptionValue ?? null,
-            } as any;
-          });
+              return {
+                id: r.id ?? Date.now(),
+                name: r.name ?? r.label ?? '',
+                brand: r.brand ?? r.brand_name ?? '',
+                createdAt: r.created_at ?? r.createdAt ?? null,
+                category: categoryVal ?? null,
+                subcategory: subVal ?? null,
+                subcategoryId: persistedSubId ?? null,
+                originalPrice: dbMarketPrice ?? null,
+                sellingPrice: dbSellingPrice ?? null,
+                marketPrice: dbMarketPrice ?? null,
+                adminCost: dbAdminCost ?? null,
+                stock: dbStock ?? 0,
+                isHidden: Boolean(r.is_hidden),
+                cost: dbAdminCost ?? null,
+                rating: r.rating ?? 0,
+                reviews: r.reviews ?? 0,
+                skinType: r.skin_type ?? null,
+                tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
+                hero: r.hero ?? bestSellerFlag,
+                image: normalizedImage,
+                image_url: normalizedImage,
+                description: descriptionValue ?? null,
+                details: descriptionValue ?? null,
+              } as any;
+            });
+          }, 200);
 
           setProducts(normalizedProducts as any);
         } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
@@ -1214,8 +1238,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          parsed.products = [];
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          const { products: _ignoredProducts, ...safeParsed } = parsed;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(safeParsed));
         }
       }
     } catch (e) {
