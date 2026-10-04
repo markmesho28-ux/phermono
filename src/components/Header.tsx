@@ -48,11 +48,33 @@ export default function Header({
   const { user, logout } = useAuth();
   const { siteSettings, updateSiteSettings } = useData();
   const headerRef = useRef<HTMLDivElement>(null);
-  const lastMenuToggleRef = useRef(0);
   const lastCartToggleRef = useRef(0);
   const lastAuthActionRef = useRef(0);
   const [bannerDraft, setBannerDraft] = useState('');
   const [isBannerEditing, setIsBannerEditing] = useState(false);
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
+  const searchSyncRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    return () => {
+      if (searchSyncRef.current) {
+        window.clearTimeout(searchSyncRef.current);
+      }
+    };
+  }, []);
+
+  const queueSearchSync = (nextValue: string) => {
+    if (searchSyncRef.current) {
+      window.clearTimeout(searchSyncRef.current);
+    }
+    searchSyncRef.current = window.setTimeout(() => {
+      onSearchChange(nextValue);
+    }, 80);
+  };
 
   const handleAuthAction = (callback: () => void, event?: React.SyntheticEvent | React.PointerEvent | React.TouchEvent) => {
     if (event && typeof event.stopPropagation === 'function') {
@@ -64,16 +86,6 @@ export default function Header({
     }
     lastAuthActionRef.current = now;
     callback();
-  };
-
-  const handleMenuAction = (event: React.SyntheticEvent) => {
-    event.stopPropagation();
-    const now = Date.now();
-    if (now - lastMenuToggleRef.current < 400) {
-      return;
-    }
-    lastMenuToggleRef.current = now;
-    if (onMenuToggle) onMenuToggle(true);
   };
 
   const handleCartAction = (event: React.SyntheticEvent) => {
@@ -318,14 +330,10 @@ export default function Header({
                 <div className="flex items-center gap-2 w-full">
                   <button
                     type="button"
-                    onPointerDown={(event) => {
+                    onClick={(event) => {
                       event.stopPropagation();
-                      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                        event.preventDefault();
-                      }
-                      handleMenuAction(event);
+                      if (onMenuToggle) onMenuToggle(true);
                     }}
-                    onClick={handleMenuAction}
                     className="header-menu-btn md:hidden flex shrink-0 items-center justify-center w-11 h-11 rounded-full bg-gradient-to-b from-white to-brand-cream border border-brand-gold/45 text-brand-black hover:bg-brand-gold-light/60 active:scale-95 active:border-brand-gold active:bg-brand-gold-light transition-all duration-200 cursor-pointer touch-target shadow-xs select-none z-10 relative"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     aria-label="Open categories menu"
@@ -337,14 +345,24 @@ export default function Header({
                     <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-brand-gold group-hover:text-stone-600 transition-colors duration-300" />
                     <input
                       type="text"
-                      value={searchQuery}
-                      onChange={(e) => onSearchChange(e.target.value)}
+                      value={localSearchQuery}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setLocalSearchQuery(nextValue);
+                        queueSearchSync(nextValue);
+                      }}
                       placeholder="Search luxury cosmetics, skincare, perfumes..."
                       className="w-full pl-11 pr-10 py-2.5 sm:py-3 text-sm max-md:text-base bg-[#FAF8F5] hover:bg-white border border-brand-gold/30 hover:border-brand-gold/60 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/30 rounded-full focus:bg-white shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] focus:shadow-[0_2px_15px_rgba(245,166,35,0.15)] transition-all duration-300 placeholder-stone-400 text-brand-black"
                       style={{ fontSize: '16px' }}
                     />
-                    {searchQuery && (
-                      <button type="button" onClick={() => onSearchChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-brand-black transition-colors duration-200 touch-target">
+                    {localSearchQuery && (
+                      <button type="button" onClick={() => {
+                        setLocalSearchQuery('');
+                        if (searchSyncRef.current) {
+                          window.clearTimeout(searchSyncRef.current);
+                        }
+                        onSearchChange('');
+                      }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-brand-black transition-colors duration-200 touch-target">
                         <X size={15} />
                       </button>
                     )}
@@ -356,12 +374,6 @@ export default function Header({
                 {/* Favorites Button */}
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                      event.preventDefault();
-                      if (onWishlistOpen) onWishlistOpen();
-                    }
-                  }}
                   onClick={() => {
                     if (onWishlistOpen) onWishlistOpen();
                   }}
@@ -379,14 +391,10 @@ export default function Header({
                 {/* Bag Button */}
                 <button
                   type="button"
-                  onPointerDown={(event) => {
+                  onClick={(event) => {
                     event.stopPropagation();
-                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                      event.preventDefault();
-                    }
                     handleCartAction(event);
                   }}
-                  onClick={handleCartAction}
                   style={{ touchAction: 'manipulation' }}
                   className={`header-cart-btn relative inline-flex min-w-[68px] shrink-0 items-center justify-center gap-1 rounded-full bg-gradient-to-b from-[#242426] via-[#1a1a1c] to-[#111111] text-white px-3 py-2 text-[7.5px] font-bold whitespace-nowrap border border-brand-gold/40 shadow-[0_2px_8px_rgba(0,0,0,0.18)] hover:border-brand-gold hover:shadow-[0_4px_16px_rgba(245,166,35,0.25)] hover:-translate-y-0.5 active:translate-y-0 active:scale-95 active:border-brand-gold active:shadow-[0_0_12px_rgba(245,166,35,0.4)] transition-all duration-200 group cursor-pointer touch-target sm:gap-1.5 sm:px-2 sm:py-2.5 sm:text-[8.5px] md:px-3.5 md:py-2 md:text-[10px] sm:min-w-0 md:min-w-0 ${
                     (activeCategory === 'cart' || cartOpen) ? 'active border-brand-gold ring-1 ring-brand-gold/60 shadow-[0_0_14px_rgba(245,166,35,0.35)]' : ''
@@ -408,12 +416,6 @@ export default function Header({
                 {/* Tracking Button */}
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                      event.preventDefault();
-                      if (onTrackOpen) onTrackOpen(true);
-                    }
-                  }}
                   onClick={() => {
                     if (onTrackOpen) onTrackOpen(true);
                   }}
@@ -431,12 +433,6 @@ export default function Header({
                 {/* Assistant Button */}
                 <button
                   type="button"
-                  onPointerDown={(event) => {
-                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
-                      event.preventDefault();
-                      if (onAssistantOpen) onAssistantOpen();
-                    }
-                  }}
                   onClick={() => {
                     if (onAssistantOpen) onAssistantOpen();
                   }}
