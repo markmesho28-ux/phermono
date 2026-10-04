@@ -132,6 +132,7 @@ export interface DataActions {
   updateOrder: (id: number | string, updates: Partial<Order>) => void;
   deleteOrder: (id: number | string) => Promise<void> | void;
   adminClearDatabase?: () => Promise<void>;
+  refreshCatalog?: () => Promise<void>;
 }
 
 export interface SiteSettings {

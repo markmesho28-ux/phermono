@@ -782,7 +782,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [initial] = useState(() => getInitialData());
   const [categories, setCategories] = useState<Category[]>(initial.categories);
   const [brands, setBrands] = useState<string[]>(initial.brands);
-  const [products, setProducts] = useState<Product[]>(initial.products);
+  // IMPORTANT: Do NOT hydrate `products` from localStorage on startup to avoid
+  // displaying stale/deleted items. Always fetch fresh products from Supabase
+  // on mount/focus/navigation (see fetchRemote triggers below).
+  const [products, setProducts] = useState<Product[]>([]);
   const [priceRanges] = useState<PriceRange[]>(initial.priceRanges);
   const [orders, setOrders] = useState<Order[]>(initial.orders);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => ({ ...DEFAULT_SITE_SETTINGS, ...(readCachedSiteSettings() || {}) }));
@@ -910,215 +913,352 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!supabase || didInitialFetchRef.current) return;
-    didInitialFetchRef.current = true;
+  const mountedRef = useRef(true);
+  const isFetchingRef = useRef(false);
+  const fetchQueuedRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    let mounted = true;
-    const fetchRemote = async () => {
-      setLoading(true);
-      try {
-        const [
-          { data: productsData },
-          { data: ordersData },
-          { data: categoriesData },
-          { data: subcategoriesData },
-          { data: brandsData },
-          { data: settingsData },
-        ] = await Promise.all([
-          supabase.from('products').select('*'),
-          supabase.from('orders').select('*'),
-          supabase.from('categories').select('*'),
-          supabase.from('subcategories').select('*'),
-          supabase.from('brands').select('*'),
-          supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
-        ]);
+  const fetchRemote = async (isBackground = false) => {
+    if (!supabase) return;
+    if (isFetchingRef.current) {
+      fetchQueuedRef.current = true;
+      return;
+    }
+    isFetchingRef.current = true;
+    if (!isBackground) setLoading(true);
 
-        if (!mounted) return;
+    try {
+      const [
+        { data: productsData },
+        { data: ordersData },
+        { data: categoriesData },
+        { data: subcategoriesData },
+        { data: brandsData },
+        { data: settingsData },
+      ] = await Promise.all([
+        supabase.from('products').select('*'),
+        supabase.from('orders').select('*'),
+        supabase.from('categories').select('*'),
+        supabase.from('subcategories').select('*'),
+        supabase.from('brands').select('*'),
+        supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
+      ]);
 
-        const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
-        const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
-        const nextBrands = Array.isArray(brandsData)
-          ? (brandsData as any[])
-              .filter((brand: any) => !brand?.category_id)
-              .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
-              .filter(Boolean)
-          : [];
+      if (!mountedRef.current) return;
 
-        const categoriesById: Record<string, Category> = Object.fromEntries(
-          nextCategories.map((category) => [String(category.id), category])
-        );
-        const categoriesBySlug: Record<string, Category> = {};
-        nextCategories.forEach((category) => {
-          const label = String(category.label || '').trim();
-          if (label) {
-            categoriesBySlug[label.toLowerCase()] = category;
-            categoriesBySlug[slugify(label).toLowerCase()] = category;
-          }
-        });
+      const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
+      const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
+      const nextBrands = Array.isArray(brandsData)
+        ? (brandsData as any[])
+            .filter((brand: any) => !brand?.category_id)
+            .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
+            .filter(Boolean)
+        : [];
 
-        let detectedColumn: string | null = productSubcategoryColumnRef.current;
-        if (Array.isArray(productsData) && productsData.length > 0) {
-          const sample = productsData[0] || {};
-          const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
-          const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
-          if (!productSubcategoryColumnRef.current) setProductSubcategoryColumn(detected);
-          detectedColumn = detected ?? productSubcategoryColumnRef.current;
+      const categoriesById: Record<string, Category> = Object.fromEntries(
+        nextCategories.map((category) => [String(category.id), category])
+      );
+      const categoriesBySlug: Record<string, Category> = {};
+      nextCategories.forEach((category) => {
+        const label = String(category.label || '').trim();
+        if (label) {
+          categoriesBySlug[label.toLowerCase()] = category;
+          categoriesBySlug[slugify(label).toLowerCase()] = category;
+        }
+      });
+
+      let detectedColumn: string | null = productSubcategoryColumnRef.current;
+      if (Array.isArray(productsData) && productsData.length > 0) {
+        const sample = productsData[0] || {};
+        const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
+        const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
+        if (!productSubcategoryColumnRef.current) setProductSubcategoryColumn(detected);
+        detectedColumn = detected ?? productSubcategoryColumnRef.current;
+      }
+
+      let normalizedProducts: Product[] = [];
+      if (Array.isArray(productsData) && productsData.length > 0) {
+        const subLookup: Record<string, string> = {};
+        if (Array.isArray(subcategoriesData)) {
+          (subcategoriesData as any[]).forEach((s: any) => {
+            const sid = s?.id ? String(s.id) : '';
+            const slug = s?.slug ? String(s.slug) : '';
+            const name = s?.name ? String(s.name) : '';
+            if (sid) subLookup[sid] = sid;
+            if (slug) subLookup[slug] = sid || slug;
+            if (name) subLookup[name.toLowerCase().trim()] = sid || name.toLowerCase().trim();
+            if (slug) subLookup[slug.toLowerCase().trim()] = sid || slug.toLowerCase().trim();
+          });
         }
 
-        let normalizedProducts: Product[] = [];
-        if (Array.isArray(productsData) && productsData.length > 0) {
-          const subLookup: Record<string, string> = {};
-          if (Array.isArray(subcategoriesData)) {
-            (subcategoriesData as any[]).forEach((s: any) => {
-              const sid = s?.id ? String(s.id) : '';
-              const slug = s?.slug ? String(s.slug) : '';
-              const name = s?.name ? String(s.name) : '';
-              if (sid) subLookup[sid] = sid;
-              if (slug) subLookup[slug] = sid || slug;
-              if (name) subLookup[name.toLowerCase().trim()] = sid || name.toLowerCase().trim();
-              if (slug) subLookup[slug.toLowerCase().trim()] = sid || slug.toLowerCase().trim();
-            });
+        normalizedProducts = (productsData as any[]).map((r) => {
+          let categoryVal: any = r.category_id ?? r.category ?? null;
+          if (categoryVal && typeof categoryVal === 'string') {
+            const key = categoryVal.trim();
+            const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
+            if (mappedCategory) {
+              categoryVal = mappedCategory.id;
+            }
           }
 
-          normalizedProducts = (productsData as any[]).map((r) => {
-            let categoryVal: any = r.category_id ?? r.category ?? null;
-            if (categoryVal && typeof categoryVal === 'string') {
-              const key = categoryVal.trim();
-              const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
-              if (mappedCategory) {
-                categoryVal = mappedCategory.id;
-              }
-            }
+          let subVal: any = null;
+          const col = detectedColumn;
+          const tryLookup = (v: string | undefined | null) => {
+            if (!v) return null;
+            const raw = String(v).trim();
+            if (!raw) return null;
+            if (subLookup[raw]) return String(subLookup[raw]);
+            const lower = raw.toLowerCase();
+            if (subLookup[lower]) return String(subLookup[lower]);
+            return null;
+          };
 
-            let subVal: any = null;
-            const col = detectedColumn;
-            const tryLookup = (v: string | undefined | null) => {
-              if (!v) return null;
-              const raw = String(v).trim();
-              if (!raw) return null;
-              if (subLookup[raw]) return String(subLookup[raw]);
-              const lower = raw.toLowerCase();
-              if (subLookup[lower]) return String(subLookup[lower]);
-              return null;
-            };
-
-            if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-              const val = r[col];
-              if (/id$/i.test(col)) {
-                subVal = String(val);
-                const mapped = tryLookup(subVal);
-                if (mapped) subVal = mapped;
-              } else {
-                const candidate = String(val).trim();
-                const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
-                subVal = mapped ?? candidate;
-              }
-            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-              const candidate = String(r.subcategory_id).trim();
-              subVal = tryLookup(candidate) || candidate;
-            } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
-              const candidate = String(r.subcategory).trim();
+          if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+            const val = r[col];
+            if (/id$/i.test(col)) {
+              subVal = String(val);
+              const mapped = tryLookup(subVal);
+              if (mapped) subVal = mapped;
+            } else {
+              const candidate = String(val).trim();
               const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
               subVal = mapped ?? candidate;
             }
+          } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+            const candidate = String(r.subcategory_id).trim();
+            subVal = tryLookup(candidate) || candidate;
+          } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
+            const candidate = String(r.subcategory).trim();
+            const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
+            subVal = mapped ?? candidate;
+          }
 
-            const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
-            const imageValue = resolvePersistedProductImage(r);
-            const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
-            const dbSellingPrice = toNumberOrUndefined(r.selling_price);
-            const dbMarketPrice = toNumberOrUndefined(r.market_price);
-            const dbAdminCost = toNumberOrUndefined(r.admin_cost);
-            const dbStock = toNumberOrUndefined(r.stock);
-            const normalizedImage = normalizeProductImage(imageValue);
+          const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
+          const imageValue = resolvePersistedProductImage(r);
+          const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
+          const dbSellingPrice = toNumberOrUndefined(r.selling_price);
+          const dbMarketPrice = toNumberOrUndefined(r.market_price);
+          const dbAdminCost = toNumberOrUndefined(r.admin_cost);
+          const dbStock = toNumberOrUndefined(r.stock);
+          const normalizedImage = normalizeProductImage(imageValue);
 
-            let persistedSubId: string | null = null;
-            if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-              if (/id$/i.test(col)) persistedSubId = String(r[col]);
-              else {
-                const candidate = String(r[col]).trim();
-                if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
-              }
-            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-              persistedSubId = String(r.subcategory_id);
-            } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
-              persistedSubId = String(r.subcategory);
+          let persistedSubId: string | null = null;
+          if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+            if (/id$/i.test(col)) persistedSubId = String(r[col]);
+            else {
+              const candidate = String(r[col]).trim();
+              if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
             }
+          } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+            persistedSubId = String(r.subcategory_id);
+          } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
+            persistedSubId = String(r.subcategory);
+          }
 
-            return {
-              id: r.id ?? Date.now(),
-              name: r.name ?? r.label ?? '',
-              brand: r.brand ?? r.brand_name ?? '',
-              createdAt: r.created_at ?? r.createdAt ?? null,
-              category: categoryVal ?? null,
-              subcategory: subVal ?? null,
-              subcategoryId: persistedSubId ?? null,
-              originalPrice: dbMarketPrice ?? null,
-              sellingPrice: dbSellingPrice ?? null,
-              marketPrice: dbMarketPrice ?? null,
-              adminCost: dbAdminCost ?? null,
-              stock: dbStock ?? 0,
-              isHidden: Boolean(r.is_hidden),
-              cost: dbAdminCost ?? null,
-              rating: r.rating ?? 0,
-              reviews: r.reviews ?? 0,
-              skinType: r.skin_type ?? null,
-              tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
-              hero: r.hero ?? bestSellerFlag,
-              image: normalizedImage,
-              image_url: normalizedImage,
-              description: descriptionValue ?? null,
-              details: descriptionValue ?? null,
-            } as any;
-          });
+          return {
+            id: r.id ?? Date.now(),
+            name: r.name ?? r.label ?? '',
+            brand: r.brand ?? r.brand_name ?? '',
+            createdAt: r.created_at ?? r.createdAt ?? null,
+            category: categoryVal ?? null,
+            subcategory: subVal ?? null,
+            subcategoryId: persistedSubId ?? null,
+            originalPrice: dbMarketPrice ?? null,
+            sellingPrice: dbSellingPrice ?? null,
+            marketPrice: dbMarketPrice ?? null,
+            adminCost: dbAdminCost ?? null,
+            stock: dbStock ?? 0,
+            isHidden: Boolean(r.is_hidden),
+            cost: dbAdminCost ?? null,
+            rating: r.rating ?? 0,
+            reviews: r.reviews ?? 0,
+            skinType: r.skin_type ?? null,
+            tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
+            hero: r.hero ?? bestSellerFlag,
+            image: normalizedImage,
+            image_url: normalizedImage,
+            description: descriptionValue ?? null,
+            details: descriptionValue ?? null,
+          } as any;
+        });
 
-          setProducts(normalizedProducts as any);
+        setProducts(normalizedProducts as any);
+      } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
+        setProducts([]);
+      }
+
+      if (nextCategories.length > 0) {
+        setCategories(nextCategories);
+      } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
+        setCategories([]);
+      }
+      setBrands(nextBrands);
+
+      const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
+      setBrandsHaveCategory(detectedBrandsHaveCategory);
+
+      if (Array.isArray(brandsData) && brandsData.length > 0) {
+        setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
+      }
+      if (Array.isArray(ordersData)) {
+        setOrders(ordersData.map((row: any) => {
+          const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
+          const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
+          const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
+          return {
+            ...row,
+            createdAt,
+            items: itemsNormalized,
+            total: persistedTotal,
+          };
+        }) as any);
+      }
+
+      const settingsMap = Array.isArray(settingsData) ? settingsData : [];
+      const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
+      const cachedSettings = readCachedSiteSettings() || {};
+      const remoteSettings = ((configRow?.value as Partial<SiteSettings>) || cachedSettings) as Partial<SiteSettings>;
+      const mergedSettings = getEffectiveSiteSettings({ ...cachedSettings, ...remoteSettings });
+      setSiteSettings(mergedSettings);
+      writeCachedSiteSettings(mergedSettings);
+
+      setRemoteError(null);
+      setLoading(false);
+    } catch (err) {
+      console.warn('Supabase sync failed:', err);
+      setRemoteError(String(err));
+      setLoading(false);
+    } finally {
+      isFetchingRef.current = false;
+      if (fetchQueuedRef.current && mountedRef.current) {
+        fetchQueuedRef.current = false;
+        void fetchRemote(true);
+      }
+    }
+  };
+
+  const scheduleRefetch = (delay = 150) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) {
+        void fetchRemote(true);
+      }
+    }, delay);
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (!supabase) return;
+
+    if (!didInitialFetchRef.current) {
+      didInitialFetchRef.current = true;
+      // Remove any persisted products from localStorage to avoid showing stale
+      // deleted items. Preserve other cached payload fields (categories, brands)
+      // but ensure `products` is empty until the live fetch completes.
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            parsed.products = [];
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          }
         }
+      } catch (e) {
+        // ignore storage errors
+      }
+      void fetchRemote(false);
+    }
 
-        if (nextCategories.length > 0) {
-          setCategories(nextCategories);
+    // Set up Supabase Realtime channel for instant multi-client synchronization
+    const channel = supabase
+      .channel('phermono-realtime-catalog-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload) => {
+          console.debug('Realtime update: products changed', payload);
+          scheduleRefetch(100);
         }
-        setBrands(nextBrands);
-
-        const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
-        setBrandsHaveCategory(detectedBrandsHaveCategory);
-
-        if (Array.isArray(brandsData) && brandsData.length > 0) {
-          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'categories' },
+        (payload) => {
+          console.debug('Realtime update: categories changed', payload);
+          scheduleRefetch(100);
         }
-        if (Array.isArray(ordersData)) {
-          setOrders(ordersData.map((row: any) => {
-            const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
-            const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
-            const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
-            return {
-              ...row,
-              createdAt,
-              items: itemsNormalized,
-              total: persistedTotal,
-            };
-          }) as any);
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subcategories' },
+        (payload) => {
+          console.debug('Realtime update: subcategories changed', payload);
+          scheduleRefetch(100);
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'brands' },
+        (payload) => {
+          console.debug('Realtime update: brands changed', payload);
+          scheduleRefetch(100);
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn('Realtime subscription error:', err);
+        }
+      });
 
-        const settingsMap = Array.isArray(settingsData) ? settingsData : [];
-        const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
-        const cachedSettings = readCachedSiteSettings() || {};
-        const remoteSettings = ((configRow?.value as Partial<SiteSettings>) || cachedSettings) as Partial<SiteSettings>;
-        const mergedSettings = getEffectiveSiteSettings({ ...cachedSettings, ...remoteSettings });
-        setSiteSettings(mergedSettings);
-        writeCachedSiteSettings(mergedSettings);
-
-        setRemoteError(null);
-        setLoading(false);
-      } catch (err) {
-        console.warn('Supabase sync failed:', err);
-        setRemoteError(String(err));
-        setLoading(false);
+    // Re-synchronize when tab becomes visible or focused (e.g. user returns to app)
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        // Immediately fetch fresh data (bypass background debounce) when the user
+        // returns to the tab so deleted products do not persist from cache.
+        void fetchRemote(false);
       }
     };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 
-    void fetchRemote();
-    return () => { mounted = false; };
+    // Also re-sync immediately when the browser regains network connectivity
+    // to avoid showing stale cached products after reconnect.
+    const handleOnline = () => {
+      void fetchRemote(false);
+    };
+    window.addEventListener('online', handleOnline);
+
+    // Re-sync on history navigation (back/forward)
+    const handlePopstate = () => {
+      void fetchRemote(false);
+    };
+    window.addEventListener('popstate', handlePopstate);
+
+    // Periodic safety sync every 30s when tab is active in case of disconnected websocket
+    const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        scheduleRefetch(0);
+      }
+    }, 30000);
+
+    return () => {
+      mountedRef.current = false;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      clearInterval(intervalId);
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('popstate', handlePopstate);
+      if (supabase && channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // In-app confirmation modal state and helper
@@ -2241,85 +2381,83 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return tempId;
     }
   };
-  const updateProduct = (id: number, updates: Partial<Product>) => {
+  const updateProduct = async (id: number, updates: Partial<Product>) => {
     // send mapped update to remote
-    void (async () => {
-      try {
-        if (!supabase) return;
+    try {
+      if (!supabase) return;
 
-        const isAllowed = await verifyAdminPermission('update products');
-        if (!isAllowed) return;
+      const isAllowed = await verifyAdminPermission('update products');
+      if (!isAllowed) return;
 
-        setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
 
-        // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
-        // any incoming subcategory value (slug/name) to the canonical id first.
-        const updatesForMapping: Partial<Product> = { ...updates };
-        if (schemaInfo.productsHasSubcategoryId && (updatesForMapping as any).subcategory !== undefined && (updatesForMapping as any).subcategory !== null) {
-          const rawSub = String((updatesForMapping as any).subcategory);
-          if (!isUuid(rawSub)) {
-            try {
-              const resolved = await resolveSubcategoryId(rawSub);
-              if (resolved) (updatesForMapping as any).subcategory = resolved;
-              else {
-                alert('Failed to update product: provided subcategory could not be resolved to an id.');
-                return;
-              }
-            } catch (e) {
-              alert('Failed to update product: could not resolve subcategory.');
+      // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
+      // any incoming subcategory value (slug/name) to the canonical id first.
+      const updatesForMapping: Partial<Product> = { ...updates };
+      if (schemaInfo.productsHasSubcategoryId && (updatesForMapping as any).subcategory !== undefined && (updatesForMapping as any).subcategory !== null) {
+        const rawSub = String((updatesForMapping as any).subcategory);
+        if (!isUuid(rawSub)) {
+          try {
+            const resolved = await resolveSubcategoryId(rawSub);
+            if (resolved) (updatesForMapping as any).subcategory = resolved;
+            else {
+              alert('Failed to update product: provided subcategory could not be resolved to an id.');
               return;
             }
+          } catch (e) {
+            alert('Failed to update product: could not resolve subcategory.');
+            return;
           }
         }
+      }
 
-        const row = mapProductUpdatesToRow(updatesForMapping);
-        if (Object.keys(row).length === 0) return;
+      const row = mapProductUpdatesToRow(updatesForMapping);
+      if (Object.keys(row).length === 0) return;
 
-        // If image update is a data/blob URL, upload it first to obtain a persistent public URL
-        if ((updates as any).image !== undefined && typeof (updates as any).image === 'string') {
-          const imgVal = (updates as any).image;
-          if (imgVal.startsWith('data:') || imgVal.startsWith('blob:') || (!/^https?:\/\//i.test(imgVal) && !imgVal.startsWith('/'))) {
-            try {
-              const uploaded = await uploadImageIfNeeded(imgVal);
-              if (uploaded) {
-                row.image = uploaded;
-                row.images = [uploaded];
-              } else {
-                delete row.image;
-                delete row.images;
-              }
-            } catch (e) {
-              console.warn('Failed to upload image during product update:', e);
+      // If image update is a data/blob URL, upload it first to obtain a persistent public URL
+      if ((updates as any).image !== undefined && typeof (updates as any).image === 'string') {
+        const imgVal = (updates as any).image;
+        if (imgVal.startsWith('data:') || imgVal.startsWith('blob:') || (!/^https?:\/\//i.test(imgVal) && !imgVal.startsWith('/'))) {
+          try {
+            const uploaded = await uploadImageIfNeeded(imgVal);
+            if (uploaded) {
+              row.image = uploaded;
+              row.images = [uploaded];
+            } else {
               delete row.image;
               delete row.images;
             }
+          } catch (e) {
+            console.warn('Failed to upload image during product update:', e);
+            delete row.image;
+            delete row.images;
           }
         }
+      }
 
-        const { error } = await supabase.from('products').update(row).eq('id', id).select().single();
-        if (error) {
-          if (isMissingColumnError(error)) {
-            console.warn('Supabase product update failed because the live DB schema is missing a column:', error.message || error);
-            return;
-          }
-          if (isPermissionDeniedOrRlsError(error)) {
-            console.warn('Supabase product update was blocked by admin auth or row-level security:', error.message || error);
-            alert('Failed to update product: admin access or the products RLS policy denied the change. Verify the admin session and the products update policy.');
-            return;
-          }
-          console.warn('Supabase product update failed:', error.message || error);
-          alert('Failed to update product: ' + (error.message || String(error)));
+      const { error } = await supabase.from('products').update(row).eq('id', id).select().single();
+      if (error) {
+        if (isMissingColumnError(error)) {
+          console.warn('Supabase product update failed because the live DB schema is missing a column:', error.message || error);
           return;
         }
-
-        if (updates.hero !== undefined) {
-          await persistBestSellerFlag(id, Boolean(updates.hero));
+        if (isPermissionDeniedOrRlsError(error)) {
+          console.warn('Supabase product update was blocked by admin auth or row-level security:', error.message || error);
+          alert('Failed to update product: admin access or the products RLS policy denied the change. Verify the admin session and the products update policy.');
+          return;
         }
-      } catch (e: any) {
-        console.warn('Supabase product update error:', e?.message || e);
-        alert('Failed to update product: ' + (e?.message || String(e)));
+        console.warn('Supabase product update failed:', error.message || error);
+        alert('Failed to update product: ' + (error.message || String(error)));
+        return;
       }
-    })();
+
+      if (updates.hero !== undefined) {
+        await persistBestSellerFlag(id, Boolean(updates.hero));
+      }
+    } catch (e: any) {
+      console.warn('Supabase product update error:', e?.message || e);
+      alert('Failed to update product: ' + (e?.message || String(e)));
+    }
   };
   const deleteProduct = async (id: number) => {
     if (!supabase) return;
@@ -2803,7 +2941,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase } }}>
+    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions: { addCategory, updateCategory, deleteCategory, addSubcategory, updateSubcategory, deleteSubcategory, addBrand, updateBrand, deleteBrand, addProduct, updateProduct, deleteProduct, toggleHero, addOrder, updateOrder, deleteOrder, adminClearDatabase, refreshCatalog: () => fetchRemote(true) } }}>
       {children}
       <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>

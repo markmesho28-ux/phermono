@@ -1,4 +1,22 @@
-import { getGuestLimitStatus, formatBotText, buildDynamicFallback, buildCatalogContext } from "./ChatWidget";
+import {
+  getGuestLimitStatus,
+  formatBotText,
+  buildDynamicFallback,
+  buildCatalogContext,
+  shouldRetryWithNextGroqKey,
+} from "./ChatWidget";
+
+describe("Groq key fallback retry rules", () => {
+  it("retries on rate limits, timeouts, and network failures before giving up", () => {
+    expect(shouldRetryWithNextGroqKey(429)).toBe(true);
+    expect(shouldRetryWithNextGroqKey(408)).toBe(true);
+    expect(shouldRetryWithNextGroqKey(500)).toBe(true);
+    expect(shouldRetryWithNextGroqKey(undefined, new TypeError("Failed to fetch"))).toBe(true);
+    expect(shouldRetryWithNextGroqKey(undefined, new Error("timeout"))).toBe(true);
+    expect(shouldRetryWithNextGroqKey(200)).toBe(false);
+    expect(shouldRetryWithNextGroqKey(undefined, new Error("bad request"))).toBe(false);
+  });
+});
 
 describe("guest chat limit logic — user-only message counting", () => {
   // 19 user messages sent → 20th should still be allowed

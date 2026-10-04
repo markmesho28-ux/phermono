@@ -66,6 +66,19 @@ const LOCAL_USER_LIMIT_KEY = "phermono_user_daily_limit_v2";
 
 let groqKeyIndex = 0;
 
+export const shouldRetryWithNextGroqKey = (status?: number, error?: unknown): boolean => {
+  if (typeof status === "number") {
+    return status === 408 || status === 429 || status >= 500;
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return /429|rate limit|too many requests|timeout|timed out|failed to fetch|network|fetch failed|connection/i.test(message);
+  }
+
+  return false;
+};
+
 const getNextGroqKey = () => {
   if (!GROQ_API_KEYS || GROQ_API_KEYS.length === 0) return "";
   const key = GROQ_API_KEYS[groqKeyIndex % GROQ_API_KEYS.length];
@@ -778,6 +791,13 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
           continue;
         }
 
+        const maskedKey = apiKey ? `${apiKey.slice(0, 3)}...${apiKey.slice(-4)}` : "none";
+        console.debug("[Groq fallback] trying API key", {
+          attempt: attempt + 1,
+          total: GROQ_API_KEYS.length,
+          activeKey: maskedKey,
+        });
+
         try {
           const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -788,9 +808,18 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
             body: JSON.stringify(requestBody),
           });
 
-          if (response.status === 429) {
+          if (shouldRetryWithNextGroqKey(response.status)) {
             const errorText = await response.text();
-            lastError = new Error(errorText || "Rate limit exceeded. Retrying with the next Groq key.");
+            lastError = new Error(
+              errorText ||
+                (response.status === 429
+                  ? "Rate limit exceeded. Retrying with the next Groq key."
+                  : `Groq API request failed with status ${response.status}. Retrying with the next Groq key.`)
+            );
+            console.warn("[Groq fallback] retrying next API key", {
+              status: response.status,
+              activeKey: maskedKey,
+            });
             continue;
           }
 
@@ -823,8 +852,12 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
           setMessages((prev) => [...prev, botMessage]);
           return;
         } catch (error) {
-          if (error instanceof Error && /429|rate limit|too many requests/i.test(error.message)) {
-            lastError = error;
+          if (shouldRetryWithNextGroqKey(undefined, error)) {
+            lastError = error instanceof Error ? error : new Error("Groq API request failed. Retrying with the next Groq key.");
+            console.warn("[Groq fallback] retrying next API key after request error", {
+              activeKey: maskedKey,
+              message: lastError.message,
+            });
             continue;
           }
 

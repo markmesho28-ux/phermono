@@ -213,28 +213,6 @@ const getLatestBannerId = async (): Promise<string | null> => {
 const createMissingActiveBanner = async (): Promise<string | null> => {
   const existingBannerId = await getLatestBannerId();
   if (existingBannerId) {
-    const { data: rows } = await supabase
-      .from('promotional_banner_products')
-      .select('id')
-      .eq('banner_id', existingBannerId);
-
-    if (!rows || rows.length === 0) {
-      const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
-        ...(product.id ? { id: product.id } : {}),
-        banner_id: existingBannerId,
-        image_path: product.image,
-        alt_text: product.alt,
-        position: index + 1,
-        is_enabled: product.enabled,
-      }));
-
-      const { error: insertProductError } = await supabase
-        .from('promotional_banner_products')
-        .insert(insertRows);
-
-      if (insertProductError) throw insertProductError;
-    }
-
     return existingBannerId;
   }
 
@@ -256,20 +234,21 @@ const createMissingActiveBanner = async (): Promise<string | null> => {
 
   if (createError) throw createError;
 
-  const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
-    ...(product.id ? { id: product.id } : {}),
-    banner_id: created.id,
-    image_path: product.image,
-    alt_text: product.alt,
-    position: index + 1,
-    is_enabled: product.enabled,
-  }));
+  try {
+    const insertRows = DEFAULT_PROMO_BANNER_PRODUCTS.map((product, index) => ({
+      banner_id: created.id,
+      image_path: product.image,
+      alt_text: product.alt,
+      position: index + 1,
+      is_enabled: product.enabled,
+    }));
 
-  const { error: insertProductError } = await supabase
-    .from('promotional_banner_products')
-    .insert(insertRows);
-
-  if (insertProductError) throw insertProductError;
+    await supabase
+      .from('promotional_banner_products')
+      .insert(insertRows);
+  } catch (err) {
+    console.warn('Failed to seed promotional banner products:', err);
+  }
 
   return created.id;
 };
