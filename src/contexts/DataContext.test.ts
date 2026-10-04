@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData } from './DataContext';
+import { AuthProvider, useAuth } from './AuthContext';
+import CategoryView from '../components/CategoryView';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
 
 jest.mock('../lib/supabase', () => {
@@ -128,6 +130,50 @@ describe('looksLikeAdminCommandIntent', () => {
   });
 });
 
+describe('AuthContext local admin fallback', () => {
+  it('logs in the seeded local admin account when Supabase auth rejects the password attempt', async () => {
+    localStorage.clear();
+    localStorage.setItem('phermono_users_v1', JSON.stringify([
+      { name: 'wassef', phone: '01225502425', address: 'Headquarters', governorate: 'Cairo', password: 'admin', role: 'admin' },
+    ]));
+
+    const supabaseClient = require('../lib/supabase').default;
+    supabaseClient.auth.getUser = jest.fn(() => Promise.resolve({ data: { user: null } }));
+    supabaseClient.auth.signInWithPassword = jest.fn(() => Promise.resolve({
+      data: { user: null },
+      error: { message: 'Invalid credentials' },
+    }));
+
+    function AuthProbe() {
+      const { user, login } = useAuth();
+      return React.createElement(
+        'div',
+        null,
+        React.createElement('button', {
+          type: 'button',
+          onClick: async () => {
+            const result = await login({ phone: '01225502425', password: 'admin' });
+            (window as any).__lastAuthResult = result;
+          },
+        }, user ? `signed:${user.role}` : 'signed:out'),
+      );
+    }
+
+    render(
+      React.createElement(AuthProvider, null, React.createElement(AuthProbe))
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'signed:out' }));
+
+    await waitFor(() => {
+      const result = (window as any).__lastAuthResult;
+      expect(result?.error).toBeUndefined();
+      expect(result?.user?.role).toBe('admin');
+      expect(result?.user?.phone).toBe('01225502425');
+    });
+  });
+});
+
 describe('DataProvider action stability', () => {
   it('keeps the actions object stable across unrelated rerenders so click-driven updates do not cascade the full app', () => {
     function ActionProbe() {
@@ -152,6 +198,179 @@ describe('DataProvider action stability', () => {
     expect(screen.getByTestId('action-state')).toHaveTextContent('false');
     fireEvent.click(screen.getByRole('button', { name: '0' }));
     expect(screen.getByTestId('action-state')).toHaveTextContent('false');
+  });
+
+  it('hydrates category brands from the junction table when category_id is not stored on the brand row', async () => {
+    const supabaseClient = require('../lib/supabase').default;
+    const fromMock = supabaseClient.from;
+
+    fromMock.mockImplementation((table: string) => {
+      if (table === 'products') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'orders') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'categories') {
+        return { select: jest.fn(() => Promise.resolve({ data: [{ id: 'cat-1', name: 'Skincare', slug: 'skincare' }] })) };
+      }
+      if (table === 'subcategories') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'brands') {
+        return { select: jest.fn(() => Promise.resolve({ data: [{ id: 'brand-1', name: 'Aesop', slug: 'aesop', category_id: null }] })) };
+      }
+      if (table === 'category_brands') {
+        return { select: jest.fn(() => Promise.resolve({ data: [{ category_id: 'cat-1', brand_id: 'brand-1' }] })) };
+      }
+      if (table === 'site_settings') {
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve({ data: [] })) })),
+          })),
+        };
+      }
+      return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+    });
+
+    function BrandProbe() {
+      const { categories } = useData();
+      return React.createElement('div', { 'data-testid': 'brand-list' }, JSON.stringify(categories[0]?.brands ?? []));
+    }
+
+    render(
+      React.createElement(DataProvider, null, React.createElement(BrandProbe))
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('brand-list')).toHaveTextContent('Aesop');
+    });
+  });
+
+  it('keeps a newly inserted product in its category after refresh and keeps it visible in CategoryView', async () => {
+    const supabaseClient = require('../lib/supabase').default;
+    const productRow = {
+      id: 999,
+      name: 'Glow Serum',
+      brand: 'Aesop',
+      category_id: 'cat-1',
+      category: 'cat-1',
+      subcategory_id: null,
+      subcategory: null,
+      selling_price: 120,
+      market_price: 150,
+      admin_cost: 60,
+      stock: 10,
+      is_hidden: false,
+      created_at: '2024-01-01T00:00:00Z',
+      hero: false,
+      tag: null,
+      image: '',
+      description: 'Hydrating daily serum',
+      rating: 0,
+      reviews: 0,
+    };
+
+    supabaseClient.auth.getUser = jest.fn(() => Promise.resolve({ data: { user: { id: 'admin-1' } } }));
+    const profileRow = { id: 'admin-1', role: 'admin', is_admin: true };
+
+    let productsSelectCount = 0;
+    const productsList = [
+      { data: [] },
+      { data: [productRow] },
+      { data: [productRow] },
+    ];
+
+    supabaseClient.from.mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              maybeSingle: jest.fn(() => Promise.resolve({ data: profileRow, error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === 'products') {
+        return {
+          select: jest.fn(() => Promise.resolve(productsList[Math.min(productsSelectCount++, productsList.length - 1)])),
+          insert: jest.fn(() => ({
+            select: jest.fn(() => ({
+              single: jest.fn(() => Promise.resolve({ data: productRow, error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === 'orders') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'categories') {
+        return { select: jest.fn(() => Promise.resolve({ data: [{ id: 'cat-1', name: 'Skincare', slug: 'skincare' }] })) };
+      }
+      if (table === 'subcategories') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'brands') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'category_brands') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'site_settings') {
+        return {
+          select: jest.fn(() => ({
+            order: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve({ data: [] })) })),
+          })),
+        };
+      }
+      return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+    });
+
+    function ProductCategoryProbe() {
+      const { actions, products, categories } = useData();
+      const visibleCategoryProducts = products.filter((product) => String(product.category) === 'cat-1');
+
+      return React.createElement(
+        'div',
+        null,
+        React.createElement('button', { type: 'button', onClick: () => actions.addProduct({
+          id: 999,
+          name: 'Glow Serum',
+          brand: 'Aesop',
+          category: 'cat-1',
+          sellingPrice: 120,
+          marketPrice: 150,
+          image: '',
+          description: 'Hydrating daily serum',
+          rating: 0,
+          reviews: 0,
+          stock: 10,
+          isHidden: false,
+        } as any) }, 'Add product'),
+        React.createElement('button', { type: 'button', onClick: () => actions.refreshCatalog?.() }, 'Refresh catalog'),
+        React.createElement('div', { 'data-testid': 'product-category-state' }, JSON.stringify(visibleCategoryProducts.map((product) => ({ id: product.id, category: product.category, name: product.name })))),
+        React.createElement('div', { 'data-testid': 'category-label' }, JSON.stringify(categories.map((category) => ({ id: category.id, label: category.label })))),
+        React.createElement(
+          'div',
+          { 'data-testid': 'category-view-mount' },
+          React.createElement(CategoryView, {
+            categoryId: 'cat-1',
+            onAddToCart: () => undefined,
+            onQuickView: () => undefined,
+            onWishlist: () => undefined,
+            wishlist: [],
+          })
+        )
+      );
+    }
+
+    render(
+      React.createElement(AuthProvider, null,
+        React.createElement(DataProvider, null, React.createElement(ProductCategoryProbe))
+      )
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add product' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('product-category-state')).toHaveTextContent('Glow Serum');
+      expect(screen.getByTestId('product-category-state')).toHaveTextContent('cat-1');
+      expect(screen.getByTestId('category-view-mount')).toHaveTextContent('Glow Serum');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh catalog' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('product-category-state')).toHaveTextContent('Glow Serum');
+      expect(screen.getByTestId('product-category-state')).toHaveTextContent('cat-1');
+      expect(screen.getByTestId('category-view-mount')).toHaveTextContent('Glow Serum');
+    });
   });
 
   it('does not persist the full product catalog to localStorage because that synchronous serialization blocks the UI thread during catalog refreshes', async () => {

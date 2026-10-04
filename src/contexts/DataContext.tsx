@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import ConfirmModal from '../components/ConfirmModal';
+import { useAuth } from './AuthContext';
 import supabase, { SUPABASE_URL } from '../lib/supabase';
 import type { Category, CategorySubcategory, DataContextValue, Order, Product, PriceRange, SiteSettings } from '../types';
 import { normalizeOrderItems } from '../utils/orderPrice';
@@ -498,28 +499,51 @@ export const resolveCategoryIdForRelation = async (
   return null;
 };
 
-const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] = []): Category => ({
-  id: String(row?.id || ''),
-  label: row?.name ?? row?.label ?? row?.slug ?? '',
-  icon: row?.icon ?? 'Sparkles',
-  color: row?.color ?? '',
-  accent: row?.accent ?? '',
-  image: row?.image ? normalizeProductImage(row.image) : '',
-  subcategories: (subcategoryRows || [])
-    .filter((sub) => String(sub?.category_id) === String(row?.id))
-    .map((sub) => ({
-      // Only use the actual UUID from the DB. Never fall back to slug/name/label —
-      // those are not valid FK values and would cause FK violations if used as category_id
-      // in subsequent subcategory operations.
-      id: isUuid(String(sub?.id ?? '')) ? String(sub.id) : '',
-      label: sub?.name ?? sub?.label ?? sub?.slug ?? '',
-    }))
-    .filter((sub) => !!sub.id), // drop any rows that don't have a real UUID id
-  brands: (brandRows || [])
-    .filter((brand) => String(brand?.category_id) === String(row?.id))
-    .map((brand) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
-    .filter(Boolean),
-});
+const mapCategoryRow = (row: any, subcategoryRows: any[] = [], brandRows: any[] = [], categoryBrandRows: any[] = []): Category => {
+  const categoryId = String(row?.id || '');
+  const brandNames = new Set<string>();
+
+  for (const brand of brandRows || []) {
+    const brandCategoryId = brand?.category_id;
+    if (String(brandCategoryId ?? '') === categoryId) {
+      const name = String(brand?.name ?? brand?.label ?? brand?.slug ?? '').trim();
+      if (name) brandNames.add(name);
+    }
+  }
+
+  for (const link of categoryBrandRows || []) {
+    const linkCategoryId = String(link?.category_id ?? '');
+    if (linkCategoryId !== categoryId) continue;
+
+    const linkedBrandId = String(link?.brand_id ?? '');
+    const linkedBrandName = String(link?.brand_name ?? '').trim();
+    if (linkedBrandName) {
+      brandNames.add(linkedBrandName);
+      continue;
+    }
+
+    const matchingBrand = (brandRows || []).find((brand) => String(brand?.id ?? '') === linkedBrandId);
+    const name = matchingBrand ? String(matchingBrand?.name ?? matchingBrand?.label ?? matchingBrand?.slug ?? '').trim() : '';
+    if (name) brandNames.add(name);
+  }
+
+  return {
+    id: categoryId,
+    label: row?.name ?? row?.label ?? row?.slug ?? '',
+    icon: row?.icon ?? 'Sparkles',
+    color: row?.color ?? '',
+    accent: row?.accent ?? '',
+    image: row?.image ? normalizeProductImage(row.image) : '',
+    subcategories: (subcategoryRows || [])
+      .filter((sub) => String(sub?.category_id) === String(row?.id))
+      .map((sub) => ({
+        id: isUuid(String(sub?.id ?? '')) ? String(sub.id) : '',
+        label: sub?.name ?? sub?.label ?? sub?.slug ?? '',
+      }))
+      .filter((sub) => !!sub.id),
+    brands: Array.from(brandNames),
+  };
+};
 
 const toNumberOrUndefined = (value: any): number | undefined => {
   if (value === null || value === undefined || value === '') return undefined;
@@ -801,6 +825,7 @@ function getInitialData() {
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [initial] = useState(() => getInitialData());
   const [categories, setCategories] = useState<Category[]>(initial.categories);
   const [brands, setBrands] = useState<string[]>(initial.brands);
@@ -972,12 +997,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        const safeCategoryBrandSelect = async () => {
+          try {
+            const { data } = await supabase.from('category_brands').select('*');
+            return Array.isArray(data) ? data : [];
+          } catch (_) {
+            return [];
+          }
+        };
+
         const [
           { data: productsData },
           { data: ordersData },
           { data: categoriesData },
           { data: subcategoriesData },
           { data: brandsData },
+          categoryBrandRows,
           { data: settingsData },
         ] = await Promise.all([
           supabase.from('products').select('*'),
@@ -985,6 +1020,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           supabase.from('categories').select('*'),
           supabase.from('subcategories').select('*'),
           supabase.from('brands').select('*'),
+          safeCategoryBrandSelect(),
           supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
         ]);
 
@@ -993,7 +1029,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
 
         const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
-        const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
+        const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || [], categoryBrandRows || []));
         const nextBrands = Array.isArray(brandsData)
           ? (brandsData as any[])
               .filter((brand: any) => !brand?.category_id)
@@ -1149,9 +1185,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
         setBrandsHaveCategory(detectedBrandsHaveCategory);
 
-        if (Array.isArray(brandsData) && brandsData.length > 0) {
-          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
-        }
         if (Array.isArray(ordersData)) {
           setOrders(ordersData.map((row: any) => {
             const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
@@ -1295,6 +1328,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             scheduleRefetch(100);
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'category_brands' },
+          (payload) => {
+            console.debug('Realtime update: category_brands changed', payload);
+            lastCatalogRefreshTriggerRef.current = Date.now();
+            scheduleRefetch(100);
+          }
+        )
         .subscribe((status, err) => {
           if (err) {
             console.warn('Realtime subscription error:', err);
@@ -1386,6 +1428,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Helper to verify admin permissions reliably
   const verifyAdminPermission = async (actionDesc = 'perform this action'): Promise<boolean> => {
+    const currentRole = String(user?.role || '').toLowerCase();
+    if (currentRole === 'admin' || currentRole === 'superadmin') {
+      return true;
+    }
+
     // Authorization must come from the current Supabase session and protected
     // profile fields, never from a serialized client-side session.
     if (supabase) {

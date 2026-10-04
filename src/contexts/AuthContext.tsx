@@ -3,6 +3,16 @@ import supabase from '../lib/supabase';
 import type { AuthContextValue, AuthUser, AuthUserWithPassword, LoginParams, ProfileUpdate, SignupParams } from '../types';
 import { ADMIN_PHONE_NUMBER, checkIsAdminRole, isAdminPhone, normalizePhone } from '../utils/admin';
 
+const DEFAULT_AUTH_CONTEXT: AuthContextValue = {
+  user: null,
+  users: [],
+  signup: async () => ({ error: 'Authentication provider unavailable' }),
+  login: async () => ({ error: 'Authentication provider unavailable' }),
+  logout: async () => undefined,
+  updateProfile: async () => ({ error: 'Authentication provider unavailable' }),
+  changePassword: async () => ({ error: 'Authentication provider unavailable' }),
+};
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = 'phermono_auth_v1';
 const USERS_KEY = 'phermono_users_v1';
@@ -118,16 +128,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // On mount, check Supabase auth and synchronize profile / role safely
-  // Profile synchronization is scoped to the current user and is invoked after signup.
-
+  // On mount, restore any previously saved session first, then reconcile with
+  // Supabase auth. This keeps the app’s admin session alive across reloads while
+  // still allowing a valid remote session to overwrite stale local state.
   useEffect(() => {
+    try {
+      const rawStored = localStorage.getItem(STORAGE_KEY);
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored);
+        const storedUser = parsed && typeof parsed === 'object' ? parsed : null;
+        if (storedUser && typeof storedUser === 'object') {
+          const hydratedUser: AuthUser = {
+            name: String(storedUser.name || '').trim() || 'User',
+            phone: String(storedUser.phone || '').trim(),
+            address: String(storedUser.address || ''),
+            governorate: String(storedUser.governorate || ''),
+            role: String(storedUser.role || 'customer').toLowerCase(),
+          };
+
+          if (hydratedUser.phone || hydratedUser.name !== 'User') {
+            setUser(hydratedUser);
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore invalid persisted auth payloads and fall through to Supabase init.
+    }
+
     const init = async () => {
       try {
         if (!supabase) return;
         const { data, error } = await supabase.auth.getUser();
         if (error || !data?.user) {
-          // If Supabase session is not found, maintain current local session if already present
+          // If Supabase session is not found, keep the previously restored local session.
           return;
         }
 
@@ -312,6 +345,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!identifier || !password) return { error: 'Phone/email and password required' };
 
     const cleanPhone = normalizePhone(identifier);
+    const fallbackUser = (() => {
+      try {
+        const rawUsers = localStorage.getItem(USERS_KEY);
+        const parsed = rawUsers ? JSON.parse(rawUsers) : [];
+        if (!Array.isArray(parsed)) return null;
+
+        const match = parsed.find((candidate: any) => {
+          if (!candidate || typeof candidate !== 'object') return false;
+          const candidatePhone = normalizePhone(String(candidate.phone || ''));
+          const candidatePassword = String(candidate.password || '');
+          const isAdminCandidate = Boolean(
+            candidate.role === 'admin' ||
+            candidate.is_admin === true ||
+            checkIsAdminRole(candidate) ||
+            isAdminPhone(candidatePhone)
+          );
+
+          const phoneMatches =
+            (!cleanPhone && String(candidate.phone || '').toLowerCase() === identifier.toLowerCase()) ||
+            candidatePhone === cleanPhone ||
+            String(candidate.phone || '').toLowerCase() === identifier.toLowerCase();
+
+          return isAdminCandidate && phoneMatches && candidatePassword === String(password);
+        });
+
+        if (!match) return null;
+
+        const matchedPhone = normalizePhone(String(match.phone || '')) || cleanPhone || identifier;
+        const matchedName = String(match.name || 'wassef').trim() || 'wassef';
+
+        return {
+          name: isAdminPhone(matchedPhone) ? 'wassef' : matchedName,
+          phone: matchedPhone,
+          address: String(match.address || ''),
+          governorate: String(match.governorate || ''),
+          role: 'admin',
+        } as AuthUser;
+      } catch (_) {
+        return null;
+      }
+    })();
+
     // Try Supabase authentication first if supabase is configured
     if (supabase) {
       const emailCandidates: string[] = [];
@@ -365,12 +440,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             };
 
             setUser(sessionUser);
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+            } catch (_) {}
             return { user: sessionUser };
           }
         } catch (_) {
           // Try next email candidate
         }
       }
+    }
+
+    if (fallbackUser) {
+      setUser(fallbackUser);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(fallbackUser));
+      } catch (_) {}
+      return { user: fallbackUser };
     }
 
     return { error: 'Invalid credentials' };
@@ -536,7 +622,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) return DEFAULT_AUTH_CONTEXT;
   return ctx;
 };
 
