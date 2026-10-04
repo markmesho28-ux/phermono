@@ -558,6 +558,12 @@ export default function App(){
   const wishlistStorageKey = getWishlistStorageKey(user?.phone);
 
   useEffect(() => {
+    if (activeCategory !== 'home' && products.length === 0 && actions?.refreshCatalog) {
+      void actions.refreshCatalog();
+    }
+  }, [activeCategory, products.length, actions]);
+
+  useEffect(() => {
     setWishlist(getInitialWishlist(wishlistStorageKey));
   }, [wishlistStorageKey]);
 

@@ -914,12 +914,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const mountedRef = useRef(true);
+  const initialCatalogScheduledRef = useRef(false);
   const isFetchingRef = useRef(false);
   const fetchQueuedRef = useRef(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCatalogFetchRef = useRef(0);
+  const lastCatalogRefreshTriggerRef = useRef(0);
+  const inFlightCatalogFetchRef = useRef<Promise<void> | null>(null);
 
   const fetchRemote = async (isBackground = false) => {
     if (!supabase) return;
+    didInitialFetchRef.current = true;
+    const now = Date.now();
+    if (inFlightCatalogFetchRef.current) {
+      return inFlightCatalogFetchRef.current;
+    }
+    if (now - lastCatalogFetchRef.current < 1500) {
+      return;
+    }
+    lastCatalogFetchRef.current = now;
     if (isFetchingRef.current) {
       fetchQueuedRef.current = true;
       return;
@@ -927,217 +940,226 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     isFetchingRef.current = true;
     if (!isBackground) setLoading(true);
 
-    try {
-      const [
-        { data: productsData },
-        { data: ordersData },
-        { data: categoriesData },
-        { data: subcategoriesData },
-        { data: brandsData },
-        { data: settingsData },
-      ] = await Promise.all([
-        supabase.from('products').select('*'),
-        supabase.from('orders').select('*'),
-        supabase.from('categories').select('*'),
-        supabase.from('subcategories').select('*'),
-        supabase.from('brands').select('*'),
-        supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
-      ]);
+    inFlightCatalogFetchRef.current = (async () => {
+      try {
+        const [
+          { data: productsData },
+          { data: ordersData },
+          { data: categoriesData },
+          { data: subcategoriesData },
+          { data: brandsData },
+          { data: settingsData },
+        ] = await Promise.all([
+          supabase.from('products').select('*'),
+          supabase.from('orders').select('*'),
+          supabase.from('categories').select('*'),
+          supabase.from('subcategories').select('*'),
+          supabase.from('brands').select('*'),
+          supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
+        ]);
 
-      if (!mountedRef.current) return;
+        if (!mountedRef.current) return;
 
-      const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
-      const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
-      const nextBrands = Array.isArray(brandsData)
-        ? (brandsData as any[])
-            .filter((brand: any) => !brand?.category_id)
-            .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
-            .filter(Boolean)
-        : [];
+        const categoriesArray = Array.isArray(categoriesData) ? categoriesData : [];
+        const nextCategories = categoriesArray.map((row: any) => mapCategoryRow(row, subcategoriesData || [], brandsData || []));
+        const nextBrands = Array.isArray(brandsData)
+          ? (brandsData as any[])
+              .filter((brand: any) => !brand?.category_id)
+              .map((brand: any) => String(brand?.name ?? brand?.label ?? brand?.slug ?? ''))
+              .filter(Boolean)
+          : [];
 
-      const categoriesById: Record<string, Category> = Object.fromEntries(
-        nextCategories.map((category) => [String(category.id), category])
-      );
-      const categoriesBySlug: Record<string, Category> = {};
-      nextCategories.forEach((category) => {
-        const label = String(category.label || '').trim();
-        if (label) {
-          categoriesBySlug[label.toLowerCase()] = category;
-          categoriesBySlug[slugify(label).toLowerCase()] = category;
-        }
-      });
+        const categoriesById: Record<string, Category> = Object.fromEntries(
+          nextCategories.map((category) => [String(category.id), category])
+        );
+        const categoriesBySlug: Record<string, Category> = {};
+        nextCategories.forEach((category) => {
+          const label = String(category.label || '').trim();
+          if (label) {
+            categoriesBySlug[label.toLowerCase()] = category;
+            categoriesBySlug[slugify(label).toLowerCase()] = category;
+          }
+        });
 
-      let detectedColumn: string | null = productSubcategoryColumnRef.current;
-      if (Array.isArray(productsData) && productsData.length > 0) {
-        const sample = productsData[0] || {};
-        const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
-        const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
-        if (!productSubcategoryColumnRef.current) setProductSubcategoryColumn(detected);
-        detectedColumn = detected ?? productSubcategoryColumnRef.current;
-      }
-
-      let normalizedProducts: Product[] = [];
-      if (Array.isArray(productsData) && productsData.length > 0) {
-        const subLookup: Record<string, string> = {};
-        if (Array.isArray(subcategoriesData)) {
-          (subcategoriesData as any[]).forEach((s: any) => {
-            const sid = s?.id ? String(s.id) : '';
-            const slug = s?.slug ? String(s.slug) : '';
-            const name = s?.name ? String(s.name) : '';
-            if (sid) subLookup[sid] = sid;
-            if (slug) subLookup[slug] = sid || slug;
-            if (name) subLookup[name.toLowerCase().trim()] = sid || name.toLowerCase().trim();
-            if (slug) subLookup[slug.toLowerCase().trim()] = sid || slug.toLowerCase().trim();
-          });
+        let detectedColumn: string | null = productSubcategoryColumnRef.current;
+        if (Array.isArray(productsData) && productsData.length > 0) {
+          const sample = productsData[0] || {};
+          const possible = ['subcategory_id', 'sub_category_id', 'subcategory', 'sub_category'];
+          const detected = possible.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) ?? null;
+          if (!productSubcategoryColumnRef.current) setProductSubcategoryColumn(detected);
+          detectedColumn = detected ?? productSubcategoryColumnRef.current;
         }
 
-        normalizedProducts = (productsData as any[]).map((r) => {
-          let categoryVal: any = r.category_id ?? r.category ?? null;
-          if (categoryVal && typeof categoryVal === 'string') {
-            const key = categoryVal.trim();
-            const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
-            if (mappedCategory) {
-              categoryVal = mappedCategory.id;
-            }
+        let normalizedProducts: Product[] = [];
+        if (Array.isArray(productsData) && productsData.length > 0) {
+          const subLookup: Record<string, string> = {};
+          if (Array.isArray(subcategoriesData)) {
+            (subcategoriesData as any[]).forEach((s: any) => {
+              const sid = s?.id ? String(s.id) : '';
+              const slug = s?.slug ? String(s.slug) : '';
+              const name = s?.name ? String(s.name) : '';
+              if (sid) subLookup[sid] = sid;
+              if (slug) subLookup[slug] = sid || slug;
+              if (name) subLookup[name.toLowerCase().trim()] = sid || name.toLowerCase().trim();
+              if (slug) subLookup[slug.toLowerCase().trim()] = sid || slug.toLowerCase().trim();
+            });
           }
 
-          let subVal: any = null;
-          const col = detectedColumn;
-          const tryLookup = (v: string | undefined | null) => {
-            if (!v) return null;
-            const raw = String(v).trim();
-            if (!raw) return null;
-            if (subLookup[raw]) return String(subLookup[raw]);
-            const lower = raw.toLowerCase();
-            if (subLookup[lower]) return String(subLookup[lower]);
-            return null;
-          };
+          normalizedProducts = (productsData as any[]).map((r) => {
+            let categoryVal: any = r.category_id ?? r.category ?? null;
+            if (categoryVal && typeof categoryVal === 'string') {
+              const key = categoryVal.trim();
+              const mappedCategory = categoriesById[key] ?? categoriesBySlug[key.toLowerCase()];
+              if (mappedCategory) {
+                categoryVal = mappedCategory.id;
+              }
+            }
 
-          if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-            const val = r[col];
-            if (/id$/i.test(col)) {
-              subVal = String(val);
-              const mapped = tryLookup(subVal);
-              if (mapped) subVal = mapped;
-            } else {
-              const candidate = String(val).trim();
+            let subVal: any = null;
+            const col = detectedColumn;
+            const tryLookup = (v: string | undefined | null) => {
+              if (!v) return null;
+              const raw = String(v).trim();
+              if (!raw) return null;
+              if (subLookup[raw]) return String(subLookup[raw]);
+              const lower = raw.toLowerCase();
+              if (subLookup[lower]) return String(subLookup[lower]);
+              return null;
+            };
+
+            if (col && Object.prototype.hasOwnProperty.call(r, col) && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+              const val = r[col];
+              if (/id$/i.test(col)) {
+                subVal = String(val);
+                const mapped = tryLookup(subVal);
+                if (mapped) subVal = mapped;
+              } else {
+                const candidate = String(val).trim();
+                const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
+                subVal = mapped ?? candidate;
+              }
+            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+              const candidate = String(r.subcategory_id).trim();
+              subVal = tryLookup(candidate) || candidate;
+            } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
+              const candidate = String(r.subcategory).trim();
               const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
               subVal = mapped ?? candidate;
             }
-          } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-            const candidate = String(r.subcategory_id).trim();
-            subVal = tryLookup(candidate) || candidate;
-          } else if (r.subcategory !== undefined && r.subcategory !== null && String(r.subcategory).trim() !== '') {
-            const candidate = String(r.subcategory).trim();
-            const mapped = tryLookup(candidate) || tryLookup(candidate.toLowerCase());
-            subVal = mapped ?? candidate;
-          }
 
-          const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
-          const imageValue = resolvePersistedProductImage(r);
-          const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
-          const dbSellingPrice = toNumberOrUndefined(r.selling_price);
-          const dbMarketPrice = toNumberOrUndefined(r.market_price);
-          const dbAdminCost = toNumberOrUndefined(r.admin_cost);
-          const dbStock = toNumberOrUndefined(r.stock);
-          const normalizedImage = normalizeProductImage(imageValue);
+            const bestSellerFlag = Boolean(r.hero ?? (String(r.tag || '').toLowerCase() === 'best seller'));
+            const imageValue = resolvePersistedProductImage(r);
+            const descriptionValue = r.description ?? r.details ?? r.long_description ?? null;
+            const dbSellingPrice = toNumberOrUndefined(r.selling_price);
+            const dbMarketPrice = toNumberOrUndefined(r.market_price);
+            const dbAdminCost = toNumberOrUndefined(r.admin_cost);
+            const dbStock = toNumberOrUndefined(r.stock);
+            const normalizedImage = normalizeProductImage(imageValue);
 
-          let persistedSubId: string | null = null;
-          if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
-            if (/id$/i.test(col)) persistedSubId = String(r[col]);
-            else {
-              const candidate = String(r[col]).trim();
-              if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
+            let persistedSubId: string | null = null;
+            if (col && r[col] !== undefined && r[col] !== null && String(r[col]).trim() !== '') {
+              if (/id$/i.test(col)) persistedSubId = String(r[col]);
+              else {
+                const candidate = String(r[col]).trim();
+                if (subLookup[candidate]) persistedSubId = String(subLookup[candidate]);
+              }
+            } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
+              persistedSubId = String(r.subcategory_id);
+            } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
+              persistedSubId = String(r.subcategory);
             }
-          } else if (r.subcategory_id !== undefined && r.subcategory_id !== null && String(r.subcategory_id).trim() !== '') {
-            persistedSubId = String(r.subcategory_id);
-          } else if (r.subcategory !== undefined && r.subcategory !== null && isUuid(String(r.subcategory))) {
-            persistedSubId = String(r.subcategory);
-          }
 
-          return {
-            id: r.id ?? Date.now(),
-            name: r.name ?? r.label ?? '',
-            brand: r.brand ?? r.brand_name ?? '',
-            createdAt: r.created_at ?? r.createdAt ?? null,
-            category: categoryVal ?? null,
-            subcategory: subVal ?? null,
-            subcategoryId: persistedSubId ?? null,
-            originalPrice: dbMarketPrice ?? null,
-            sellingPrice: dbSellingPrice ?? null,
-            marketPrice: dbMarketPrice ?? null,
-            adminCost: dbAdminCost ?? null,
-            stock: dbStock ?? 0,
-            isHidden: Boolean(r.is_hidden),
-            cost: dbAdminCost ?? null,
-            rating: r.rating ?? 0,
-            reviews: r.reviews ?? 0,
-            skinType: r.skin_type ?? null,
-            tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
-            hero: r.hero ?? bestSellerFlag,
-            image: normalizedImage,
-            image_url: normalizedImage,
-            description: descriptionValue ?? null,
-            details: descriptionValue ?? null,
-          } as any;
-        });
+            return {
+              id: r.id ?? Date.now(),
+              name: r.name ?? r.label ?? '',
+              brand: r.brand ?? r.brand_name ?? '',
+              createdAt: r.created_at ?? r.createdAt ?? null,
+              category: categoryVal ?? null,
+              subcategory: subVal ?? null,
+              subcategoryId: persistedSubId ?? null,
+              originalPrice: dbMarketPrice ?? null,
+              sellingPrice: dbSellingPrice ?? null,
+              marketPrice: dbMarketPrice ?? null,
+              adminCost: dbAdminCost ?? null,
+              stock: dbStock ?? 0,
+              isHidden: Boolean(r.is_hidden),
+              cost: dbAdminCost ?? null,
+              rating: r.rating ?? 0,
+              reviews: r.reviews ?? 0,
+              skinType: r.skin_type ?? null,
+              tag: r.tag ?? (bestSellerFlag ? 'Best Seller' : null),
+              hero: r.hero ?? bestSellerFlag,
+              image: normalizedImage,
+              image_url: normalizedImage,
+              description: descriptionValue ?? null,
+              details: descriptionValue ?? null,
+            } as any;
+          });
 
-        setProducts(normalizedProducts as any);
-      } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
-        setProducts([]);
+          setProducts(normalizedProducts as any);
+        } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
+          setProducts([]);
+        }
+
+        if (nextCategories.length > 0) {
+          setCategories(nextCategories);
+        } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
+          setCategories([]);
+        }
+        setBrands(nextBrands);
+
+        const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
+        setBrandsHaveCategory(detectedBrandsHaveCategory);
+
+        if (Array.isArray(brandsData) && brandsData.length > 0) {
+          setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
+        }
+        if (Array.isArray(ordersData)) {
+          setOrders(ordersData.map((row: any) => {
+            const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
+            const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
+            const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
+            return {
+              ...row,
+              createdAt,
+              items: itemsNormalized,
+              total: persistedTotal,
+            };
+          }) as any);
+        }
+
+        const settingsMap = Array.isArray(settingsData) ? settingsData : [];
+        const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
+        const cachedSettings = readCachedSiteSettings() || {};
+        const remoteSettings = ((configRow?.value as Partial<SiteSettings>) || cachedSettings) as Partial<SiteSettings>;
+        const mergedSettings = getEffectiveSiteSettings({ ...cachedSettings, ...remoteSettings });
+        setSiteSettings(mergedSettings);
+        writeCachedSiteSettings(mergedSettings);
+
+        setRemoteError(null);
+        setLoading(false);
+      } catch (err) {
+        console.warn('Supabase sync failed:', err);
+        setRemoteError(String(err));
+        setLoading(false);
+      } finally {
+        isFetchingRef.current = false;
+        inFlightCatalogFetchRef.current = null;
+        if (fetchQueuedRef.current && mountedRef.current) {
+          fetchQueuedRef.current = false;
+          void fetchRemote(true);
+        }
       }
+    })();
 
-      if (nextCategories.length > 0) {
-        setCategories(nextCategories);
-      } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
-        setCategories([]);
-      }
-      setBrands(nextBrands);
-
-      const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
-      setBrandsHaveCategory(detectedBrandsHaveCategory);
-
-      if (Array.isArray(brandsData) && brandsData.length > 0) {
-        setCategories(prev => prev.map(cat => ({ ...cat, brands: (brandsData as any[]).filter(b => String(b.category_id) === String(cat.id)).map(b => String(b.name)) } as any)));
-      }
-      if (Array.isArray(ordersData)) {
-        setOrders(ordersData.map((row: any) => {
-          const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
-          const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
-          const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
-          return {
-            ...row,
-            createdAt,
-            items: itemsNormalized,
-            total: persistedTotal,
-          };
-        }) as any);
-      }
-
-      const settingsMap = Array.isArray(settingsData) ? settingsData : [];
-      const configRow = settingsMap.find((item: any) => String(item?.key ?? '').toLowerCase() === 'site_config') || settingsMap[0] || null;
-      const cachedSettings = readCachedSiteSettings() || {};
-      const remoteSettings = ((configRow?.value as Partial<SiteSettings>) || cachedSettings) as Partial<SiteSettings>;
-      const mergedSettings = getEffectiveSiteSettings({ ...cachedSettings, ...remoteSettings });
-      setSiteSettings(mergedSettings);
-      writeCachedSiteSettings(mergedSettings);
-
-      setRemoteError(null);
-      setLoading(false);
-    } catch (err) {
-      console.warn('Supabase sync failed:', err);
-      setRemoteError(String(err));
-      setLoading(false);
-    } finally {
-      isFetchingRef.current = false;
-      if (fetchQueuedRef.current && mountedRef.current) {
-        fetchQueuedRef.current = false;
-        void fetchRemote(true);
-      }
-    }
+    return inFlightCatalogFetchRef.current;
   };
 
   const scheduleRefetch = (delay = 150) => {
+    const now = Date.now();
+    if (now - lastCatalogFetchRef.current < 1000) {
+      return;
+    }
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -1151,26 +1173,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     mountedRef.current = true;
     if (!supabase) return;
-
-    if (!didInitialFetchRef.current) {
-      didInitialFetchRef.current = true;
-      // Remove any persisted products from localStorage to avoid showing stale
-      // deleted items. Preserve other cached payload fields (categories, brands)
-      // but ensure `products` is empty until the live fetch completes.
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') {
-            parsed.products = [];
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-          }
-        }
-      } catch (e) {
-        // ignore storage errors
-      }
-      void fetchRemote(false);
+    if (initialCatalogScheduledRef.current) {
+      return;
     }
+    initialCatalogScheduledRef.current = true;
+
+    // Remove any persisted products from localStorage to avoid showing stale
+    // deleted items. Preserve other cached payload fields (categories, brands)
+    // but ensure `products` is empty until the live fetch completes.
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          parsed.products = [];
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {
+      // ignore storage errors
+    }
+
+    const initialCatalogDelay = window.setTimeout(() => {
+      if (mountedRef.current) {
+        void fetchRemote(false);
+      }
+    }, 700);
 
     // Set up Supabase Realtime channel for instant multi-client synchronization
     const channel = supabase
@@ -1180,6 +1208,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'products' },
         (payload) => {
           console.debug('Realtime update: products changed', payload);
+          lastCatalogRefreshTriggerRef.current = Date.now();
           scheduleRefetch(100);
         }
       )
@@ -1188,6 +1217,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'categories' },
         (payload) => {
           console.debug('Realtime update: categories changed', payload);
+          lastCatalogRefreshTriggerRef.current = Date.now();
           scheduleRefetch(100);
         }
       )
@@ -1196,6 +1226,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'subcategories' },
         (payload) => {
           console.debug('Realtime update: subcategories changed', payload);
+          lastCatalogRefreshTriggerRef.current = Date.now();
           scheduleRefetch(100);
         }
       )
@@ -1204,6 +1235,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'brands' },
         (payload) => {
           console.debug('Realtime update: brands changed', payload);
+          lastCatalogRefreshTriggerRef.current = Date.now();
           scheduleRefetch(100);
         }
       )
@@ -1213,39 +1245,55 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-    // Re-synchronize when tab becomes visible or focused (e.g. user returns to app)
+    // Re-synchronize when tab becomes visible or focused only after a real idle gap,
+    // not during normal browsing or quick tab switches.
     const handleVisibilityOrFocus = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        // Immediately fetch fresh data (bypass background debounce) when the user
-        // returns to the tab so deleted products do not persist from cache.
-        void fetchRemote(false);
+        const now = Date.now();
+        const lastFetchAge = now - lastCatalogFetchRef.current;
+        const lastTriggerAge = now - lastCatalogRefreshTriggerRef.current;
+        if (lastFetchAge > 60000 && lastTriggerAge > 60000) {
+          void fetchRemote(false);
+        }
       }
     };
     window.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
-    // Also re-sync immediately when the browser regains network connectivity
-    // to avoid showing stale cached products after reconnect.
+    // Re-sync after reconnect only when the catalog has been stale for a long-enough time.
     const handleOnline = () => {
-      void fetchRemote(false);
+      const lastFetchAge = Date.now() - lastCatalogFetchRef.current;
+      const lastTriggerAge = Date.now() - lastCatalogRefreshTriggerRef.current;
+      if (lastFetchAge > 60000 && lastTriggerAge > 60000) {
+        void fetchRemote(false);
+      }
     };
     window.addEventListener('online', handleOnline);
 
-    // Re-sync on history navigation (back/forward)
+    // Re-sync on history navigation only when stale enough to be meaningful.
     const handlePopstate = () => {
-      void fetchRemote(false);
+      const lastFetchAge = Date.now() - lastCatalogFetchRef.current;
+      if (lastFetchAge > 60000) {
+        void fetchRemote(false);
+      }
     };
     window.addEventListener('popstate', handlePopstate);
 
-    // Periodic safety sync every 30s when tab is active in case of disconnected websocket
+    // Periodic safety sync only after a long idle window to avoid churn while browsing.
     const intervalId = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        scheduleRefetch(0);
+        const sinceLastFetch = Date.now() - lastCatalogFetchRef.current;
+        const sinceLastTrigger = Date.now() - lastCatalogRefreshTriggerRef.current;
+        if (sinceLastFetch > 120000 && sinceLastTrigger > 120000) {
+          scheduleRefetch(0);
+        }
       }
-    }, 30000);
+    }, 60000);
 
     return () => {
       mountedRef.current = false;
+      initialCatalogScheduledRef.current = false;
+      window.clearTimeout(initialCatalogDelay);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import ProductCard from "./ProductCard";
 import CategoryBar from "./CategoryBar";
+import supabase from "../lib/supabase";
 import { useData } from "../contexts/DataContext";
 import { useAuth } from "../contexts/AuthContext";
 import type { Product } from "../types";
@@ -39,9 +40,138 @@ export default function Homepage({
   );
   const [featuredProducts, setFeaturedProducts] = useState({ bestSellers: [] as Product[], newArrivals: [] as Product[] });
   const [isFeatureLoading, setIsFeatureLoading] = useState(true);
+  const featuredRequestRef = useRef<Promise<void> | null>(null);
+  const featureSignatureRef = useRef<string>('');
+  const emptySignatureFetchAttemptedRef = useRef(false);
 
   useEffect(() => {
-    let isCancelled = false;
+    let isActive = true;
+    const signature = visibleProducts
+      .map((product) => `${product.id}:${product.hero}:${product.tag ?? ''}:${product.createdAt ?? ''}`)
+      .join('|');
+    const shouldSkipEmptySignature = signature === '' && emptySignatureFetchAttemptedRef.current;
+
+    if ((featureSignatureRef.current === signature && featureSignatureRef.current !== '') || shouldSkipEmptySignature) {
+      return;
+    }
+    featureSignatureRef.current = signature;
+    emptySignatureFetchAttemptedRef.current = signature === '';
+
+    const normalizeHomepageProduct = (row: any): Product => {
+      const numericId = Number(row?.id);
+      const id = Number.isFinite(numericId) ? numericId : Number(String(row?.id || '').slice(-6)) || Math.floor(Math.random() * 1000000);
+      const brand = String(row?.brand || row?.brand_name || '').trim();
+      const createdAt = row?.created_at ?? row?.createdAt ?? null;
+      const sellingPrice = Number(row?.selling_price ?? row?.sellingPrice ?? 0);
+      const marketPrice = Number(row?.market_price ?? row?.marketPrice ?? 0);
+      const image = String(row?.image || row?.image_url || '').trim();
+      const tag = String(row?.tag || '').trim();
+      const hero = Boolean(row?.hero || tag.toLowerCase() === 'best seller');
+
+      return {
+        id,
+        name: String(row?.name || row?.label || 'Product'),
+        brand,
+        category: String(row?.category_id || row?.category || ''),
+        subcategory: row?.subcategory_id ?? row?.subcategory ?? null,
+        subcategoryId: row?.subcategory_id ?? row?.subcategory ?? null,
+        createdAt,
+        originalPrice: marketPrice || null,
+        sellingPrice: Number.isFinite(sellingPrice) ? sellingPrice : 0,
+        marketPrice: Number.isFinite(marketPrice) ? marketPrice : null,
+        stock: Number(row?.stock ?? 0),
+        isHidden: Boolean(row?.is_hidden),
+        rating: Number(row?.rating ?? 0),
+        reviews: Number(row?.reviews ?? 0),
+        tag: tag || (hero ? 'Best Seller' : null),
+        hero,
+        image,
+        description: String(row?.description || row?.details || ''),
+      };
+    };
+
+    const loadFeaturedProducts = async () => {
+      if (!supabase) {
+        return;
+      }
+
+      if (featuredRequestRef.current) {
+        await featuredRequestRef.current;
+        return;
+      }
+
+      const request = (async () => {
+        try {
+          const homepageSelect = 'id,name,brand,category_id,subcategory_id,tag,hero,image,created_at,selling_price,market_price,stock,is_hidden,rating,reviews,description';
+          const [bestSellersResult, newArrivalsResult] = await Promise.all([
+            supabase
+              .from('products')
+              .select(homepageSelect)
+              .eq('is_hidden', false)
+              .or('hero.eq.true,tag.ilike.%Best%20Seller%')
+              .order('created_at', { ascending: false })
+              .limit(8),
+            supabase
+              .from('products')
+              .select(homepageSelect)
+              .eq('is_hidden', false)
+              .order('created_at', { ascending: false })
+              .limit(8),
+          ]);
+
+          if (!isActive) return;
+
+          const bestSellers = (bestSellersResult.data || [])
+            .map(normalizeHomepageProduct)
+            .filter((product) => product && (product.hero || String(product.tag || '').toLowerCase().includes('best seller')))
+            .slice(0, 8);
+
+          const newArrivals = (newArrivalsResult.data || [])
+            .map(normalizeHomepageProduct)
+            .filter((product) => product)
+            .slice(0, 8);
+
+          setFeaturedProducts({
+            bestSellers,
+            newArrivals,
+          });
+          setIsFeatureLoading(false);
+        } catch (error) {
+          console.warn('Failed to fetch homepage product sections:', error);
+          const prepareFeaturedProducts = () => {
+            const sortedProductsByNewest = [...visibleProducts]
+              .filter((p) => p.createdAt)
+              .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
+
+            const bestSellers = [...visibleProducts]
+              .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
+              .slice(0, 8);
+
+            if (!isActive) return;
+            setFeaturedProducts({
+              bestSellers,
+              newArrivals: sortedProductsByNewest.slice(0, 8),
+            });
+            setIsFeatureLoading(false);
+          };
+
+          prepareFeaturedProducts();
+        }
+      })();
+
+      featuredRequestRef.current = request;
+
+      try {
+        await request;
+      } finally {
+        if (featuredRequestRef.current === request) {
+          featuredRequestRef.current = null;
+        }
+      }
+    };
+
+    setIsFeatureLoading(true);
+    void loadFeaturedProducts();
 
     const prepareFeaturedProducts = () => {
       const sortedProductsByNewest = [...visibleProducts]
@@ -52,15 +182,13 @@ export default function Homepage({
         .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
         .slice(0, 8);
 
-      if (isCancelled) return;
+      if (!isActive) return;
       setFeaturedProducts({
         bestSellers,
         newArrivals: sortedProductsByNewest.slice(0, 8),
       });
       setIsFeatureLoading(false);
     };
-
-    setIsFeatureLoading(true);
 
     const schedulePreparation = () => {
       if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -78,7 +206,7 @@ export default function Homepage({
 
     const cancelPreparation = schedulePreparation();
     return () => {
-      isCancelled = true;
+      isActive = false;
       cancelPreparation();
     };
   }, [visibleProducts]);
@@ -135,7 +263,9 @@ export default function Homepage({
     const loadBanner = async () => {
       try {
         const next = await fetchPromoBannerConfig();
-        if (!isMounted) return;
+        if (!isMounted || !next || !next.content || typeof next.content.headline !== 'string') {
+          return;
+        }
         setBannerConfig(next);
         setTextDraft(next.content.headline);
         writeBannerCache(next);

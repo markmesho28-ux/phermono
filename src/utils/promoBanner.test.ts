@@ -1,7 +1,17 @@
+jest.mock('../lib/supabase', () => ({
+  __esModule: true,
+  default: {
+    from: jest.fn(),
+  },
+  SUPABASE_URL: 'https://example.com',
+}));
+
+import supabase from '../lib/supabase';
 import {
   MIDDLE_PROMO_BANNER_PRODUCT_ID,
   DEFAULT_PROMO_BANNER_PRODUCTS,
   buildPromoBannerConfigFromRows,
+  fetchPromoBannerConfig,
   normalizePromoBannerConfig,
 } from './promoBanner';
 
@@ -67,5 +77,56 @@ describe('promoBanner middle product configuration and mapping', () => {
     expect(config.products[0].image).toBe('https://example.com/left.jpg');
     expect(config.products[1].image).toBe('https://example.com/mid.jpg');
     expect(config.products[2].image).toBe('https://example.com/right.jpg');
+  });
+
+  it('reuses the same in-flight promo-banner request when multiple mounts ask for it simultaneously', async () => {
+    const bannerMaybeSingle = jest.fn().mockResolvedValue({
+      data: { id: 'banner-123', campaign_label: 'SALE', headline: 'Big savings', badge_text: 'NEW', cta_enabled: false, cta_text: '', cta_url: '' },
+      error: null,
+    });
+    const bannerListMaybeSingle = jest.fn().mockResolvedValue({ data: { id: 'banner-123' }, error: null });
+    const productRows = [{ id: 'left-row-id', banner_id: 'banner-123', image_path: '', alt_text: 'Left', position: 1, is_enabled: true }];
+
+    const makeBannerQuery = (maybeSingle: jest.Mock) => ({
+      eq: jest.fn().mockReturnValue({
+        limit: jest.fn().mockReturnValue({ maybeSingle }),
+        order: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ maybeSingle }) }),
+      }),
+      order: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ maybeSingle }) }),
+      limit: jest.fn().mockReturnValue({ maybeSingle }),
+      maybeSingle,
+    });
+
+    const makeProductQuery = () => ({
+      eq: jest.fn().mockReturnValue({
+        order: jest.fn().mockResolvedValue({ data: productRows, error: null }),
+      }),
+      order: jest.fn().mockResolvedValue({ data: productRows, error: null }),
+    });
+
+    (supabase.from as jest.Mock).mockImplementation((table: string) => {
+      if (table === 'promotional_banners') {
+        return {
+          select: jest.fn().mockImplementation((selectText: string) => {
+            if (selectText === 'id') {
+              return makeBannerQuery(bannerListMaybeSingle);
+            }
+            return makeBannerQuery(bannerMaybeSingle);
+          }),
+        };
+      }
+      if (table === 'promotional_banner_products') {
+        return {
+          select: jest.fn().mockReturnValue(makeProductQuery()),
+        };
+      }
+      return { select: jest.fn() };
+    });
+
+    const [first, second] = await Promise.all([fetchPromoBannerConfig(), fetchPromoBannerConfig()]);
+
+    expect(first.content.headline).toBe('Big savings');
+    expect(second.content.headline).toBe('Big savings');
+    expect((supabase.from as jest.Mock).mock.calls.filter(([table]) => table === 'promotional_banners')).toHaveLength(2);
   });
 });

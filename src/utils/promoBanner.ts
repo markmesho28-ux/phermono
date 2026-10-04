@@ -311,14 +311,28 @@ const fetchPromoBannerConfigById = async (bannerId: string): Promise<PromoBanner
   return mapSupabaseBannerRow(bannerRow, Array.isArray(productRows) ? productRows : []);
 };
 
+let pendingPromoBannerFetch: Promise<PromoBannerConfig> | null = null;
+
 export const fetchPromoBannerConfig = async (): Promise<PromoBannerConfig> => {
+  if (pendingPromoBannerFetch) {
+    return pendingPromoBannerFetch;
+  }
+
+  pendingPromoBannerFetch = (async () => {
+    try {
+      const bannerId = await ensurePromoBannerExists();
+      if (!bannerId) return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+      return await fetchPromoBannerConfigById(bannerId);
+    } catch (error) {
+      console.warn('Failed to load promo banner config from Supabase:', error);
+      return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+    }
+  })();
+
   try {
-    const bannerId = await ensurePromoBannerExists();
-    if (!bannerId) return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
-    return await fetchPromoBannerConfigById(bannerId);
-  } catch (error) {
-    console.warn('Failed to load promo banner config from Supabase:', error);
-    return normalizePromoBannerConfig(DEFAULT_PROMO_BANNER);
+    return await pendingPromoBannerFetch;
+  } finally {
+    pendingPromoBannerFetch = null;
   }
 };
 
