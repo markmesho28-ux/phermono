@@ -198,17 +198,9 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
     }
   }, [currentIndex, isTransitioning, baseCount]);
 
-  // Turn transitions back on after silent snap
-  useEffect(() => {
-    if (!isTransitioning) {
-      const raf = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsTransitioning(true);
-        });
-      });
-      return () => cancelAnimationFrame(raf);
-    }
-  }, [isTransitioning]);
+  // The carousel only needs to animate when a user or the auto-scroll timer is actively
+  // advancing it. Re-enabling transitions via a nested RAF after every loop snap creates
+  // redundant main-thread work on slower mobile browsers.
 
   // Touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
