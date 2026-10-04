@@ -543,16 +543,26 @@ export default function App(){
       // ignore storage errors
     }
   }, [activeCategory]);
-  const handleMenuToggle = useCallback((forceOpen?: boolean) => {
-    setMobileMenuOpen(prev => {
-      if (typeof forceOpen === 'boolean') return forceOpen;
-      return !prev;
-    });
+  const deferUiAction = useCallback((callback: () => void) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(callback);
+      return;
+    }
+    callback();
   }, []);
 
+  const handleMenuToggle = useCallback((forceOpen?: boolean) => {
+    deferUiAction(() => {
+      setMobileMenuOpen(prev => {
+        if (typeof forceOpen === 'boolean') return forceOpen;
+        return !prev;
+      });
+    });
+  }, [deferUiAction]);
+
   const handleSidebarClose = useCallback(() => {
-    setMobileMenuOpen(false);
-  }, []);
+    deferUiAction(() => setMobileMenuOpen(false));
+  }, [deferUiAction]);
 
   const { products, actions } = useData();
   const { user } = useAuth();
@@ -622,17 +632,19 @@ export default function App(){
     setActiveCategory(id);
     setSelectedBrand(null);
     setSearchQuery('');
-    setMobileMenuOpen(false);
-    scrollToTop();
-  }, [scrollToTop]);
+    deferUiAction(() => {
+      setMobileMenuOpen(false);
+      scrollToTop();
+    });
+  }, [deferUiAction, scrollToTop]);
   const handleBrandSelect = useCallback((brandName: string) => {
     const matching = products.find(p=>p.brand===brandName);
     const targetCategory = matching ? matching.category : 'skincare';
     setSelectedBrand(brandName);
     setActiveCategory(targetCategory);
     setSearchQuery('');
-    scrollToTop();
-  }, [products, scrollToTop]);
+    deferUiAction(() => scrollToTop());
+  }, [deferUiAction, products, scrollToTop]);
 
   const handleAddToCart = useCallback((product: Product) => {
     setCartItems(prev => {
