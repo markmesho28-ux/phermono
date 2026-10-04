@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import Sidebar from "./components/Sidebar";
@@ -577,11 +577,20 @@ export default function App(){
   const { user } = useAuth();
   const visibleWishlist = user?.role === 'admin' ? wishlist : wishlist.filter((product) => !product.isHidden);
   const wishlistStorageKey = getWishlistStorageKey(user?.phone);
+  const hasRequestedCatalogRef = useRef(false);
 
   useEffect(() => {
-    if (activeCategory !== 'home' && products.length === 0 && actions?.refreshCatalog) {
-      void actions.refreshCatalog();
+    if (activeCategory === 'home' || products.length > 0) {
+      hasRequestedCatalogRef.current = false;
+      return;
     }
+
+    if (!actions?.refreshCatalog || hasRequestedCatalogRef.current) {
+      return;
+    }
+
+    hasRequestedCatalogRef.current = true;
+    void actions.refreshCatalog();
   }, [activeCategory, products.length, actions]);
 
   useEffect(() => {
@@ -628,7 +637,9 @@ export default function App(){
 
   const showToast = useCallback((msg: string) => {
     setToast({ message: msg, visible: true });
-    setTimeout(()=> setToast(t => ({ ...t, visible: false })), 2500);
+    setTimeout(() => {
+      setToast(t => ({ ...t, visible: false }));
+    }, 2500);
   }, []);
 
   const scrollToTop = useCallback(() => {
@@ -703,7 +714,6 @@ export default function App(){
   const totalCartCount = cartItems.reduce((s: number, i: CartItem) => s + i.qty, 0);
 
   const handleCheckoutConfirm = useCallback((order: OrderInput) => {
-    // close UI and give feedback
     setCartItems([]);
     try {
       localStorage.removeItem(CART_STORAGE_KEY);

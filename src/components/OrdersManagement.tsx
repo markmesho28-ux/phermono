@@ -7,7 +7,13 @@ import { formatOrderDate, getOrderDisplayId, getOrderTimestamp } from '../utils/
 import type { Order, OrderItem, Product } from '../types';
 
 export default function OrdersManagement(){
-  const { orders, products, actions } = useData();
+  const data = useData();
+  const orders = Array.isArray(data.orders) ? data.orders : [];
+  const products = Array.isArray(data.products) ? data.products : [];
+  const actions = data.actions ?? {
+    updateOrder: () => undefined,
+    deleteOrder: async () => undefined,
+  };
   const { user } = useAuth();
   const [orderSearch, setOrderSearch] = React.useState('');
   const [editingOrder, setEditingOrder] = React.useState<Order | null>(null);

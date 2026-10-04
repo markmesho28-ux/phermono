@@ -5,6 +5,9 @@ import App from './App';
 import { useAuth } from './contexts/AuthContext';
 import { useData } from './contexts/DataContext';
 
+jest.mock('./components/Homepage', () => () => <div data-testid="homepage" />);
+jest.mock('./components/CategoryView', () => () => <div data-testid="category-view" />);
+
 jest.mock('./contexts/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
@@ -17,6 +20,7 @@ jest.mock('./contexts/DataContext', () => ({
 
 describe('App overlay interactions', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     Object.defineProperty(window, 'scrollTo', {
       value: jest.fn(),
       writable: true,
@@ -56,5 +60,27 @@ describe('App overlay interactions', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /home overview/i })[0]);
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not re-trigger the catalog refresh on repeated renders while the catalog is still empty', () => {
+    sessionStorage.setItem('phermono_active_category_v1', 'skincare');
+    const refreshCatalog = jest.fn();
+    (useData as jest.Mock).mockReturnValue({
+      products: [],
+      categories: [
+        { id: 'home', label: 'Home Overview', icon: 'Sparkles', color: '', accent: '', image: '', subcategories: [{ id: 'all', label: 'All' }], brands: [] },
+        { id: 'skincare', label: 'skincare', icon: 'Sparkles', color: '', accent: '', image: '', subcategories: [{ id: 'all', label: 'All' }], brands: [] },
+      ],
+      actions: { refreshCatalog, deleteCategory: jest.fn(), addCategory: jest.fn(), updateCategory: jest.fn() },
+      orders: [],
+      siteSettings: { promo_banner_text: '' },
+      updateSiteSettings: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { rerender } = render(<App />);
+    expect(refreshCatalog).toHaveBeenCalledTimes(1);
+
+    rerender(<App />);
+    expect(refreshCatalog).toHaveBeenCalledTimes(1);
   });
 });

@@ -917,11 +917,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const initialCatalogScheduledRef = useRef(false);
   const isFetchingRef = useRef(false);
   const fetchQueuedRef = useRef(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
   const lastCatalogFetchRef = useRef(0);
   const lastCatalogRefreshTriggerRef = useRef(0);
   const inFlightCatalogFetchRef = useRef<Promise<void> | null>(null);
   const latestCatalogRequestIdRef = useRef(0);
+  const scheduledCatalogRefreshRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
 
   const fetchRemote = async (isBackground = false) => {
     if (!supabase) return;
@@ -931,7 +932,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (inFlightCatalogFetchRef.current) {
       return inFlightCatalogFetchRef.current;
     }
-    if (now - lastCatalogFetchRef.current < 1500) {
+    const minDelayMs = isBackground ? 4000 : 1500;
+    if (now - lastCatalogFetchRef.current < minDelayMs) {
       return;
     }
     lastCatalogFetchRef.current = now;
@@ -1175,17 +1177,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const scheduleRefetch = (delay = 150) => {
     const now = Date.now();
-    if (now - lastCatalogFetchRef.current < 1000) {
+    const timeSinceLastFetch = now - lastCatalogFetchRef.current;
+    const timeSinceLastTrigger = now - lastCatalogRefreshTriggerRef.current;
+
+    if (timeSinceLastFetch < 3500 || timeSinceLastTrigger < 1500) {
       return;
     }
+
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
-    debounceTimerRef.current = setTimeout(() => {
+
+    const nextDelay = Math.max(delay, 500);
+    scheduledCatalogRefreshRef.current = window.setTimeout(() => {
       if (mountedRef.current) {
         void fetchRemote(true);
       }
-    }, delay);
+    }, nextDelay);
+
+    debounceTimerRef.current = scheduledCatalogRefreshRef.current;
   };
 
   useEffect(() => {
@@ -1319,6 +1329,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       window.clearTimeout(initialCatalogDelay);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      if (scheduledCatalogRefreshRef.current) {
+        clearTimeout(scheduledCatalogRefreshRef.current);
+        scheduledCatalogRefreshRef.current = null;
       }
       clearInterval(intervalId);
       window.removeEventListener('visibilitychange', handleVisibilityOrFocus);

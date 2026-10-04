@@ -33,6 +33,7 @@ describe('OrdersManagement Component', () => {
     const handleDeleteOrder = jest.fn();
     (useData as jest.Mock).mockReturnValue({
       orders: mockOrders,
+      products: [],
       actions: {
         deleteOrder: handleDeleteOrder,
         updateOrder: jest.fn(),
@@ -57,7 +58,11 @@ describe('OrdersManagement Component', () => {
     });
     (useData as jest.Mock).mockReturnValue({
       orders: mockOrders,
-      actions: { deleteOrder: jest.fn() },
+      products: [],
+      actions: {
+        deleteOrder: jest.fn(),
+        updateOrder: jest.fn(),
+      },
     });
 
     render(<OrdersManagement />);

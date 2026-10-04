@@ -72,7 +72,7 @@ export interface Order {
   date?: number | string | null;
 }
 
-export type OrderInput = Omit<Order, "id" | "createdAt"> & {
+export type OrderInput = Partial<Pick<Order, 'id'>> & Omit<Order, 'id' | 'createdAt'> & {
   createdAt?: number | string;
 };
 
