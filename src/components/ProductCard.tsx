@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ShoppingBag, Heart, Eye, EyeOff, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
@@ -20,7 +20,7 @@ interface ProductCardProps {
   onDelete?: (product: Product) => void;
 }
 
-export default function ProductCard({
+const ProductCard = React.memo(function ProductCard({
   product,
   onAddToCart,
   onQuickView,
@@ -36,19 +36,29 @@ export default function ProductCard({
   const { user } = useAuth();
   const { actions, siteSettings } = useData();
 
-  const generalPrice = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
-  const storePrice = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
-  const ourPrice = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
-  const dynamicDiscountPercent = getPromoDiscountPercent(siteSettings);
-  const activeDisplayPrice = typeof storePrice === 'number' ? getDiscountedPrice(storePrice, siteSettings) : (typeof generalPrice === 'number' ? getDiscountedPrice(generalPrice, siteSettings) : 0);
-  const discount = (typeof generalPrice === 'number' && typeof storePrice === 'number' && generalPrice > 0)
-    ? Math.round(((generalPrice - storePrice) / generalPrice) * 100)
-    : null;
-  const displayDiscountPercent = Math.max(dynamicDiscountPercent, discount ?? 0);
+  const { generalPrice, storePrice, ourPrice, activeDisplayPrice, displayDiscountPercent } = useMemo(() => {
+    const general = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
+    const store = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
+    const our = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
+    const dynamicDiscountPercent = getPromoDiscountPercent(siteSettings);
+    const activeDisplay = typeof store === 'number' ? getDiscountedPrice(store, siteSettings) : (typeof general === 'number' ? getDiscountedPrice(general, siteSettings) : 0);
+    const discount = (typeof general === 'number' && typeof store === 'number' && general > 0)
+      ? Math.round(((general - store) / general) * 100)
+      : null;
+
+    return {
+      generalPrice: general,
+      storePrice: store,
+      ourPrice: our,
+      activeDisplayPrice: activeDisplay,
+      displayDiscountPercent: Math.max(dynamicDiscountPercent, discount ?? 0),
+    };
+  }, [product.adminCost, product.marketPrice, product.originalPrice, product.sellingPrice, siteSettings]);
+
   const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
-  const handleAddClick = (e?: React.SyntheticEvent<HTMLButtonElement>) => {
+  const handleAddClick = useCallback((e?: React.SyntheticEvent<HTMLButtonElement>) => {
     if (e) {
       if (typeof e.preventDefault === 'function') {
         e.preventDefault();
@@ -69,11 +79,11 @@ export default function ProductCard({
       addActionLockRef.current = false;
       setAddedAnim(false);
     }, 1200);
-  };
+  }, [onAddToCart, product]);
 
   const lastWishlistActionRef = useRef(0);
 
-  const handleWishlistToggle = (
+  const handleWishlistToggle = useCallback((
     e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement> | React.PointerEvent<HTMLButtonElement>
   ) => {
     e.stopPropagation();
@@ -86,7 +96,7 @@ export default function ProductCard({
     }
     lastWishlistActionRef.current = now;
     onWishlist(product);
-  };
+  }, [onWishlist, product]);
 
   return (
     <div
@@ -231,6 +241,8 @@ export default function ProductCard({
             <div className="w-full">
               <button
                 type="button"
+                onPointerDown={handleAddClick}
+                onTouchStart={handleAddClick}
                 onClick={handleAddClick}
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`card-add-btn flex w-full items-center justify-center gap-1 rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] transition-all duration-300 active:scale-95 touch-target md:px-4 md:py-2.5 md:text-[11px] ${
@@ -257,4 +269,6 @@ export default function ProductCard({
       </div>
     </div>
   );
-}
+});
+
+export default ProductCard;

@@ -14,7 +14,10 @@ jest.mock('../contexts/DataContext', () => ({
     actions: {
       toggleHero: mockToggleHero,
     },
+    siteSettings: {},
   }),
+  getDiscountedPrice: (price: number) => price,
+  getPromoDiscountPercent: () => 0,
 }));
 
 describe('ProductCard add button responsiveness', () => {

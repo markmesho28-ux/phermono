@@ -34,6 +34,7 @@ export default function Homepage({
   const { products, categories } = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const wishlistLookup = useMemo(() => new Set((wishlist || []).map((item) => item.id)), [wishlist]);
   const visibleProducts = useMemo(
     () => (isAdmin ? products : products.filter((product) => !product.isHidden)),
     [isAdmin, products],
@@ -547,7 +548,7 @@ export default function Homepage({
                     onAddToCart={onAddToCart}
                     onQuickView={onQuickView}
                     onWishlist={onWishlist}
-                    isWishlisted={wishlist.some((w) => w.id === product.id)}
+                    isWishlisted={wishlistLookup.has(product.id)}
                     showStatusBadges={false}
                   />
                 ))}
@@ -572,7 +573,7 @@ export default function Homepage({
                     onAddToCart={onAddToCart}
                     onQuickView={onQuickView}
                     onWishlist={onWishlist}
-                    isWishlisted={wishlist.some((w) => w.id === product.id)}
+                    isWishlisted={wishlistLookup.has(product.id)}
                     showStatusBadges={false}
                   />
                 ))}

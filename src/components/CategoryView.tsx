@@ -30,6 +30,7 @@ export default function CategoryView({
 }: CategoryViewProps) {
   const { products: contextProducts, categories, priceRanges, actions, brands: ALL_BRANDS } = useData();
   const { user } = useAuth();
+  const wishlistLookup = useMemo(() => new Set((wishlist || []).map((item) => item.id)), [wishlist]);
   const category = categories.find((c) => c.id === categoryId) ?? null;
 
   // admin modal state
@@ -329,7 +330,7 @@ export default function CategoryView({
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
             {filteredProducts.map((product)=>(
-              <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlist.some(w=>w.id===product.id)} onEdit={user&&user.role==='admin'?openEditProduct:undefined} onDelete={user&&user.role==='admin'?handleDeleteProduct:undefined} />
+              <ProductCard key={product.id} product={product} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlistLookup.has(product.id)} onEdit={user&&user.role==='admin'?openEditProduct:undefined} onDelete={user&&user.role==='admin'?handleDeleteProduct:undefined} />
             ))}
           </div>
         </>

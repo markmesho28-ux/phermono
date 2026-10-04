@@ -403,6 +403,8 @@ interface SearchResultsProps {
 }
 
 function SearchResults({ results, onAddToCart, onQuickView, onWishlist, wishlist }: SearchResultsProps){
+  const wishlistLookup = React.useMemo(() => new Set((wishlist || []).map((item) => item.id)), [wishlist]);
+
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-6 pb-20">
       <h2 className="text-2xl font-bold mb-4">Search Results</h2>
@@ -411,7 +413,7 @@ function SearchResults({ results, onAddToCart, onQuickView, onWishlist, wishlist
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
           {results.map(p => (
-            <ProductCard key={p.id} product={p} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlist.some(w=>w.id===p.id)} />
+            <ProductCard key={p.id} product={p} onAddToCart={onAddToCart} onQuickView={onQuickView} onWishlist={onWishlist} isWishlisted={wishlistLookup.has(p.id)} />
           ))}
         </div>
       )}
@@ -676,6 +678,7 @@ export default function App(){
   }, [products, user]);
 
   const searchResults = matchProducts(searchQuery);
+  const wishlistLookup = React.useMemo(() => new Set((wishlist || []).map((item) => item.id)), [wishlist]);
 
   const totalCartCount = cartItems.reduce((s: number, i: CartItem) => s + i.qty, 0);
 
@@ -864,7 +867,7 @@ export default function App(){
       />
 
       {quickViewProduct && (
-        <QuickViewModal product={quickViewProduct} onClose={()=>setQuickViewProduct(null)} onAddToCart={handleAddToCart} onWishlist={handleWishlist} isWishlisted={wishlist.some((w: Product) => w.id === quickViewProduct.id)} />
+        <QuickViewModal product={quickViewProduct} onClose={()=>setQuickViewProduct(null)} onAddToCart={handleAddToCart} onWishlist={handleWishlist} isWishlisted={quickViewProduct ? wishlistLookup.has(quickViewProduct.id) : false} />
       )}
 
       {/* Profile and Wishlist are now dedicated full-page views handled by `activeCategory` */}
