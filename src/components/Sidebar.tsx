@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Sparkles,
   Wind,
@@ -60,13 +60,11 @@ const SidebarBody = React.memo(function SidebarBody({
       {/* Home Navigation */}
       <button
         type="button"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
+        onClick={() => {
           onSelect("home");
           if (onClose) onClose();
         }}
-        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
         className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-semibold tracking-[0.02em] transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
           String(activeCategory) === "home"
             ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)]"
@@ -88,13 +86,11 @@ const SidebarBody = React.memo(function SidebarBody({
       {isAdmin && (
         <button
           type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             onSelect('orders');
             if (onClose) onClose();
           }}
-          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
           className={`mt-1.5 sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-semibold tracking-[0.02em] transition-all duration-300 cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === 'orders'
               ? 'active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)]'
@@ -120,12 +116,8 @@ const SidebarBody = React.memo(function SidebarBody({
           {isAdmin && (
             <button
               type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                openAddModal();
-              }}
-              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+              onClick={() => openAddModal()}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
               className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#efd7ab] bg-[#fffaf2] text-brand-gold transition-colors hover:bg-[#f9efdc] pointer-events-auto touch-target"
               title="Add Category"
             >
@@ -147,13 +139,11 @@ const SidebarBody = React.memo(function SidebarBody({
             <div key={cat.id} className="relative">
               <button
                 type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   onSelect(cat.id);
                   if (onClose) onClose();
                 }}
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                 className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-medium tracking-[0.02em] transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
                   isActive
                     ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)] font-semibold"
@@ -184,17 +174,11 @@ const SidebarBody = React.memo(function SidebarBody({
               {isAdmin && (
                 <div
                   className="absolute right-8 top-1/2 -translate-y-1/2 flex gap-1 z-10"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditModal(cat);
-                    }}
-                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                    onClick={() => openEditModal(cat)}
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-stone-700 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Edit"
                   >
@@ -202,12 +186,8 @@ const SidebarBody = React.memo(function SidebarBody({
                   </button>
                   <button
                     type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteCategory(cat.id);
-                    }}
-                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                    onClick={() => onDeleteCategory(cat.id)}
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
                     className="p-1 rounded bg-white/80 hover:bg-white text-red-500 cursor-pointer shadow-xs flex items-center justify-center touch-target"
                     title="Delete"
                   >
@@ -223,13 +203,11 @@ const SidebarBody = React.memo(function SidebarBody({
       <div className="pt-3 mt-3 border-t border-stone-100">
         <button
           type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             onSelect("about");
             if (onClose) onClose();
           }}
-          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
           className={`sidebar-nav-item w-full flex items-center justify-between px-4 py-3.5 rounded-[20px] border text-sm font-medium tracking-[0.02em] transition-all duration-300 group cursor-pointer pointer-events-auto touch-target ${
             String(activeCategory) === "about"
               ? "active border-[#f0dfa5] bg-[linear-gradient(135deg,#181410_0%,#2a211d_45%,#3a2b1e_100%)] text-white shadow-[0_18px_38px_rgba(26,20,15,0.24)] font-semibold"
@@ -287,7 +265,6 @@ const CategoryForm = React.memo(function CategoryForm({ initial, onClose, mode }
   }, []);
 
   const submit = useCallback((e?: React.MouseEvent | any) => {
-    if (e && typeof e.preventDefault === 'function') e.preventDefault();
     if (mode === 'add') {
       if (!label.trim()) return;
       let slug = makeSlug(label);
@@ -421,14 +398,12 @@ export default React.memo(function Sidebar({ activeCategory, onSelect, mobileOpe
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<'add' | 'edit'>('add');
   const [editingCat, setEditingCat] = useState<Category | null>(null);
-  const lastBackdropClickRef = useRef(0);
   const isOpen = Boolean(mobileOpen);
 
   const categories = useMemo(() => CATEGORIES, [CATEGORIES]);
 
   useEffect(() => {
     if (isOpen) {
-      lastBackdropClickRef.current = Date.now();
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
@@ -438,30 +413,11 @@ export default React.memo(function Sidebar({ activeCategory, onSelect, mobileOpe
     return () => {};
   }, [isOpen]);
 
-  const requestBackdropClose = useCallback(() => {
-    const now = Date.now();
-    if (now - lastBackdropClickRef.current < 600) {
-      return;
-    }
-    lastBackdropClickRef.current = now;
+  const handleBackdropClick = useCallback(() => {
     if (onClose) onClose();
   }, [onClose]);
 
-  const handleBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    e.preventDefault();
-    requestBackdropClose();
-  }, [requestBackdropClose]);
-
-  const handleBackdropClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    requestBackdropClose();
-  }, [requestBackdropClose]);
-
-  const openAddModal = useCallback((e?: React.MouseEvent) => {
-    if (e && typeof e.stopPropagation === 'function') {
-      e.stopPropagation();
-    }
+  const openAddModal = useCallback(() => {
     setMode('add');
     setEditingCat(null);
     setModalOpen(true);
@@ -481,33 +437,28 @@ export default React.memo(function Sidebar({ activeCategory, onSelect, mobileOpe
     <>
       <div
         data-testid="sidebar-backdrop"
-        onPointerDown={handleBackdropPointerDown}
         onClick={handleBackdropClick}
-        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: isOpen ? 'auto' : 'none' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-[90] transition-opacity duration-300 md:hidden ${
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isOpen ? "opacity-100" : "opacity-0"
         }`}
         aria-hidden="true"
       />
 
       <aside
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: isOpen ? 'auto' : 'none' }}
         className={`fixed left-0 top-0 w-4/5 sm:w-80 max-w-sm h-full z-[95] flex flex-col border-r border-[#f0e2c9] bg-[linear-gradient(180deg,rgba(255,253,251,0.96)_0%,rgba(248,242,233,0.97)_100%)] shadow-[0_24px_80px_rgba(35,25,18,0.18)] backdrop-blur-xl transition-transform duration-300 ease-out md:hidden ${
-          isOpen ? "translate-x-0 pointer-events-auto" : "-translate-x-full pointer-events-none"
+          isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         aria-label="Mobile categories navigation"
       >
         <div className="flex-none flex items-center justify-end px-4 py-3 border-b border-stone-100 bg-[#FAF8F5]/90">
           <button
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={() => {
               if (onClose) onClose();
             }}
-            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent', pointerEvents: 'auto' }}
             className="p-2 rounded-full text-stone-400 hover:text-brand-black hover:bg-stone-200/60 transition-colors cursor-pointer touch-target"
             aria-label="Close menu"
           >

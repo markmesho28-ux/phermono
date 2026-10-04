@@ -133,8 +133,6 @@ export default function ProductCard({
 
         <button
           type="button"
-          onPointerDown={handleWishlistToggle}
-          onTouchStart={handleWishlistToggle}
           onClick={handleWishlistToggle}
           style={{ touchAction: 'manipulation' }}
           className={`absolute right-2.5 top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-full border shadow-md transition-all duration-300 md:right-3 md:top-3 md:h-10 md:w-10 touch-target ${
@@ -233,8 +231,6 @@ export default function ProductCard({
             <div className="w-full">
               <button
                 type="button"
-                onPointerDown={handleAddClick}
-                onTouchStart={handleAddClick}
                 onClick={handleAddClick}
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 className={`card-add-btn flex w-full items-center justify-center gap-1 rounded-full px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] transition-all duration-300 active:scale-95 touch-target md:px-4 md:py-2.5 md:text-[11px] ${

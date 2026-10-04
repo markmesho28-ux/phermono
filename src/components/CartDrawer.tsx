@@ -142,7 +142,6 @@ export function CartDrawer({
     <>
       <div
         data-testid="cart-backdrop"
-        onPointerDown={handleBackdropClick}
         onClick={handleBackdropClick}
         style={{ touchAction: 'manipulation' }}
         className={`fixed inset-0 bg-brand-black/60 backdrop-blur-sm z-50 transition-opacity duration-300 ${
@@ -151,7 +150,6 @@ export function CartDrawer({
       />
 
       <aside
-        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         style={{ touchAction: 'manipulation' }}
         className={`fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white z-50 flex flex-col shadow-2xl transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:h-[82vh] max-md:max-h-[82vh] max-md:w-full max-md:rounded-t-[28px] max-md:border-t max-md:border-brand-gold-border/40 max-md:overflow-hidden ${
@@ -162,11 +160,6 @@ export function CartDrawer({
           {headerContent}
           <button
             type="button"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onClose();
-            }}
             onClick={(e) => {
               e.stopPropagation();
               onClose();
