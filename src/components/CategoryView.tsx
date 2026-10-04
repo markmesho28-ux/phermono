@@ -62,6 +62,31 @@ export default function CategoryView({
     : contextProducts.filter((product) => !product.isHidden);
   const categoryProducts = useMemo(() => effectiveProducts.filter((p) => p.category === categoryId), [effectiveProducts, categoryId]);
 
+  const subcategoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of categoryProducts) {
+      const key = product.subcategoryId ?? 'uncategorized';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [categoryProducts]);
+
+  const brandCountsBySelection = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of categoryProducts) {
+      if (selectedSubcategory !== 'all' && product.subcategoryId !== selectedSubcategory) {
+        continue;
+      }
+      const key = product.brand || 'Unknown';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [categoryProducts, selectedSubcategory]);
+
+  const activeSubcategoryCount = selectedSubcategory === 'all'
+    ? categoryProducts.length
+    : subcategoryCounts.get(selectedSubcategory) ?? 0;
+
   const availableBrands = useMemo(() => {
     if (!category) return [] as string[];
     if (category.brands && category.brands.length) return category.brands;
@@ -168,7 +193,7 @@ export default function CategoryView({
           <div className="flex gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {category.subcategories.map((sub) => {
               const isActive = selectedSubcategory === sub.id;
-              const subCount = sub.id === "all" ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===sub.id).length;
+              const subCount = sub.id === 'all' ? categoryProducts.length : subcategoryCounts.get(sub.id) ?? 0;
               return (
                 <div key={sub.id} className="relative shrink-0">
                   <button
@@ -238,14 +263,14 @@ export default function CategoryView({
               <span className="inline-flex items-center gap-2">
                 <span>All Brands</span>
                 <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${selectedBrand==='all' ? 'bg-[#f3d29c] text-[#1d130d]' : 'bg-[#f7f0e6] text-[#6b5441]'}`}>
-                  {selectedSubcategory==='all' ? categoryProducts.length : categoryProducts.filter((p)=>p.subcategoryId===selectedSubcategory).length}
+                  {activeSubcategoryCount}
                 </span>
               </span>
             </button>
 
             {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
               const isSelected = selectedBrand===brand;
-              const brandCount = categoryProducts.filter(p=>p.brand===brand && (selectedSubcategory==='all' || p.subcategoryId===selectedSubcategory)).length;
+              const brandCount = brandCountsBySelection.get(brand) ?? 0;
               return (
                 <div key={brand} className="relative shrink-0">
                   <button
