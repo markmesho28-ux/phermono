@@ -875,15 +875,6 @@ export const getBestSellerState = (product?: Partial<Product> | Record<string, a
   return Boolean(product.hero || product.isBestSeller || product.is_best_seller || tagValue === 'best seller');
 };
 
-const resolveBestSellerTag = (nextValue: boolean, fallbackTag?: string | null): string | null => {
-  if (nextValue) return 'Best Seller';
-
-  const tagValue = typeof fallbackTag === 'string' ? fallbackTag.trim() : '';
-  if (!tagValue) return null;
-
-  return tagValue.toLowerCase() === 'best seller' ? null : tagValue;
-};
-
 const persistBestSellerFlag = async (productId: number, nextValue: boolean): Promise<{ ok: boolean; row?: any; revision?: number }> => {
   if (!supabase) {
     return { ok: false };
