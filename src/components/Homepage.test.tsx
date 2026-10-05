@@ -154,7 +154,7 @@ describe('Homepage featured sections', () => {
                 order: jest.fn().mockReturnValue({
                   limit: jest.fn().mockReturnValue(
                     makeDeferredQuery((resolver) => {
-                      resolveArrivalQuery = resolver;
+                        resolveArrivalQuery = resolver;
                     }),
                   ),
                 }),
@@ -199,5 +199,89 @@ describe('Homepage featured sections', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Best Seller').length).toBeGreaterThan(0);
     }, { timeout: 2000 });
+  });
+
+  it('treats is_best_seller as a real best-seller signal and keeps new arrivals newest-first', async () => {
+    const newerArrival = { id: 'n3', name: 'Newest Arrival', created_at: '2024-03-01T00:00:00Z', is_hidden: false, image: 'https://example.com/new.jpg', brand: 'Brand', selling_price: 120, market_price: 140, is_best_seller: false };
+    const olderArrival = { id: 'n2', name: 'Older Arrival', created_at: '2024-02-15T00:00:00Z', is_hidden: false, image: 'https://example.com/old.jpg', brand: 'Brand', selling_price: 110, market_price: 130, is_best_seller: false };
+    const bestSeller = { id: 'b2', name: 'Flagged Best Seller', created_at: '2024-02-01T00:00:00Z', is_hidden: false, image: 'https://example.com/best.jpg', brand: 'Brand', selling_price: 170, market_price: 190, is_best_seller: true };
+
+    (supabase.from as jest.Mock).mockImplementation(() => ({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockImplementation((column: string) => {
+          if (column === 'is_hidden') {
+            return {
+              or: jest.fn().mockReturnValue({
+                order: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue({ data: [bestSeller], error: null }),
+                }),
+              }),
+              order: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue({ data: [newerArrival, olderArrival], error: null }),
+              }),
+            };
+          }
+          return {
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({ data: [newerArrival, olderArrival], error: null }),
+            }),
+          };
+        }),
+      }),
+    }));
+
+    render(
+      <Homepage
+        onAddToCart={jest.fn()}
+        onQuickView={jest.fn()}
+        onWishlist={jest.fn()}
+        wishlist={[]}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Flagged Best Seller')).toBeInTheDocument();
+      expect(screen.getAllByText('Newest Arrival')[0]).toBeInTheDocument();
+    });
+  });
+
+  it('keeps already-loaded products visible while a background refresh is pending', async () => {
+    const pending = new Promise(() => undefined);
+    (supabase.from as jest.Mock).mockImplementation(() => ({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockImplementation((column: string) => {
+          if (column === 'is_hidden') {
+            return {
+              or: jest.fn().mockReturnValue({
+                order: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue(pending) }),
+              }),
+              order: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue(pending) }),
+            };
+          }
+          return { order: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue(pending) }) };
+        }),
+      }),
+    }));
+
+    (useData as jest.Mock).mockReturnValue({
+      products: [
+        { id: 'persisted-1', name: 'Persisted Best Seller', hero: true, tag: 'Best Seller', createdAt: '2024-01-10T00:00:00Z', isHidden: false },
+        { id: 'persisted-2', name: 'Persisted Arrival', createdAt: '2024-02-01T00:00:00Z', isHidden: false },
+      ],
+      categories: [],
+    });
+
+    render(
+      <Homepage
+        onAddToCart={jest.fn()}
+        onQuickView={jest.fn()}
+        onWishlist={jest.fn()}
+        wishlist={[]}
+      />
+    );
+
+    expect(screen.getAllByText('Persisted Best Seller').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Persisted Arrival').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Loading products')).not.toBeInTheDocument();
   });
 });

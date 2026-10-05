@@ -39,14 +39,47 @@ export default function Homepage({
     () => (isAdmin ? products : products.filter((product) => !product.isHidden)),
     [isAdmin, products],
   );
+  const sortNewestFirst = (a: Product, b: Product) => {
+    const aTime = a.createdAt ? new Date(String(a.createdAt)).getTime() : 0;
+    const bTime = b.createdAt ? new Date(String(b.createdAt)).getTime() : 0;
+    const aIsValid = Number.isFinite(aTime);
+    const bIsValid = Number.isFinite(bTime);
+
+    if (aIsValid && bIsValid && aTime !== bTime) {
+      return bTime - aTime;
+    }
+    if (aIsValid !== bIsValid) {
+      return aIsValid ? -1 : 1;
+    }
+
+    return Number(b.id) - Number(a.id);
+  };
   const [featuredProducts, setFeaturedProducts] = useState({ bestSellers: [] as Product[], newArrivals: [] as Product[] });
   const [isFeatureLoading, setIsFeatureLoading] = useState(true);
+  const hasCachedVisibleProducts = visibleProducts.length > 0;
+  const hasRenderedFeaturedProducts = featuredProducts.bestSellers.length > 0 || featuredProducts.newArrivals.length > 0;
+  const cachedBestSellers = useMemo(
+    () => [...visibleProducts]
+      .filter((product) => Boolean(product.hero) || Boolean((product as any).isBestSeller) || Boolean((product as any).is_best_seller) || String(product.tag || '').toLowerCase() === 'best seller')
+      .slice(0, 8),
+    [visibleProducts],
+  );
+  const cachedNewArrivals = useMemo(
+    () => [...visibleProducts]
+      .filter((product) => product.createdAt)
+      .sort(sortNewestFirst)
+      .slice(0, 8),
+    [visibleProducts],
+  );
   const featuredRequestRef = useRef<Promise<void> | null>(null);
   const featureSignatureRef = useRef<string>('');
   const emptySignatureFetchAttemptedRef = useRef(false);
+  const homepageEffectIdRef = useRef(0);
+  const remoteFeaturedResolvedRef = useRef(false);
 
   useEffect(() => {
-    let isActive = true;
+    const effectId = ++homepageEffectIdRef.current;
+    remoteFeaturedResolvedRef.current = false;
     const signature = visibleProducts
       .map((product) => `${product.id}:${product.hero}:${product.tag ?? ''}:${product.createdAt ?? ''}`)
       .join('|');
@@ -67,7 +100,7 @@ export default function Homepage({
       const marketPrice = Number(row?.market_price ?? row?.marketPrice ?? 0);
       const image = String(row?.image || row?.image_url || '').trim();
       const tag = String(row?.tag || '').trim();
-      const hero = Boolean(row?.hero || tag.toLowerCase() === 'best seller');
+      const hero = Boolean(row?.hero || row?.is_best_seller || row?.isBestSeller || tag.toLowerCase() === 'best seller');
 
       return {
         id,
@@ -86,6 +119,8 @@ export default function Homepage({
         reviews: Number(row?.reviews ?? 0),
         tag: tag || (hero ? 'Best Seller' : null),
         hero,
+        isBestSeller: hero,
+        is_best_seller: hero,
         image,
         description: String(row?.description || row?.details || ''),
       };
@@ -103,13 +138,13 @@ export default function Homepage({
 
       const request = (async () => {
         try {
-          const homepageSelect = 'id,name,brand,category_id,subcategory_id,tag,hero,image,created_at,selling_price,market_price,stock,is_hidden,rating,reviews,description';
+          const homepageSelect = 'id,name,brand,category_id,subcategory_id,tag,hero,is_best_seller,image,created_at,selling_price,market_price,stock,is_hidden,rating,reviews,description';
           const [bestSellersResult, newArrivalsResult] = await Promise.all([
             supabase
               .from('products')
               .select(homepageSelect)
               .eq('is_hidden', false)
-              .or('hero.eq.true,tag.ilike.%Best%20Seller%')
+              .or('hero.eq.true,is_best_seller.eq.true,tag.ilike.%Best%20Seller%')
               .order('created_at', { ascending: false })
               .limit(8),
             supabase
@@ -120,7 +155,7 @@ export default function Homepage({
               .limit(8),
           ]);
 
-          if (!isActive) return;
+          if (effectId !== homepageEffectIdRef.current) return;
 
           const bestSellers = (bestSellersResult.data || [])
             .map(normalizeHomepageProduct)
@@ -132,6 +167,7 @@ export default function Homepage({
             .filter((product) => product)
             .slice(0, 8);
 
+          remoteFeaturedResolvedRef.current = true;
           setFeaturedProducts({
             bestSellers,
             newArrivals,
@@ -140,15 +176,16 @@ export default function Homepage({
         } catch (error) {
           console.warn('Failed to fetch homepage product sections:', error);
           const prepareFeaturedProducts = () => {
+            if (remoteFeaturedResolvedRef.current) return;
             const sortedProductsByNewest = [...visibleProducts]
               .filter((p) => p.createdAt)
-              .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
+              .sort(sortNewestFirst);
 
             const bestSellers = [...visibleProducts]
-              .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
+              .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
               .slice(0, 8);
 
-            if (!isActive) return;
+            if (effectId !== homepageEffectIdRef.current) return;
             setFeaturedProducts({
               bestSellers,
               newArrivals: sortedProductsByNewest.slice(0, 8),
@@ -171,19 +208,42 @@ export default function Homepage({
       }
     };
 
-    setIsFeatureLoading(true);
-    void loadFeaturedProducts();
+    setIsFeatureLoading(!hasCachedVisibleProducts && !hasRenderedFeaturedProducts);
+
+    if (!supabase) {
+      const prepareFeaturedProducts = () => {
+        if (remoteFeaturedResolvedRef.current) return;
+        const sortedProductsByNewest = [...visibleProducts]
+          .filter((p) => p.createdAt)
+          .sort(sortNewestFirst);
+
+        const bestSellers = [...visibleProducts]
+          .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
+          .slice(0, 8);
+
+        if (effectId !== homepageEffectIdRef.current) return;
+        setFeaturedProducts({
+          bestSellers,
+          newArrivals: sortedProductsByNewest.slice(0, 8),
+        });
+        setIsFeatureLoading(false);
+      };
+
+      prepareFeaturedProducts();
+      return undefined;
+    }
 
     const prepareFeaturedProducts = () => {
+      if (remoteFeaturedResolvedRef.current) return;
       const sortedProductsByNewest = [...visibleProducts]
         .filter((p) => p.createdAt)
-        .sort((a, b) => Number(new Date(String((b as any).createdAt))) - Number(new Date(String((a as any).createdAt))));
+        .sort(sortNewestFirst);
 
       const bestSellers = [...visibleProducts]
-        .filter((p) => Boolean(p.hero) || String(p.tag || '').toLowerCase() === 'best seller')
+        .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
         .slice(0, 8);
 
-      if (!isActive) return;
+      if (effectId !== homepageEffectIdRef.current) return;
       setFeaturedProducts({
         bestSellers,
         newArrivals: sortedProductsByNewest.slice(0, 8),
@@ -191,29 +251,17 @@ export default function Homepage({
       setIsFeatureLoading(false);
     };
 
-    const schedulePreparation = () => {
-      if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-        const idleId = window.requestIdleCallback(prepareFeaturedProducts, { timeout: 150 });
-        return () => {
-          if (typeof window.cancelIdleCallback === 'function') {
-            window.cancelIdleCallback(idleId);
-          }
-        };
-      }
+    const timeoutId = window.setTimeout(prepareFeaturedProducts, 0);
+    void loadFeaturedProducts();
 
-      const timeoutId = window.setTimeout(prepareFeaturedProducts, 0);
-      return () => window.clearTimeout(timeoutId);
-    };
-
-    const cancelPreparation = schedulePreparation();
     return () => {
-      isActive = false;
-      cancelPreparation();
+      window.clearTimeout(timeoutId);
     };
   }, [visibleProducts]);
 
-  const renderedBestSellers = featuredProducts.bestSellers;
-  const renderedNewArrivals = featuredProducts.newArrivals;
+  const renderedBestSellers = featuredProducts.bestSellers.length > 0 ? featuredProducts.bestSellers : cachedBestSellers;
+  const renderedNewArrivals = featuredProducts.newArrivals.length > 0 ? featuredProducts.newArrivals : cachedNewArrivals;
+  const shouldShowFeatureSkeletons = isFeatureLoading && !hasCachedVisibleProducts && !hasRenderedFeaturedProducts;
 
   const renderProductSkeletons = (count = 4) =>
     Array.from({ length: count }, (_, index) => (
@@ -539,7 +587,7 @@ export default function Homepage({
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
-            {isFeatureLoading
+            {shouldShowFeatureSkeletons
               ? renderProductSkeletons(4)
               : renderedBestSellers.map((product) => (
                   <ProductCard
@@ -564,7 +612,7 @@ export default function Homepage({
           </div>
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5">
-            {isFeatureLoading
+            {shouldShowFeatureSkeletons
               ? renderProductSkeletons(4)
               : renderedNewArrivals.map((product) => (
                   <ProductCard

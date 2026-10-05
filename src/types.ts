@@ -36,6 +36,8 @@ export interface Product {
   skinType?: string | null;
   tag?: string | null;
   hero?: boolean;
+  isBestSeller?: boolean;
+  is_best_seller?: boolean;
   image: string;
   description: string;
 }

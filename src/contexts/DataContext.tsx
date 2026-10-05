@@ -368,25 +368,76 @@ const slugify = (value: string) => {
 };
 
 const resolveSingleRowByField = async (table: string, field: string, value: string, supabaseClient: any = supabase): Promise<any | null> => {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) return null;
+
+  const candidateValues = Array.from(new Set([
+    rawValue,
+    rawValue.toLowerCase(),
+    rawValue.replace(/[-_\s]+/g, ' '),
+    slugify(rawValue),
+  ].filter(Boolean)));
+
   try {
-    const baseQuery = supabaseClient.from(table).select('id');
-    const matchedQuery = typeof baseQuery?.eq === 'function' ? baseQuery.eq(field, value) : baseQuery;
-    const limitedQuery = typeof matchedQuery?.limit === 'function' ? matchedQuery.limit(1) : matchedQuery;
+    for (const candidate of candidateValues) {
+      const baseQuery = supabaseClient.from(table).select('id');
+      const queryFactories: Array<() => any> = [];
 
-    if (limitedQuery && typeof limitedQuery.then === 'function') {
-      const result = await limitedQuery;
-      const rows = Array.isArray(result?.data) ? result.data : result?.data ? [result.data] : [];
-      return rows[0] ?? result?.data ?? null;
-    }
+      if (typeof baseQuery?.eq === 'function') {
+        queryFactories.push(
+          () => baseQuery.eq(field, candidate),
+          () => baseQuery.eq(field, slugify(candidate)),
+          () => baseQuery.eq(field, candidate.toLowerCase()),
+          () => baseQuery.eq(field, candidate.replace(/[-_\s]+/g, ' '))
+        );
+      }
 
-    if (limitedQuery && typeof limitedQuery.maybeSingle === 'function') {
-      const result = await limitedQuery.maybeSingle();
-      return result?.data ?? result ?? null;
-    }
+      if (typeof baseQuery?.ilike === 'function') {
+        queryFactories.push(
+          () => baseQuery.ilike(field, candidate),
+          () => baseQuery.ilike(field, `%${candidate}%`),
+          () => baseQuery.ilike(field, `%${slugify(candidate)}%`)
+        );
+      }
 
-    if (matchedQuery && typeof matchedQuery.maybeSingle === 'function') {
-      const result = await matchedQuery.maybeSingle();
-      return result?.data ?? result ?? null;
+      if (typeof baseQuery?.or === 'function') {
+        const alternate = slugify(candidate);
+        queryFactories.push(
+          () => baseQuery.or(`${field}.eq.${candidate},${field}.eq.${alternate}`),
+          () => baseQuery.or(`${field}.ilike.%${candidate}%`),
+          () => baseQuery.or(`${field}.ilike.%${alternate}%`)
+        );
+      }
+
+      for (const factory of queryFactories) {
+        try {
+          const query = factory();
+
+          const nestedMaybeSingle = typeof query?.maybeSingle === 'function' ? await query.maybeSingle().catch(() => null) : null;
+          if (nestedMaybeSingle?.data) {
+            return Array.isArray(nestedMaybeSingle.data) ? nestedMaybeSingle.data[0] ?? null : nestedMaybeSingle.data;
+          }
+
+          const nestedLimit = typeof query?.limit === 'function' ? await query.limit(1).catch(() => null) : null;
+          if (nestedLimit && typeof nestedLimit.maybeSingle === 'function') {
+            const limitedMaybeSingle = await nestedLimit.maybeSingle().catch(() => null);
+            if (limitedMaybeSingle?.data) {
+              return Array.isArray(limitedMaybeSingle.data) ? limitedMaybeSingle.data[0] ?? null : limitedMaybeSingle.data;
+            }
+          }
+
+          const nestedRows = nestedLimit?.data ? (Array.isArray(nestedLimit.data) ? nestedLimit.data : [nestedLimit.data]) : [];
+          if (nestedRows[0]) return nestedRows[0];
+
+          if (query && typeof query.then === 'function') {
+            const resolved = await query;
+            const rows = resolved?.data ? (Array.isArray(resolved.data) ? resolved.data : [resolved.data]) : [];
+            if (rows[0]) return rows[0];
+          }
+        } catch (_) {
+          // Continue trying other query shapes.
+        }
+      }
     }
 
     return null;
@@ -500,13 +551,35 @@ export const resolveCategoryIdForRelation = async (
   });
   if (localMatch && isUuid(localMatch.id)) return localMatch.id;
 
-  const candidates = Array.from(new Set([raw, slugify(raw)]));
-  for (const value of candidates) {
-    if (!value) continue;
+  const candidateValues = Array.from(new Set([
+    raw,
+    raw.toLowerCase(),
+    raw.replace(/[-_\s]+/g, ' '),
+    slugify(raw),
+    slugify(raw).toLowerCase(),
+  ].filter(Boolean)));
 
+  for (const value of candidateValues) {
     for (const field of ['slug', 'name', 'id']) {
-      const found = await resolveSingleRowByField('categories', field, value, supabaseClient);
-      if (found?.id) return String(found.id);
+      try {
+        const query = supabaseClient.from('categories').select('id');
+        const possibleQuery = typeof query?.eq === 'function' ? query.eq(field, value) : null;
+        if (possibleQuery) {
+          const maybeSingle = typeof possibleQuery.maybeSingle === 'function' ? await possibleQuery.maybeSingle() : null;
+          const asRows = maybeSingle?.data ? (Array.isArray(maybeSingle.data) ? maybeSingle.data : [maybeSingle.data]) : [];
+          if (asRows[0]?.id) return String(asRows[0].id);
+
+          const limited = typeof possibleQuery.limit === 'function' ? await possibleQuery.limit(1).catch(() => null) : null;
+          const limitedRows = limited?.data ? (Array.isArray(limited.data) ? limited.data : [limited.data]) : [];
+          if (limitedRows[0]?.id) return String(limitedRows[0].id);
+        }
+
+        if (typeof query?.or === 'function') {
+          const fallback = await query.or(`${field}.eq.${value},${field}.eq.${slugify(value)}`).limit(1).maybeSingle().catch(() => null);
+          const fallbackRows = fallback?.data ? (Array.isArray(fallback.data) ? fallback.data : [fallback.data]) : [];
+          if (fallbackRows[0]?.id) return String(fallbackRows[0].id);
+        }
+      } catch (_) {}
     }
   }
 
@@ -784,18 +857,33 @@ export const isPermissionDeniedOrRlsError = (error: any): boolean => {
 const persistBestSellerFlag = async (productId: number, nextValue: boolean): Promise<boolean> => {
   if (!supabase) return false;
 
-  const columnName = 'hero';
+  const payload = {
+    hero: nextValue,
+    is_best_seller: nextValue,
+    updated_at: new Date().toISOString(),
+  };
 
   try {
     const { error } = await supabase
       .from('products')
-      .update({
-        [columnName]: nextValue,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq('id', productId);
 
-    if (error) throw error;
+    if (error) {
+      const message = String(error?.message || '').toLowerCase();
+      if (message.includes('is_best_seller') || message.includes('column') || message.includes('does not exist')) {
+        const { error: fallbackError } = await supabase
+          .from('products')
+          .update({
+            hero: nextValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', productId);
+        if (fallbackError) throw fallbackError;
+        return true;
+      }
+      throw error;
+    }
     return true;
   } catch (e: any) {
     console.warn('Supabase best seller sync failed:', e?.message || e);
@@ -809,11 +897,12 @@ function getInitialData() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        const { products: _ignoredProducts, ...safeParsed } = parsed;
+        const { products: _ignoredProducts, categories: _ignoredCategories, brands: _ignoredBrands, ...safeParsed } = parsed;
         return {
           ...EMPTY_DATA,
           ...safeParsed,
-          categories: Array.isArray(safeParsed.categories) ? safeParsed.categories : [],
+          categories: [],
+          brands: [],
         };
       }
     }
@@ -976,18 +1065,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     didInitialFetchRef.current = true;
     const requestId = ++latestCatalogRequestIdRef.current;
     const now = Date.now();
-    if (inFlightCatalogFetchRef.current) {
+    const explicitRefresh = !isBackground;
+
+    if (!explicitRefresh && inFlightCatalogFetchRef.current) {
       return inFlightCatalogFetchRef.current;
     }
+
     const minDelayMs = isBackground ? 4000 : 1500;
-    if (now - lastCatalogFetchRef.current < minDelayMs) {
+    if (!explicitRefresh && now - lastCatalogFetchRef.current < minDelayMs) {
       return;
     }
-    lastCatalogFetchRef.current = now;
-    if (isFetchingRef.current) {
+
+    if (!explicitRefresh && isFetchingRef.current) {
       fetchQueuedRef.current = true;
       return;
     }
+
+    if (explicitRefresh && inFlightCatalogFetchRef.current) {
+      fetchQueuedRef.current = true;
+    }
+
+    lastCatalogFetchRef.current = now;
     isFetchingRef.current = true;
     if (!isBackground) setLoading(true);
 
@@ -1175,18 +1273,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             if (batch.length > 0) {
               normalizedProducts.push(...batch);
-              setProducts((prev) => {
-                const merged = [...prev];
-                const existing = new Set(merged.map((product) => String(product.id)));
-                for (const product of batch) {
-                  const key = String(product.id);
-                  if (!existing.has(key)) {
-                    merged.push(product);
-                    existing.add(key);
-                  }
-                }
-                return merged;
-              });
             }
           };
 
@@ -1198,12 +1284,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } else if (Array.isArray(productsData) && didInitialFetchRef.current) {
-          setProducts([]);
+          normalizedProducts = [];
         }
 
         if (requestId !== latestCatalogRequestIdRef.current || !mountedRef.current) {
           return;
         }
+
+        setProducts(normalizedProducts);
 
         if (nextCategories.length > 0) {
           setCategories(nextCategories);
@@ -1293,15 +1381,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
     initialCatalogScheduledRef.current = true;
 
-    // Remove any persisted products from localStorage to avoid showing stale
-    // deleted items. Preserve other cached payload fields (categories, brands)
-    // but ensure `products` is empty until the live fetch completes.
+    // Remove stale persisted catalog snapshots before the live fetch. Categories
+    // and brands are authoritative from Supabase; keeping old local copies causes
+    // category-id mismatches and stale product attachment after refresh.
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
-          const { products: _ignoredProducts, ...safeParsed } = parsed;
+          const { products: _ignoredProducts, categories: _ignoredCategories, brands: _ignoredBrands, ...safeParsed } = parsed;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(safeParsed));
         }
       }
@@ -1309,11 +1397,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // ignore storage errors
     }
 
-    const initialCatalogDelay = window.setTimeout(() => {
-      if (mountedRef.current) {
-        void fetchRemote(false);
-      }
-    }, 700);
+    void fetchRemote(false);
 
     // Set up Supabase Realtime channel for instant multi-client synchronization
     const channel = supabase && typeof supabase.channel === 'function'
@@ -1422,7 +1506,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mountedRef.current = false;
       initialCatalogScheduledRef.current = false;
-      window.clearTimeout(initialCatalogDelay);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -2331,6 +2414,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       'description',
       'tag',
       'hero',
+      'is_best_seller',
               'is_hidden',
       'created_at',
       'updated_at',
@@ -2350,7 +2434,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     // The live schema uses: selling_price, market_price, admin_cost, image, images, description.
     // The `price` column has been removed from the database.
-    const unsupported = ['price', 'rating', 'reviews', 'original_price', 'skin_type', 'general_price', 'cost', 'store', 'image_url', 'imageUrl', 'title', 'is_best_seller', 'details', 'long_description'];
+    const unsupported = ['price', 'rating', 'reviews', 'original_price', 'skin_type', 'general_price', 'cost', 'store', 'image_url', 'imageUrl', 'title', 'details', 'long_description'];
     unsupported.forEach((key) => delete cleaned[key]);
 
     return cleaned;
@@ -2384,7 +2468,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (rawSelling !== undefined) row.selling_price = rawSelling;
     if (rawMarket !== undefined) row.market_price = rawMarket;
     if (updates.tag !== undefined) row.tag = updates.tag;
-    if (updates.hero !== undefined) row.hero = updates.hero;
+    if (updates.hero !== undefined) {
+      row.hero = updates.hero;
+      row.is_best_seller = updates.hero;
+    }
+    if ((updates as any).isBestSeller !== undefined) {
+      row.is_best_seller = Boolean((updates as any).isBestSeller);
+      row.hero = Boolean((updates as any).isBestSeller);
+    }
     if (updates.isHidden !== undefined) row.is_hidden = Boolean(updates.isHidden);
 
     // Map cost if provided (from form.adminCost or updates.cost), using the actual DB column name.
@@ -2495,7 +2586,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (prod.stock !== undefined) payload.stock = Math.max(0, Math.floor(Number(prod.stock) || 0));
       if (prod.isHidden !== undefined) payload.is_hidden = Boolean(prod.isHidden);
 
-      if (prod.hero !== undefined) payload.hero = prod.hero;
+      if (prod.hero !== undefined) {
+        payload.hero = prod.hero;
+        payload.is_best_seller = prod.hero;
+      }
       payload.created_at = new Date().toISOString();
       payload.updated_at = new Date().toISOString();
 
@@ -2712,14 +2806,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const currentProduct = products.find((p) => p.id === id);
     const currentBestSeller = Boolean(
       currentProduct?.hero ||
+      Boolean((currentProduct as any)?.isBestSeller) ||
+      Boolean((currentProduct as any)?.is_best_seller) ||
       String(currentProduct?.tag || '').toLowerCase() === 'best seller'
     );
     const nextValue = !currentBestSeller;
+
+    if ((toggleHero as any)._pendingId === id) {
+      return;
+    }
+    (toggleHero as any)._pendingId = id;
 
     // Optimistic UI update: respond instantly so the star lights up on click.
     setProducts(prev => prev.map((p) => p.id === id ? {
       ...p,
       hero: nextValue,
+      isBestSeller: nextValue,
+      is_best_seller: nextValue,
       tag: nextValue ? 'Best Seller' : (p.tag === 'Best Seller' ? null : p.tag),
     } : p));
 
@@ -2728,6 +2831,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } catch (e: any) {
       console.warn('Best seller toggle sync failed gracefully:', e?.message || e);
       // Do not undo the optimistic UI update here; preserve the immediate user feedback.
+    } finally {
+      if ((toggleHero as any)._pendingId === id) {
+        delete (toggleHero as any)._pendingId;
+      }
     }
   };
 
@@ -3178,7 +3285,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteOrder,
       adminClearDatabase,
       refreshCatalog: async () => {
-        await fetchRemote(true);
+        await fetchRemote(false);
       },
     };
   } else {
@@ -3200,7 +3307,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     actionsRef.current.deleteOrder = deleteOrder;
     actionsRef.current.adminClearDatabase = adminClearDatabase;
     actionsRef.current.refreshCatalog = async () => {
-      await fetchRemote(true);
+      await fetchRemote(false);
     };
   }
 
