@@ -257,7 +257,7 @@ export default function Homepage({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [visibleProducts]);
+  }, [visibleProducts, hasCachedVisibleProducts, hasRenderedFeaturedProducts]);
 
   const renderedBestSellers = featuredProducts.bestSellers.length > 0 ? featuredProducts.bestSellers : cachedBestSellers;
   const renderedNewArrivals = featuredProducts.newArrivals.length > 0 ? featuredProducts.newArrivals : cachedNewArrivals;
