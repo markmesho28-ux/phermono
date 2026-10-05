@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import ProductCard from "./ProductCard";
 import CategoryBar from "./CategoryBar";
 import supabase from "../lib/supabase";
-import { useData } from "../contexts/DataContext";
+import { getBestSellerState, useData } from "../contexts/DataContext";
 import { useAuth } from "../contexts/AuthContext";
 import type { Product } from "../types";
 import {
@@ -60,7 +60,7 @@ export default function Homepage({
   const hasRenderedFeaturedProducts = featuredProducts.bestSellers.length > 0 || featuredProducts.newArrivals.length > 0;
   const cachedBestSellers = useMemo(
     () => [...visibleProducts]
-      .filter((product) => Boolean(product.hero) || Boolean((product as any).isBestSeller) || Boolean((product as any).is_best_seller) || String(product.tag || '').toLowerCase() === 'best seller')
+      .filter((product) => getBestSellerState(product))
       .slice(0, 8),
     [visibleProducts],
   );
@@ -159,7 +159,7 @@ export default function Homepage({
 
           const bestSellers = (bestSellersResult.data || [])
             .map(normalizeHomepageProduct)
-            .filter((product) => product && (product.hero || String(product.tag || '').toLowerCase().includes('best seller')))
+            .filter((product) => product && getBestSellerState(product))
             .slice(0, 8);
 
           const newArrivals = (newArrivalsResult.data || [])
@@ -182,7 +182,7 @@ export default function Homepage({
               .sort(sortNewestFirst);
 
             const bestSellers = [...visibleProducts]
-              .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
+              .filter((p) => getBestSellerState(p))
               .slice(0, 8);
 
             if (effectId !== homepageEffectIdRef.current) return;
@@ -218,7 +218,7 @@ export default function Homepage({
           .sort(sortNewestFirst);
 
         const bestSellers = [...visibleProducts]
-          .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
+          .filter((p) => getBestSellerState(p))
           .slice(0, 8);
 
         if (effectId !== homepageEffectIdRef.current) return;
@@ -240,7 +240,7 @@ export default function Homepage({
         .sort(sortNewestFirst);
 
       const bestSellers = [...visibleProducts]
-        .filter((p) => Boolean(p.hero) || Boolean((p as any).isBestSeller) || Boolean((p as any).is_best_seller) || String(p.tag || '').toLowerCase() === 'best seller')
+        .filter((p) => getBestSellerState(p))
         .slice(0, 8);
 
       if (effectId !== homepageEffectIdRef.current) return;

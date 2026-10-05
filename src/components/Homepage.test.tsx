@@ -12,6 +12,7 @@ jest.mock('../contexts/AuthContext', () => ({
 
 jest.mock('../contexts/DataContext', () => ({
   useData: jest.fn(),
+  getBestSellerState: (product: any) => Boolean(product?.hero || product?.isBestSeller || product?.is_best_seller || String(product?.tag || '').toLowerCase() === 'best seller'),
 }));
 
 jest.mock('../lib/supabase', () => ({

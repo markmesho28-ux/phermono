@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData } from './DataContext';
+import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData, getBestSellerState } from './DataContext';
 import { AuthProvider, useAuth } from './AuthContext';
 import CategoryView from '../components/CategoryView';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
@@ -53,6 +53,56 @@ describe('isPermissionDeniedOrRlsError', () => {
     expect(isPermissionDeniedOrRlsError({ code: '42501', message: 'permission denied for table products' })).toBe(true);
     expect(isPermissionDeniedOrRlsError({ code: 'PGRST301', message: 'JWT expired' })).toBe(true);
     expect(isPermissionDeniedOrRlsError({ code: '23505', message: 'duplicate key value violates unique constraint' })).toBe(false);
+  });
+});
+
+describe('getBestSellerState', () => {
+  it('treats hero, is_best_seller and the Best Seller tag as one consistent signal', () => {
+    expect(getBestSellerState({ hero: false, isBestSeller: false, is_best_seller: false, tag: null })).toBe(false);
+    expect(getBestSellerState({ hero: false, isBestSeller: false, is_best_seller: true, tag: null })).toBe(true);
+    expect(getBestSellerState({ hero: false, isBestSeller: false, is_best_seller: false, tag: 'Best Seller' })).toBe(true);
+    expect(getBestSellerState({ hero: false, isBestSeller: false, is_best_seller: false, tag: 'New' })).toBe(false);
+  });
+
+  it('updates only the exact product row and only the is_best_seller flag when toggling best seller', async () => {
+    const supabaseClient = require('../lib/supabase').default;
+    const updates: Record<string, any> = {};
+    const selected: Record<string, any> = {};
+
+    supabaseClient.auth.getUser = jest.fn(() => Promise.resolve({ data: { user: { id: 'admin-1' } } }));
+    supabaseClient.from.mockImplementation((table: string) => {
+      if (table !== 'products') {
+        return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      }
+
+      return {
+        update: jest.fn((payload) => {
+          updates.payload = payload;
+          return {
+            eq: jest.fn((field, value) => {
+              updates.field = field;
+              updates.value = value;
+              return {
+                select: jest.fn(() => ({
+                  single: jest.fn(() => Promise.resolve({ data: { id: value, is_best_seller: payload.is_best_seller, updated_at: payload.updated_at }, error: null })),
+                })),
+              };
+            }),
+          };
+        }),
+      };
+    });
+
+    const result = await require('./DataContext').persistBestSellerFlag?.(42, true);
+    expect(result?.ok).toBe(true);
+    expect(updates.field).toBe('id');
+    expect(updates.value).toBe(42);
+    expect(updates.payload).toEqual({
+      is_best_seller: true,
+      updated_at: expect.any(String),
+    });
+    expect(Object.keys(updates.payload)).toEqual(['is_best_seller', 'updated_at']);
+    expect(selected).toEqual({});
   });
 });
 
@@ -261,16 +311,7 @@ describe('DataProvider action stability', () => {
       }
       if (table === 'categories') {
         return {
-          select: jest.fn(() => ({
-            eq: jest.fn(() => ({
-              limit: jest.fn(() => Promise.resolve({ data: [{ id: categoryUuid, name: 'Hair care', slug: 'hair-care' }], error: null })),
-              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: categoryUuid, name: 'Hair care', slug: 'hair-care' }, error: null })),
-            })),
-            or: jest.fn(() => ({
-              limit: jest.fn(() => Promise.resolve({ data: [{ id: categoryUuid, name: 'Hair care', slug: 'hair-care' }], error: null })),
-              maybeSingle: jest.fn(() => Promise.resolve({ data: { id: categoryUuid, name: 'Hair care', slug: 'hair-care' }, error: null })),
-            })),
-          })),
+          select: jest.fn(() => Promise.resolve({ data: [{ id: categoryUuid, name: 'Hair care', slug: 'hair-care' }], error: null })),
         };
       }
       if (table === 'subcategories') {
@@ -338,6 +379,10 @@ describe('DataProvider action stability', () => {
         React.createElement(DataProvider, null, React.createElement(ProductInsertProbe))
       )
     );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: categoryUuid })).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole('button', { name: categoryUuid }));
 

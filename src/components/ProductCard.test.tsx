@@ -18,6 +18,7 @@ jest.mock('../contexts/DataContext', () => ({
   }),
   getDiscountedPrice: (price: number) => price,
   getPromoDiscountPercent: () => 0,
+  getBestSellerState: (product: any) => Boolean(product?.hero || product?.isBestSeller || product?.is_best_seller || String(product?.tag || '').toLowerCase() === 'best seller'),
 }));
 
 describe('ProductCard add button responsiveness', () => {

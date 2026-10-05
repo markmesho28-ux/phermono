@@ -563,6 +563,13 @@ export const resolveCategoryIdForRelation = async (
     for (const field of ['slug', 'name', 'id']) {
       try {
         const query = supabaseClient.from('categories').select('id');
+
+        if (query && typeof query.then === 'function') {
+          const resolved = await query.catch(() => null);
+          const rows = resolved?.data ? (Array.isArray(resolved.data) ? resolved.data : [resolved.data]) : [];
+          if (rows[0]?.id) return String(rows[0].id);
+        }
+
         const possibleQuery = typeof query?.eq === 'function' ? query.eq(field, value) : null;
         if (possibleQuery) {
           const maybeSingle = typeof possibleQuery.maybeSingle === 'function' ? await possibleQuery.maybeSingle() : null;
@@ -854,40 +861,58 @@ export const isPermissionDeniedOrRlsError = (error: any): boolean => {
   );
 };
 
-const persistBestSellerFlag = async (productId: number, nextValue: boolean): Promise<boolean> => {
-  if (!supabase) return false;
+const bestSellerIntentStore: Record<string, { value: boolean; revision: number }> = {};
 
-  const payload = {
-    hero: nextValue,
-    is_best_seller: nextValue,
-    updated_at: new Date().toISOString(),
-  };
+export const getBestSellerState = (product?: Partial<Product> | Record<string, any> | null): boolean => {
+  if (!product) return false;
+
+  const intentKey = product.id !== undefined && product.id !== null ? String(product.id) : null;
+  if (intentKey && bestSellerIntentStore[intentKey]) {
+    return Boolean(bestSellerIntentStore[intentKey].value);
+  }
+
+  const tagValue = typeof product.tag === 'string' ? product.tag.trim().toLowerCase() : '';
+  return Boolean(product.hero || product.isBestSeller || product.is_best_seller || tagValue === 'best seller');
+};
+
+const resolveBestSellerTag = (nextValue: boolean, fallbackTag?: string | null): string | null => {
+  if (nextValue) return 'Best Seller';
+
+  const tagValue = typeof fallbackTag === 'string' ? fallbackTag.trim() : '';
+  if (!tagValue) return null;
+
+  return tagValue.toLowerCase() === 'best seller' ? null : tagValue;
+};
+
+const persistBestSellerFlag = async (productId: number, nextValue: boolean): Promise<{ ok: boolean; row?: any; revision?: number }> => {
+  if (!supabase) {
+    return { ok: false };
+  }
 
   try {
-    const { error } = await supabase
+    const payload = {
+      is_best_seller: Boolean(nextValue),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
       .from('products')
       .update(payload)
-      .eq('id', productId);
+      .eq('id', productId)
+      .select('id, is_best_seller, updated_at')
+      .single();
 
     if (error) {
-      const message = String(error?.message || '').toLowerCase();
-      if (message.includes('is_best_seller') || message.includes('column') || message.includes('does not exist')) {
-        const { error: fallbackError } = await supabase
-          .from('products')
-          .update({
-            hero: nextValue,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', productId);
-        if (fallbackError) throw fallbackError;
-        return true;
-      }
       throw error;
     }
-    return true;
+
+    return {
+      ok: true,
+      row: data ?? null,
+    };
   } catch (e: any) {
     console.warn('Supabase best seller sync failed:', e?.message || e);
-    return false;
+    return { ok: false };
   }
 };
 
@@ -927,17 +952,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => ({ ...DEFAULT_SITE_SETTINGS, ...(readCachedSiteSettings() || {}) }));
 
   useEffect(() => {
-    if (categories.length === 0 && products.length === 0 && brands.length === 0) {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch (e) {
-        console.warn('LocalStorage cleanup error:', e);
-      }
-      return;
-    }
+    const payload: Record<string, any> = {
+      categories,
+      brands,
+      priceRanges,
+      orders,
+    };
 
-    const payload = { categories, brands, priceRanges, orders };
     try {
+      const existing = localStorage.getItem(STORAGE_KEY);
+      if (existing) {
+        try {
+          const parsed = JSON.parse(existing);
+          if (parsed && typeof parsed === 'object') {
+            Object.assign(payload, parsed, { categories, brands, priceRanges, orders });
+          }
+        } catch (e) {
+          // Ignore invalid persisted payloads and rewrite a safe version.
+        }
+      }
+      delete payload.products;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
       console.warn('LocalStorage save error:', e);
@@ -1049,6 +1083,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const bestSellerIntentRef = useRef(bestSellerIntentStore);
   const mountedRef = useRef(true);
   const initialCatalogScheduledRef = useRef(false);
   const isFetchingRef = useRef(false);
@@ -1059,13 +1094,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const inFlightCatalogFetchRef = useRef<Promise<void> | null>(null);
   const latestCatalogRequestIdRef = useRef(0);
   const scheduledCatalogRefreshRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
+  const lastLocalCatalogMutationRef = useRef(0);
 
   const fetchRemote = async (isBackground = false) => {
     if (!supabase) return;
     didInitialFetchRef.current = true;
+    const explicitRefresh = !isBackground;
     const requestId = ++latestCatalogRequestIdRef.current;
     const now = Date.now();
-    const explicitRefresh = !isBackground;
+
+    if (now < lastLocalCatalogMutationRef.current) {
+      return;
+    }
+
+    if (explicitRefresh) {
+      fetchQueuedRef.current = false;
+      isFetchingRef.current = false;
+      inFlightCatalogFetchRef.current = null;
+    }
 
     if (!explicitRefresh && inFlightCatalogFetchRef.current) {
       return inFlightCatalogFetchRef.current;
@@ -1079,10 +1125,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!explicitRefresh && isFetchingRef.current) {
       fetchQueuedRef.current = true;
       return;
-    }
-
-    if (explicitRefresh && inFlightCatalogFetchRef.current) {
-      fetchQueuedRef.current = true;
     }
 
     lastCatalogFetchRef.current = now;
@@ -1156,6 +1198,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           detectedColumn = detected ?? productSubcategoryColumnRef.current;
         }
 
+        const intentMap = bestSellerIntentRef.current;
         let normalizedProducts: Product[] = [];
         if (Array.isArray(productsData) && productsData.length > 0) {
           const subLookup: Record<string, string> = {};
@@ -1290,6 +1333,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (requestId !== latestCatalogRequestIdRef.current || !mountedRef.current) {
           return;
         }
+
+        normalizedProducts = normalizedProducts.map((product) => {
+          const itemKey = String(product.id);
+          const intent = intentMap[itemKey];
+          if (!intent) return product;
+          return {
+            ...product,
+            hero: Boolean(intent.value),
+            isBestSeller: Boolean(intent.value),
+            is_best_seller: Boolean(intent.value),
+            tag: intent.value ? 'Best Seller' : null,
+          };
+        });
 
         setProducts(normalizedProducts);
 
@@ -2469,12 +2525,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (rawMarket !== undefined) row.market_price = rawMarket;
     if (updates.tag !== undefined) row.tag = updates.tag;
     if (updates.hero !== undefined) {
-      row.hero = updates.hero;
-      row.is_best_seller = updates.hero;
+      const nextHero = Boolean(updates.hero);
+      row.hero = nextHero;
+      row.is_best_seller = nextHero;
+      row.tag = nextHero ? 'Best Seller' : null;
     }
     if ((updates as any).isBestSeller !== undefined) {
-      row.is_best_seller = Boolean((updates as any).isBestSeller);
-      row.hero = Boolean((updates as any).isBestSeller);
+      const nextHero = Boolean((updates as any).isBestSeller);
+      row.is_best_seller = nextHero;
+      row.hero = nextHero;
+      row.tag = nextHero ? 'Best Seller' : null;
     }
     if (updates.isHidden !== undefined) row.is_hidden = Boolean(updates.isHidden);
 
@@ -2655,6 +2715,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       } as any;
 
       setProducts(prev => [inserted, ...prev.filter(p => p.id !== inserted.id)]);
+      lastLocalCatalogMutationRef.current = Date.now();
       return inserted.id;
     } catch (e: any) {
       console.warn('Supabase product write error:', e?.message || e);
@@ -2671,6 +2732,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (!isAllowed) return;
 
       setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+      lastLocalCatalogMutationRef.current = Date.now();
 
       // Prepare updates for mapping. If the DB expects a subcategory_id, resolve
       // any incoming subcategory value (slug/name) to the canonical id first.
@@ -2762,6 +2824,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setProducts(prev => prev.filter(p => p.id !== id));
+      lastLocalCatalogMutationRef.current = Date.now();
     } catch (e: any) {
       console.warn('Supabase product delete error:', e?.message || e);
       alert('Failed to delete product: ' + (e?.message || String(e)));
@@ -2803,38 +2866,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
   const toggleHero = async (id: number) => {
-    const currentProduct = products.find((p) => p.id === id);
-    const currentBestSeller = Boolean(
-      currentProduct?.hero ||
-      Boolean((currentProduct as any)?.isBestSeller) ||
-      Boolean((currentProduct as any)?.is_best_seller) ||
-      String(currentProduct?.tag || '').toLowerCase() === 'best seller'
-    );
+    const productId = Number(id);
+    const currentProduct = productsRef.current.find((product) => Number(product.id) === productId);
+    const currentBestSeller = Boolean(currentProduct ? getBestSellerState(currentProduct) : false);
     const nextValue = !currentBestSeller;
+    const intentKey = String(productId);
+    const nextRevision = (bestSellerIntentRef.current[intentKey]?.revision ?? 0) + 1;
+    bestSellerIntentRef.current[intentKey] = { value: nextValue, revision: nextRevision };
 
-    if ((toggleHero as any)._pendingId === id) {
-      return;
-    }
-    (toggleHero as any)._pendingId = id;
+    const applyBestSellerStateToProducts = (state: Product[], finalValue: boolean) => state.map((product) => {
+      if (Number(product.id) !== productId) return product;
+      return {
+        ...product,
+        hero: finalValue,
+        isBestSeller: finalValue,
+        is_best_seller: finalValue,
+        tag: finalValue ? 'Best Seller' : null,
+      };
+    });
 
-    // Optimistic UI update: respond instantly so the star lights up on click.
-    setProducts(prev => prev.map((p) => p.id === id ? {
-      ...p,
-      hero: nextValue,
-      isBestSeller: nextValue,
-      is_best_seller: nextValue,
-      tag: nextValue ? 'Best Seller' : (p.tag === 'Best Seller' ? null : p.tag),
-    } : p));
+    setProducts((prev) => {
+      const next = applyBestSellerStateToProducts(prev, nextValue);
+      productsRef.current = next;
+      return next;
+    });
+    lastLocalCatalogMutationRef.current = Date.now();
 
     try {
-      await persistBestSellerFlag(id, nextValue);
-    } catch (e: any) {
-      console.warn('Best seller toggle sync failed gracefully:', e?.message || e);
-      // Do not undo the optimistic UI update here; preserve the immediate user feedback.
-    } finally {
-      if ((toggleHero as any)._pendingId === id) {
-        delete (toggleHero as any)._pendingId;
+      const result = await persistBestSellerFlag(productId, nextValue);
+      if (!result.ok) {
+        throw new Error('Failed to persist best seller state');
       }
+
+      const latestTarget = bestSellerIntentRef.current[intentKey];
+      if (!latestTarget || latestTarget.revision !== nextRevision) {
+        return;
+      }
+
+      const resolvedValue = Boolean(result.row?.hero ?? result.row?.is_best_seller ?? nextValue);
+      const authoritativeState = { value: resolvedValue, revision: nextRevision };
+      bestSellerIntentRef.current[intentKey] = authoritativeState;
+      setProducts((prev) => {
+        const next = applyBestSellerStateToProducts(prev, resolvedValue);
+        productsRef.current = next;
+        return next;
+      });
+    } catch (e: any) {
+      const latestTarget = bestSellerIntentRef.current[intentKey];
+      if (!latestTarget || latestTarget.revision !== nextRevision) {
+        return;
+      }
+
+      const rollbackValue = currentBestSeller;
+      bestSellerIntentRef.current[intentKey] = { value: rollbackValue, revision: nextRevision };
+      setProducts((prev) => {
+        const next = applyBestSellerStateToProducts(prev, rollbackValue);
+        productsRef.current = next;
+        return next;
+      });
+      console.warn('Best seller toggle failed; reverted to authoritative previous state:', e?.message || e);
     }
   };
 

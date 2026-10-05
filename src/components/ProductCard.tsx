@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ShoppingBag, Heart, Eye, EyeOff, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
+import { getBestSellerState, getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
 import type { Product } from "../types";
 
 const TAG_STYLES: Record<string, string> = {
@@ -55,7 +55,8 @@ const ProductCard = React.memo(function ProductCard({
     };
   }, [product.adminCost, product.marketPrice, product.originalPrice, product.sellingPrice, siteSettings]);
 
-  const shouldShowBestSeller = showStatusBadges && (product.hero || product.tag === 'Best Seller');
+  const isBestSeller = getBestSellerState(product);
+  const shouldShowBestSeller = showStatusBadges && isBestSeller;
   const shouldShowNew = showStatusBadges && product.tag === 'New';
 
   const handleAddClick = useCallback((e?: React.SyntheticEvent<HTMLButtonElement>) => {
@@ -187,8 +188,8 @@ const ProductCard = React.memo(function ProductCard({
           >
             {product.isHidden ? <Eye size={14} /> : <EyeOff size={14} />}
           </button>
-          <button onClick={(event) => { event.stopPropagation(); actions.toggleHero(product.id); }} className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10 ${product.hero ? 'text-yellow-500' : ''}`} title={product.hero ? 'Unmark Best Seller' : 'Mark Best Seller'}>
-            <Star size={14} fill={product.hero ? 'currentColor' : 'none'} />
+          <button onClick={(event) => { event.stopPropagation(); actions.toggleHero(product.id); }} className={`flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10 ${isBestSeller ? 'text-yellow-500' : ''}`} title={isBestSeller ? 'Unmark Best Seller' : 'Mark Best Seller'}>
+            <Star size={14} fill={isBestSeller ? 'currentColor' : 'none'} />
           </button>
           {onEdit && (
             <button onClick={(event) => { event.stopPropagation(); onEdit?.(product); }} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow touch-target md:h-10 md:w-10">
