@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData, getBestSellerState } from './DataContext';
+import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData, getBestSellerState, mergeBestSellerIntentOverrides, bestSellerIntentStore, resolveBestSellerValue } from './DataContext';
 import { AuthProvider, useAuth } from './AuthContext';
 import CategoryView from '../components/CategoryView';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
@@ -64,7 +64,39 @@ describe('getBestSellerState', () => {
     expect(getBestSellerState({ hero: false, isBestSeller: false, is_best_seller: false, tag: 'New' })).toBe(false);
   });
 
-  it('updates only the exact product row and only the is_best_seller flag when toggling best seller', async () => {
+  it('keeps is_best_seller authoritative even when hero was false in a stale snapshot', () => {
+    expect(resolveBestSellerValue({ hero: false, is_best_seller: true, tag: 'New' })).toBe(true);
+    expect(resolveBestSellerValue({ hero: false, isBestSeller: false, is_best_seller: false, tag: 'Best Seller' })).toBe(true);
+    expect(resolveBestSellerValue({ hero: false, isBestSeller: false, is_best_seller: false, tag: 'New' })).toBe(false);
+  });
+
+  it('keeps the user-locked best-seller state when stale background snapshots arrive', () => {
+    bestSellerIntentStore['42'] = { value: true, revision: 7, locked: true };
+
+    const merged = mergeBestSellerIntentOverrides([
+      { id: 42, hero: false, isBestSeller: false, is_best_seller: false, tag: null },
+      { id: 43, hero: false, isBestSeller: false, is_best_seller: false, tag: null },
+    ]);
+
+    expect(merged[0]).toMatchObject({
+      id: 42,
+      hero: true,
+      isBestSeller: true,
+      is_best_seller: true,
+      tag: 'Best Seller',
+    });
+    expect(merged[1]).toMatchObject({
+      id: 43,
+      hero: false,
+      isBestSeller: false,
+      is_best_seller: false,
+      tag: null,
+    });
+
+    delete bestSellerIntentStore['42'];
+  });
+
+  it('persists the best-seller toggle through the authoritative boolean fields while syncing the tag label', async () => {
     const supabaseClient = require('../lib/supabase').default;
     const updates: Record<string, any> = {};
     const selected: Record<string, any> = {};
@@ -84,7 +116,7 @@ describe('getBestSellerState', () => {
               updates.value = value;
               return {
                 select: jest.fn(() => ({
-                  single: jest.fn(() => Promise.resolve({ data: { id: value, is_best_seller: payload.is_best_seller, updated_at: payload.updated_at }, error: null })),
+                  single: jest.fn(() => Promise.resolve({ data: { id: value, tag: payload.tag, hero: payload.hero, is_best_seller: payload.is_best_seller, updated_at: payload.updated_at }, error: null })),
                 })),
               };
             }),
@@ -98,10 +130,12 @@ describe('getBestSellerState', () => {
     expect(updates.field).toBe('id');
     expect(updates.value).toBe(42);
     expect(updates.payload).toEqual({
+      hero: true,
       is_best_seller: true,
+      tag: 'Best Seller',
       updated_at: expect.any(String),
     });
-    expect(Object.keys(updates.payload)).toEqual(['is_best_seller', 'updated_at']);
+    expect(Object.keys(updates.payload)).toEqual(['hero', 'is_best_seller', 'tag', 'updated_at']);
     expect(selected).toEqual({});
   });
 });
