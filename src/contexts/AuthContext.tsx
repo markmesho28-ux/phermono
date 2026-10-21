@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import supabase from '../lib/supabase';
 import type { AuthContextValue, AuthUser, AuthUserWithPassword, LoginParams, ProfileUpdate, SignupParams } from '../types';
-import { checkIsAdminRole, isAdminPhone, normalizePhone } from '../utils/admin';
+import { isAdminPhone, normalizePhone } from '../utils/admin';
 
 const DEFAULT_AUTH_CONTEXT: AuthContextValue = {
   user: null,

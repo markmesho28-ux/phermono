@@ -693,15 +693,6 @@ export default function App(){
         const { data, error } = await supabase.auth.getUser();
         if (!isMounted) return;
 
-        console.info('[favorites-debug] auth.getUser', {
-          appUserExists: Boolean(user),
-          userPhone: user?.phone || null,
-          hasAuthUser: Boolean(data?.user?.id),
-          authUserId: data?.user?.id || null,
-          errorCode: error?.code || null,
-          errorMessage: error?.message || null,
-        });
-
         if (error || !data?.user?.id) {
           setSessionUserId(null);
           return;
@@ -720,11 +711,6 @@ export default function App(){
 
     const authSubscriptionResult = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
-      console.info('[favorites-debug] auth.onAuthStateChange', {
-        event: _event,
-        appUserExists: Boolean(user),
-        sessionUserId: session?.user?.id || null,
-      });
       setSessionUserId(session?.user?.id ?? null);
     });
 
