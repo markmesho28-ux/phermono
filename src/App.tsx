@@ -13,6 +13,7 @@ import { CheckCircle2, MessageCircle, Phone, Instagram, Facebook } from "lucide-
 import ProductCard from "./components/ProductCard";
 import ChatWidget from "./components/ChatWidget";
 import { formatOrderDate, getOrderDisplayId } from "./utils/orderDate";
+import supabase from "./lib/supabase";
 import type { CartItem, OrderInput, Product } from "./types";
 
 function AssistantPage({ products, sidebarOpen = false }: { products: Product[]; sidebarOpen?: boolean }) {
@@ -575,6 +576,7 @@ export default function App(){
 
   const { products, actions } = useData();
   const { user } = useAuth();
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const visibleWishlist = user?.role === 'admin' ? wishlist : wishlist.filter((product) => !product.isHidden);
   const wishlistStorageKey = getWishlistStorageKey(user?.phone);
   const hasRequestedCatalogRef = useRef(false);
@@ -594,10 +596,13 @@ export default function App(){
   }, [activeCategory, products.length, actions]);
 
   useEffect(() => {
+    if (sessionUserId) return;
     setWishlist(getInitialWishlist(wishlistStorageKey));
-  }, [wishlistStorageKey]);
+  }, [sessionUserId, wishlistStorageKey]);
 
   useEffect(() => {
+    if (sessionUserId) return;
+
     const handleWishlistStorageChange = (event: StorageEvent) => {
       if (event.key === wishlistStorageKey) {
         setWishlist(getInitialWishlist(wishlistStorageKey));
@@ -606,7 +611,7 @@ export default function App(){
 
     window.addEventListener('storage', handleWishlistStorageChange);
     return () => window.removeEventListener('storage', handleWishlistStorageChange);
-  }, [wishlistStorageKey]);
+  }, [sessionUserId, wishlistStorageKey]);
 
   // cartItems state with immediate localStorage persistence across page reloads
   const [cartItems, setCartItems] = useState<CartItem[]>(() => getInitialCart());
@@ -680,7 +685,197 @@ export default function App(){
   }, []);
   const handleRemoveFromCart = useCallback((id: number) => setCartItems(prev => prev.filter(i=>i.id!==id)), []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveSessionUserId = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!isMounted) return;
+
+        console.info('[favorites-debug] auth.getUser', {
+          appUserExists: Boolean(user),
+          userPhone: user?.phone || null,
+          hasAuthUser: Boolean(data?.user?.id),
+          authUserId: data?.user?.id || null,
+          errorCode: error?.code || null,
+          errorMessage: error?.message || null,
+        });
+
+        if (error || !data?.user?.id) {
+          setSessionUserId(null);
+          return;
+        }
+
+        setSessionUserId(data.user.id);
+      } catch (err) {
+        console.error('Failed to resolve authenticated user for favorite list:', err);
+        if (isMounted) {
+          setSessionUserId(null);
+        }
+      }
+    };
+
+    void resolveSessionUserId();
+
+    const authSubscriptionResult = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      console.info('[favorites-debug] auth.onAuthStateChange', {
+        event: _event,
+        appUserExists: Boolean(user),
+        sessionUserId: session?.user?.id || null,
+      });
+      setSessionUserId(session?.user?.id ?? null);
+    });
+
+    const authSubscription = authSubscriptionResult?.data;
+
+    return () => {
+      isMounted = false;
+      authSubscription?.subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionUserId) {
+      setWishlist(getInitialWishlist(wishlistStorageKey));
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadUserWishlist = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_favorites')
+          .select('product_id')
+          .eq('user_id', sessionUserId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const favoriteIds = (Array.isArray(data) ? data : [])
+          .map((row: any) => Number(row?.product_id))
+          .filter((id: number) => Number.isFinite(id));
+
+        if (isCancelled) return;
+
+        const productLookup = new Map(products.map((product) => [product.id, product] as const));
+        setWishlist(
+          favoriteIds
+            .map((id) => productLookup.get(id))
+            .filter((product): product is Product => Boolean(product))
+        );
+      } catch (err) {
+        console.error('Failed to load favorites from Supabase:', err);
+        if (!isCancelled) {
+          setWishlist([]);
+        }
+      }
+    };
+
+    void loadUserWishlist();
+    return () => {
+      isCancelled = true;
+    };
+  }, [products, sessionUserId, wishlistStorageKey]);
+
   const handleWishlist = useCallback((product: Product) => {
+    const debugContext = {
+      appUserExists: Boolean(user),
+      appUserPhone: user?.phone || null,
+      appUserRole: user?.role || null,
+      sessionUserId,
+      productId: product.id,
+      wishlistCount: wishlist.length,
+    };
+
+    console.info('[favorites-debug] handleWishlist start', debugContext);
+
+    if (sessionUserId) {
+      const exists = wishlist.some((w) => w.id === product.id);
+      console.info('[favorites-debug] branch=supabase', {
+        ...debugContext,
+        exists,
+        expectedRlsUserId: sessionUserId,
+      });
+
+      void (async () => {
+        try {
+          if (exists) {
+            const { error } = await supabase
+              .from('user_favorites')
+              .delete()
+              .eq('user_id', sessionUserId)
+              .eq('product_id', product.id);
+
+            console.info('[favorites-debug] delete response', {
+              errorCode: error?.code || null,
+              errorMessage: error?.message || null,
+            });
+
+            if (error) throw error;
+
+            setWishlist((prev) => prev.filter((w) => w.id !== product.id));
+            showToast('Removed from Favorite List');
+            return;
+          }
+
+          console.info('[favorites-debug] sending upsert', {
+            user_id: sessionUserId,
+            product_id: product.id,
+          });
+
+          const { data, error } = await supabase
+            .from('user_favorites')
+            .upsert(
+              { user_id: sessionUserId, product_id: product.id },
+              { onConflict: 'user_id,product_id' }
+            )
+            .select();
+
+          console.info('[favorites-debug] upsert response', {
+            data,
+            errorCode: error?.code || null,
+            errorMessage: error?.message || null,
+          });
+
+          if (error) throw error;
+
+          setWishlist((prev) => (prev.some((w) => w.id === product.id) ? prev : [...prev, product]));
+          showToast('Added to Favorite List');
+        } catch (err: any) {
+          console.error('[favorites-debug] Failed to save favorite to Supabase:', err);
+          console.info('[favorites-debug] supabase failure payload', {
+            name: err?.name || null,
+            code: err?.code || null,
+            message: err?.message || null,
+            details: err?.details || null,
+            hint: err?.hint || null,
+            stack: err?.stack || null,
+          });
+          showToast('Unable to update Favorite List');
+        }
+      })();
+
+      return;
+    }
+
+    if (user && !sessionUserId) {
+      console.warn('[favorites-debug] branch=localStorage fallback blocked', {
+        appUserExists: Boolean(user),
+        sessionUserId: sessionUserId || null,
+        wishlistStorageKey,
+      });
+      showToast('Sign in with your Supabase account to sync Favorite List');
+      return;
+    }
+
+    console.info('[favorites-debug] branch=localStorage', {
+      wishlistStorageKey,
+      productId: product.id,
+    });
+
     setWishlist(prev => {
       const exists = prev.find(w=>w.id===product.id);
       const nextWishlist = exists ? prev.filter(w=>w.id!==product.id) : [...prev, product];
@@ -688,7 +883,7 @@ export default function App(){
       showToast(exists ? 'Removed from Favorite List' : 'Added to Favorite List');
       return nextWishlist;
     });
-  }, [showToast, wishlistStorageKey]);
+  }, [sessionUserId, showToast, user, wishlist, wishlistStorageKey]);
 
   // Robust, unconstrained search matching
   const matchProducts = useCallback((query: string) => {
