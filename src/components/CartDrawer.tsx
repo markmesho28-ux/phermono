@@ -462,18 +462,18 @@ export function QuickViewModal({ product, onClose, onAddToCart, onWishlist, isWi
               className="max-h-72 md:max-h-96 w-full object-cover rounded-2xl shadow-md"
             />
             {product.tag === 'Best Seller' && (
-              <span className="absolute top-4 left-4 bg-brand-gold text-brand-black font-extrabold text-[8px] px-2 py-0.5 rounded-full leading-none shadow-sm border border-[#c38d2d] tracking-[0.11em] uppercase">
-                BEST SELLER
+              <span className="absolute left-4 top-4 z-10 w-fit rounded-full border border-[#d0a65c]/30 bg-[#111111]/80 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.14em] text-[#d9b36a] shadow-[0_8px_18px_rgba(17,17,17,0.25)] backdrop-blur-sm md:text-[8px]">
+                Best Seller
               </span>
             )}
             {product.tag === 'New' && (
-              <span className="absolute top-4 left-4 bg-white/90 text-brand-black border border-stone-200 shadow-sm font-bold text-[10px] uppercase px-3 py-1 rounded-full">
-                NEW
+              <span className="absolute left-4 top-4 z-10 w-fit rounded-full border border-[#d0a65c]/30 bg-[#111111]/80 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.14em] text-[#d9b36a] shadow-[0_8px_18px_rgba(17,17,17,0.25)] backdrop-blur-sm md:text-[8px]">
+                New
               </span>
             )}
             {discount && (
-              <span className="absolute top-4 right-4 bg-brand-gold text-brand-black font-extrabold text-[10px] px-2.5 py-1 rounded-full shadow-sm">
-                SAVE {discount}%
+              <span className="absolute right-4 top-4 z-10 w-fit rounded-full border border-[#d0a65c]/30 bg-[#111111]/80 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.14em] text-[#d9b36a] shadow-[0_8px_18px_rgba(17,17,17,0.25)] backdrop-blur-sm md:text-[8px]">
+                -{discount}%
               </span>
             )}
           </div>

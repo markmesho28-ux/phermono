@@ -292,11 +292,8 @@ export default function Header({
               </div>
             </div>
 
-            {/* Mobile Right: Compact Tagline & Brand Logo */}
+            {/* Mobile Right: Compact Tagline */}
             <div className="hidden max-md:flex items-center gap-2 pr-0.5">
-              <div className="w-5 h-5 rounded-md overflow-hidden border border-brand-gold/50 bg-white/95 shadow-xs shrink-0">
-                <img src="/logo.jpg" alt="PherMono logo" className="w-full h-full object-contain" />
-              </div>
               <span className="font-tagline text-[10px] text-brand-gold font-medium italic tracking-wide">
                 Ur favorite Mono choice
               </span>

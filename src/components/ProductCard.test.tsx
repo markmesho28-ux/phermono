@@ -84,4 +84,25 @@ describe('ProductCard add button responsiveness', () => {
     expect(onAddToCart).toHaveBeenCalledTimes(1);
     expect(onAddToCart).toHaveBeenCalledWith(product);
   });
+
+  it('renders a clean percentage discount label without a boxed background', () => {
+    const discountedProduct = {
+      ...product,
+      sellingPrice: 180,
+      marketPrice: 210,
+    };
+
+    render(
+      <ProductCard
+        product={discountedProduct}
+        onAddToCart={jest.fn()}
+        onQuickView={jest.fn()}
+        onWishlist={jest.fn()}
+        isWishlisted={false}
+      />
+    );
+
+    expect(screen.getByText('-14%')).toBeInTheDocument();
+    expect(screen.queryByText(/save/i)).not.toBeInTheDocument();
+  });
 });

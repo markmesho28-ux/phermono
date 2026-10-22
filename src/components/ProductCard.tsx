@@ -126,7 +126,7 @@ const ProductCard = React.memo(function ProductCard({
           onClick={(event) => event.stopPropagation()}
         >
           {shouldShowBestSeller && (
-            <span className="w-fit rounded-full border border-[#c38d2d] bg-brand-gold px-2 py-0.5 text-[7px] font-extrabold uppercase tracking-[0.16em] text-brand-black shadow-sm md:text-[8px]">
+            <span className="w-fit rounded-full border border-[#d0a65c]/30 bg-[#111111]/80 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.14em] text-[#d9b36a] shadow-[0_8px_18px_rgba(17,17,17,0.25)] backdrop-blur-sm md:text-[8px]">
               Best Seller
             </span>
           )}
@@ -136,8 +136,8 @@ const ProductCard = React.memo(function ProductCard({
             </span>
           )}
           {displayDiscountPercent > 0 && (
-            <span className="w-fit rounded-full border border-[#c38d2d] bg-brand-gold px-2 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-brand-black shadow-[0_8px_20px_rgba(18,14,10,0.12)] md:text-[8px]">
-              Save {displayDiscountPercent}%
+            <span className="w-fit rounded-full border border-[#d0a65c]/30 bg-[#111111]/80 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.14em] text-[#d9b36a] shadow-[0_8px_18px_rgba(17,17,17,0.25)] backdrop-blur-sm md:text-[8px]">
+              -{displayDiscountPercent}%
             </span>
           )}
         </div>
