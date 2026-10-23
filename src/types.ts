@@ -156,6 +156,8 @@ export interface DataContextValue {
   categories: Category[];
   brands: string[];
   products: Product[];
+  catalogLoading: boolean;
+  catalogError: string | null;
   priceRanges: PriceRange[];
   orders: Order[];
   siteSettings: SiteSettings;

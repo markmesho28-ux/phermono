@@ -15,6 +15,8 @@ interface ChatMessage {
 
 interface ChatWidgetProps {
   products?: Product[];
+  catalogLoading?: boolean;
+  catalogError?: string | null;
   mode?: "floating" | "page";
   sidebarOpen?: boolean;
 }
@@ -56,9 +58,7 @@ const resolveGroqApiKeys = (): string[] => {
   return keys;
 };
 
-const GROQ_API_KEYS: string[] = resolveGroqApiKeys();
-const PRODUCT_RESEARCH_CACHE_TTL_MS = 1000 * 60 * 30;
-const PRODUCT_RESEARCH_CACHE = new Map<string, { expiresAt: number; payload: { ok: boolean; source?: string; summary?: string; url?: string; error?: string } }>();
+const getGroqApiKeys = (): string[] => resolveGroqApiKeys();
 const MAX_DAILY_MESSAGES_PER_USER = 20;
 const GUEST_CHAT_USAGE_TABLE = "guest_chat_usage";
 const USER_CHAT_USAGE_TABLE = "user_chat_usage";
@@ -81,10 +81,10 @@ export const shouldRetryWithNextGroqKey = (status?: number, error?: unknown): bo
   return false;
 };
 
-const getNextGroqKey = () => {
-  if (!GROQ_API_KEYS || GROQ_API_KEYS.length === 0) return "";
-  const key = GROQ_API_KEYS[groqKeyIndex % GROQ_API_KEYS.length];
-  groqKeyIndex = (groqKeyIndex + 1) % GROQ_API_KEYS.length;
+const getNextGroqKey = (groqApiKeys: string[]) => {
+  if (!groqApiKeys || groqApiKeys.length === 0) return "";
+  const key = groqApiKeys[groqKeyIndex % groqApiKeys.length];
+  groqKeyIndex = (groqKeyIndex + 1) % groqApiKeys.length;
   return key;
 };
 
@@ -461,107 +461,170 @@ export const buildGroqMessages = (
   }));
 };
 
+const SEARCH_STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "for", "with", "from", "into", "about", "this", "that", "these",
+  "those", "what", "when", "where", "why", "how", "i", "you", "we", "they", "them", "our", "your",
+  "my", "to", "of", "want", "need", "looking", "wanting", "something", "please", "can", "could", "help",
+  "which", "see", "know", "tell", "give", "show", "look", "search", "any",
+  "عايز", "عايزة", "عايزه", "عايزين", "حاجة", "محتاج", "محتاجه", "محتاجين", "طب", "لـ", "على", "في",
+  "من", "ال", "وال", "و", "ب", "ك", "ل", "ا", "اي", "اى", "ه", "هو", "هي", "عن", "لو", "لوحد",
+  "بخصوص", "product", "منتج", "مادة", "شي", "حاجه"
+]);
+
+const GENERIC_SEARCH_ALIASES: Record<string, string> = {
+  body: "body", bodi: "body", boddy: "body", badi: "body", bodu: "body", boody: "body", boudy: "body",
+  "بادي": "body", "بودي": "body", "بدي": "body",
+  bodymilk: "body milk", milk: "milk", milek: "milk", milik: "milk", "ميلك": "milk", "مليك": "milk", "ميك": "milk",
+  cream: "cream", creme: "cream", krem: "cream", "كريم": "cream", "كريمه": "cream", "كرم": "cream",
+  clary: "clary", "كلاري": "clary", "كيلاري": "clary",
+  shampoo: "shampoo", shampu: "shampoo", "شامبو": "shampoo", "شامپو": "shampoo", "شامب": "shampoo",
+  conditioner: "conditioner", condition: "conditioner", konditioner: "conditioner", kondishner: "conditioner",
+  "بلسم": "conditioner", "كونديشنر": "conditioner", "كنديشنر": "conditioner", "كندشنر": "conditioner",
+  serum: "serum", serom: "serum", "سيروم": "serum", "سيرم": "serum", "سرم": "serum", "سروم": "serum",
+  moisturizer: "moisturizer", moisturize: "moisturizer", moisturise: "moisturizer", hydrating: "moisturizer",
+  hydrate: "moisturizer", hydration: "moisturizer", hydrator: "moisturizer", "مرطب": "moisturizer",
+  "رطب": "moisturizer", "مُرطب": "moisturizer", "رطوبة": "moisturizer",
+  mask: "mask", masque: "mask", "ماسك": "mask", cleanser: "cleanser", wash: "cleanser", foam: "cleanser",
+  "غسول": "cleanser", "غسيل": "cleanser", "كلينسر": "cleanser", sunscreen: "sunscreen", sunblock: "sunscreen",
+  suncream: "sunscreen", "واقي شمس": "sunscreen", "sun cream": "sunscreen", "sun block": "sunscreen",
+  lip: "lip", lips: "lip", lipcare: "lip", "شفايف": "lip", "شفاه": "lip", "ليب": "lip",
+  balm: "balm", salve: "balm", balsam: "balm", "بالم": "balm", "بلم": "balm", "لبم": "balm",
+  gloss: "gloss", glossy: "gloss", shine: "gloss", shiny: "gloss", "بريق": "gloss", "لمعان": "gloss", "ألوان": "gloss",
+  oil: "oil", oils: "oil", "أويل": "oil", "زيت": "oil", hair: "hair", "شعر": "hair", dry: "dry", "جاف": "dry",
+  skin: "skin", "بشرة": "skin", "وجه": "skin", face: "skin", "مكياج": "makeup",
+  expensive: "expensive", "اغلى": "expensive", "اغلي": "expensive", "غلى": "expensive", "غلي": "expensive",
+  "غالي": "expensive", "غالى": "expensive", "غاليه": "expensive", "غالية": "expensive",
+  cheap: "cheap", "ارخص": "cheap", "رخص": "cheap", "رخيص": "cheap", "رخيصة": "cheap", "اقل": "cheap", "أقل": "cheap"
+};
+
+const normalizeCatalogToken = (token: string): string => {
+  const trimmed = String(token ?? "").trim().toLowerCase();
+  if (!trimmed) return "";
+  const withoutPunctuation = trimmed.replace(/[\p{P}\p{S}]/gu, "");
+  if (!withoutPunctuation) return "";
+
+  const normalized = withoutPunctuation
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة$/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+  if (GENERIC_SEARCH_ALIASES[normalized]) return GENERIC_SEARCH_ALIASES[normalized];
+  if (GENERIC_SEARCH_ALIASES[normalized.replace(/s$/, "")]) return GENERIC_SEARCH_ALIASES[normalized.replace(/s$/, "")];
+
+  return normalized
+    .replace(/^(ال|لل|لـ|ب|ك|و|ف|ا|ي)+/g, "")
+    .replace(/(ة|ه)$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const normalizeCatalogMatchText = (value: string): string => {
   if (!value) return "";
 
-  let normalized = String(value)
+  const raw = String(value)
     .normalize("NFKC")
     .replace(/&/g, " and ")
     .replace(/[\u0640\u0610-\u061A\u064B-\u065F]/g, "")
     .replace(/[ًٌٍَُِّْ]/g, "")
     .replace(/[\u200C\u200D]/g, "")
+    .replace(/[™®©℠]/gi, " ")
+    .replace(/\b([a-z0-9]+)tm\b/gi, "$1")
+    .replace(/[_-]+/g, " ")
     .toLowerCase();
 
-  const arabicReplacements: Array<[RegExp, string]> = [
-    [/ليش|ليه|ايه|اى|اي\s*ش|ايش/g, "what"],
-    [/عايز|عايزة|عايزه|عايزين|محتاج|محتاجه|محتاجين|بحاجة|بدور|دور/g, "want"],
-    [/مرطب|رطب|moisturizer|moisturize|hydration|hydrate/g, "moisturizer"],
-    [/بالم|بلم|lip balm|ليب|ليب\s*بالم|ليب\s*بلم|لب/g, "lip balm"],
-    [/شفايف|شفاه|lip\s*area|lips/g, "lips"],
-    [/شعر|hair|شو/g, "hair"],
-    [/وجه|بشرة|skin|skincare|بشـرة|بشرة/g, "skin"],
-    [/سيروم|سرم|serum/g, "serum"],
-    [/غسول|كلينسر|غسيل|cleanser|wash/g, "cleanser"],
-    [/واقي\s*شمس|sunblock|sunscreen|spf|sun cream/g, "sunscreen"],
-    [/بريق|لمعان|لُمعان|gloss|glossy|shine|shiney/g, "gloss"],
-    [/حاجه|حاجة|شي|شئ|منتج|مادة/g, "product"],
-  ];
-
-  for (const [pattern, replacement] of arabicReplacements) {
-    normalized = normalized.replace(pattern, replacement);
-  }
-
-  return normalized
+  const tokens = raw
     .replace(/[\p{P}\p{S}]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(/\s+/)
+    .map(normalizeCatalogToken)
+    .filter(Boolean);
+
+  const cleaned = tokens
+    .filter((token) => token.length > 1 && !SEARCH_STOP_WORDS.has(token))
+    .join(" ");
+
+  return cleaned.replace(/\s+/g, " ").trim();
 };
 
 const getCatalogMatchTokens = (value: string): string[] => {
   const normalized = normalizeCatalogMatchText(value);
   if (!normalized) return [];
 
-  const stopWords = new Set([
-    "the", "a", "an", "and", "or", "for", "with", "from", "into", "about", "this", "that", "these",
-    "those", "what", "when", "where", "why", "how", "i", "you", "we", "they", "them", "our", "your",
-    "my", "to", "of", "want", "need", "looking", "wanting", "something", "please", "can", "could", "help", "please",
-    "what", "which", "see", "know", "tell", "give", "show", "need", "want", "look", "search",
-    "عايز", "عايزة", "عايزه", "عايزين", "حاجة", "محتاج", "محتاجه", "محتاجين", "لـ", "على", "في", "من",
-    "ال", "وال", "و", "ب", "ك", "ل", "ا", "اي", "اى", "ه", "هو", "هي", "عن", "لو", "لوحد", "بخصوص", "product"
-  ]);
-
   return Array.from(new Set(
     normalized
       .split(/\s+/)
       .map((token) => token.trim())
-      .filter((token) => token.length > 1 && !stopWords.has(token))
+      .filter((token) => token.length > 1 && !SEARCH_STOP_WORDS.has(token))
   ));
 };
 
-const PRODUCT_ALIAS_MAP: Array<[RegExp, string[]]> = [
-  [/\b(lip|lips|lipcare|lip care|lip-care|شفايف|شفاه|شفايف|لِب|ليب)\b/i, ["lip", "lips", "lipcare", "شفايف", "شفاه", "ليب"]],
-  [/\b(balm|balmstick|salve|lip balm|lip repair|repair balm|بالم|بلم|ليپ بالم|ليب بالم)\b/i, ["balm", "salve", "repair", "بالم", "ليب"]],
-  [/\b(moisturizer|moisturize|moisture|hydrating|hydrate|hydratant|richer|soften|نضارة|مرطب|رطب|ت moisturize|hydrate|hydration)\b/i, ["moisturize", "hydrate", "hydrating", "moisturizer", "مرطب", "رطب", "نضارة"]],
-  [/\b(gloss|glossy|shine|shiny|lip oil|oil|بريق|لمعان|ألوان|glow|shine)\b/i, ["gloss", "glossy", "shine", "lip oil", "بريق", "لمعان", "أويل", "oil"]],
-  [/\b(serum|سيروم|face|بشرة|skin|skincare|face serum|سرم)\b/i, ["serum", "سيروم", "bacteria", "skin", "بشرة"]],
-  [/\b(cleanser|wash|foam|غسول|غسيل|كلينسر|wash)\b/i, ["cleanser", "wash", "foam", "غسول", "كلينسر"]],
-  [/\b(sunscreen|spf|sunblock|واقي شمس|sun cream|cream)\b/i, ["sunscreen", "spf", "sunblock", "واقي شمس", "sun" ]],
-];
+// Business semantics in the app: `selling_price` is the live selling price, `market_price`
+// is the reference/original price, and legacy `price` is only a fallback when newer fields are absent.
+const getEffectiveProductPrice = (product: Partial<Product> | any): number | null => {
+  const candidates = [
+    product?.sellingPrice,
+    product?.selling_price,
+    product?.marketPrice,
+    product?.market_price,
+    product?.price,
+  ];
 
-const getCatalogMatchBoost = (queryNormalized: string, productText: string): number => {
-  const text = normalizeCatalogMatchText(productText || "");
-  if (!queryNormalized || !text) return 0;
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
+const levenshteinDistance = (left: string, right: string): number => {
+  if (left === right) return 0;
+  if (left.length === 0) return right.length;
+  if (right.length === 0) return left.length;
+
+  const matrix: number[][] = Array.from({ length: left.length + 1 }, (_, rowIndex) => [rowIndex]);
+  matrix[0] = Array.from({ length: right.length + 1 }, (_, columnIndex) => columnIndex);
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitutionCost = left[row - 1] === right[column - 1] ? 0 : 1;
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + substitutionCost
+      );
+    }
+  }
+
+  return matrix[left.length][right.length];
+};
+
+const getCategoryLikeMatchScore = (queryTokens: string[], fieldText: string): number => {
+  const tokens = getCatalogMatchTokens(fieldText);
+  if (tokens.length === 0) return 0;
 
   let score = 0;
-  if (queryNormalized.includes(text) || text.includes(queryNormalized)) score += 80;
+  const shared = queryTokens.filter((token) => tokens.includes(token));
+  score += shared.length * 25;
 
-  for (const [regex, aliasList] of PRODUCT_ALIAS_MAP) {
-    if (regex.test(queryNormalized) && aliasList.some((alias) => text.includes(normalizeCatalogMatchText(alias)))) {
-      score += 20;
-    }
-  }
-
-  const queryTokens = getCatalogMatchTokens(queryNormalized);
-  const textTokens = getCatalogMatchTokens(text);
-  if (queryTokens.length > 0) {
-    const shared = queryTokens.filter((token) => textTokens.includes(token));
-    score += shared.length * 12;
-    if (queryTokens.every((token) => textTokens.includes(token) || token.length <= 2)) {
-      score += 10;
-    }
-  }
-
-  if (/(lip|شفايف|شفاه|ليب|balm|بالم|moistur|مرطب|hydrate|hydrating|gloss|shine|بريق|لمعان)/i.test(queryNormalized)) {
-    if (/(lip|شفايف|شفاه|ليب|balm|بالم|moistur|مرطب|hydrate|hydrating|gloss|shine|بريق|لمعان)/i.test(text)) {
-      score += 14;
-    }
-  }
-
+  const fuzzyMatches = queryTokens.filter((token) => {
+    if (token.length < 3) return false;
+    return tokens.some((candidate) => {
+      if (token === candidate) return false;
+      return levenshteinDistance(token, candidate) <= 1 || candidate.startsWith(token) || token.startsWith(candidate);
+    });
+  });
+  score += fuzzyMatches.length * 12;
   return score;
 };
 
 export const searchCatalogProducts = (products: Product[] = [], query = "") => {
   if (!Array.isArray(products) || products.length === 0) return [];
+
   const trimmedQuery = String(query ?? "").trim();
   if (!trimmedQuery) {
     return products.slice(0, 10);
@@ -572,73 +635,194 @@ export const searchCatalogProducts = (products: Product[] = [], query = "") => {
     return products.slice(0, 10);
   }
 
-  const genericQueryTokens = new Set(["serum", "cleanser", "sunscreen", "oil", "balm", "lip", "lips", "gloss", "moisturizer", "skin", "hair", "product"]);
+  const queryTokens = getCatalogMatchTokens(normalizedQuery);
+  const isPriceHighIntent = /(expensive|highest|most expensive|priciest|اغلى|غالي|غالية|غالى)/.test(normalizedQuery);
+  const isPriceLowIntent = /(cheap|cheapest|lowest|ارخص|رخيص|اقل|أقل)/.test(normalizedQuery);
+  const isPriceIntent = isPriceHighIntent || isPriceLowIntent;
+  const isDryHairIntent = /(dry.*hair|hair.*dry|جاف.*شعر|شعر.*جاف|dry.*scalp|damaged.*hair)/.test(normalizedQuery);
+  const genericCategoryTerms = new Set(["shampoo", "conditioner", "serum", "cleanser", "sunscreen", "oil", "balm", "lip", "gloss", "moisturizer", "mask", "cream", "hair", "skin"]);
+  const allGenericQueryTerms = queryTokens.length > 0 && queryTokens.every((token) => genericCategoryTerms.has(token) || token.length <= 2);
 
   const results = products
     .map((product) => {
-      const productText = [
+      const productName = normalizeCatalogMatchText(product.name || "");
+      const brandText = normalizeCatalogMatchText(product.brand || "");
+      const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
+      const descriptionText = normalizeCatalogMatchText(product.description || "");
+      const tagText = normalizeCatalogMatchText(product.tag || "");
+      const combinedText = normalizeCatalogMatchText([
         product.name,
         product.brand,
         product.category,
         product.subcategory,
         product.description,
         product.tag,
-      ].join(" ");
+      ].join(" "));
 
-      const normalizedText = normalizeCatalogMatchText(productText);
+      const effectivePrice = getEffectiveProductPrice(product);
       let score = 0;
 
-      if (!normalizedText) {
-        return { product, score: 0 };
+      if (productName === normalizedQuery) score += 220;
+      if (productName.includes(normalizedQuery) || normalizedQuery.includes(productName)) score += 80;
+      if (brandText.includes(normalizedQuery) || normalizedQuery.includes(brandText)) score += 50;
+      if (categoryText.includes(normalizedQuery) || normalizedQuery.includes(categoryText)) score += 65;
+      if (descriptionText.includes(normalizedQuery) || normalizedQuery.includes(descriptionText)) score += 40;
+      if (tagText.includes(normalizedQuery) || normalizedQuery.includes(tagText)) score += 25;
+
+      const nameTokens = getCatalogMatchTokens(productName);
+      const categoryTokens = getCatalogMatchTokens(categoryText);
+      const descriptionTokens = getCatalogMatchTokens(descriptionText);
+      const combinedTokens = getCatalogMatchTokens(combinedText);
+
+      const sharedNameTokens = queryTokens.filter((token) => nameTokens.includes(token));
+      const sharedCategoryTokens = queryTokens.filter((token) => categoryTokens.includes(token));
+      const sharedDescriptionTokens = queryTokens.filter((token) => descriptionTokens.includes(token));
+      const sharedCombinedTokens = queryTokens.filter((token) => combinedTokens.includes(token));
+
+      score += sharedCombinedTokens.length * 32;
+      score += sharedNameTokens.length * 28;
+      score += sharedCategoryTokens.length * 18;
+      score += sharedDescriptionTokens.length * 12;
+
+      if (queryTokens.length > 0) {
+        const categoryLikeBoost = getCategoryLikeMatchScore(queryTokens, categoryText) + getCategoryLikeMatchScore(queryTokens, productName) + getCategoryLikeMatchScore(queryTokens, descriptionText);
+        score += categoryLikeBoost;
       }
 
-      if (normalizedText.includes(normalizedQuery) || normalizedQuery.includes(normalizedText)) {
-        score += 80;
+      const categoryMatches = queryTokens.filter((token) => genericCategoryTerms.has(token) && (categoryText.includes(token) || productName.includes(token) || descriptionText.includes(token)));
+      if (categoryMatches.length > 0) score += categoryMatches.length * 35;
+
+      const isCategoryOnlySearch = queryTokens.length > 0 && queryTokens.every((token) => genericCategoryTerms.has(token) || token.length <= 2);
+      if (isCategoryOnlySearch && (categoryText || productName || descriptionText)) {
+        score += 20;
       }
 
-      const productName = normalizeCatalogMatchText(product.name || "");
-      if (productName.includes(normalizedQuery) || normalizedQuery.includes(productName)) {
-        score += 45;
+      const fuzzyScore = queryTokens.filter((token) => {
+        if (token.length < 3) return false;
+        return combinedTokens.some((candidate) => {
+          if (candidate === token) return false;
+          return levenshteinDistance(token, candidate) <= 1 || candidate.startsWith(token) || token.startsWith(candidate);
+        });
+      }).length;
+      score += fuzzyScore * 18;
+
+      const ignoredTokens = new Set(["any", "expensive", "cheap", "dry", "hair", "طب"]);
+      const unknownTokens = queryTokens.filter((token) => !genericCategoryTerms.has(token) && !combinedTokens.includes(token) && !ignoredTokens.has(token));
+      if (queryTokens.length > 1 && unknownTokens.length > 0 && !isPriceIntent && !isDryHairIntent) {
+        score = Math.max(0, score - unknownTokens.length * 90);
       }
 
-      const description = normalizeCatalogMatchText(product.description || "");
-      if (description.includes(normalizedQuery) || normalizedQuery.includes(description)) {
-        score += 30;
-      }
-
-      const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
-      if (categoryText.includes(normalizedQuery) || normalizedQuery.includes(categoryText)) {
-        score += 15;
-      }
-
-      score += getCatalogMatchBoost(normalizedQuery, productText);
-
-      const queryTokens = getCatalogMatchTokens(normalizedQuery);
-      const textTokens = getCatalogMatchTokens(productText);
-      const shared = queryTokens.filter((token) => textTokens.includes(token));
-      const strongShared = shared.filter((token) => token.length > 3 || genericQueryTokens.has(token) || token.includes("lip") || token.includes("balm") || token.includes("gloss") || token.includes("serum") || token.includes("clean") || token.includes("shade") || token.includes("moist"));
-      score += shared.length * 8;
-
-      const unknownTokens = queryTokens.filter((token) => !genericQueryTokens.has(token) && !textTokens.includes(token));
-      if (queryTokens.length > 1 && unknownTokens.length > 0) {
+      if (!isPriceIntent && unknownTokens.length > 0 && !unknownTokens.some((token) => productName.includes(token) || categoryText.includes(token) || descriptionText.includes(token) || brandText.includes(token))) {
         score = 0;
       }
 
-      if (shared.length === 0 && !productName.includes(normalizedQuery) && !normalizedText.includes(normalizedQuery)) {
+      if (
+        allGenericQueryTerms && queryTokens.length > 1 &&
+        queryTokens.some((token) => !combinedTokens.includes(token)) &&
+        !productName.includes(normalizedQuery) &&
+        !categoryText.includes(normalizedQuery) &&
+        !brandText.includes(normalizedQuery) &&
+        !descriptionText.includes(normalizedQuery)
+      ) {
         score = 0;
       }
 
-      if (shared.length === 1 && strongShared.length === 0) {
-        score = Math.min(score, 12);
+      if (sharedCombinedTokens.length === 0 && fuzzyScore === 0 && !productName.includes(normalizedQuery) && !categoryText.includes(normalizedQuery) && !brandText.includes(normalizedQuery) && !descriptionText.includes(normalizedQuery)) {
+        score = 0;
       }
 
-      return { product, score };
+      return { product, score, effectivePrice };
     })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter(({ product, score, effectivePrice }) => {
+      if (score <= 0) return false;
+      if (isPriceIntent && effectivePrice == null) return false;
+
+      if (isPriceIntent) {
+        const ignoredPriceTerms = new Set([
+          "expensive", "cheap", "price", "highest", "lowest", "most", "least", "high", "low",
+          "priciest", "budget", "cheapest",
+        ]);
+        const priceScopeTokens = queryTokens.filter((token) => !ignoredPriceTerms.has(token));
+        if (priceScopeTokens.length === 0) return true;
+
+        const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
+        const productContextText = normalizeCatalogMatchText(`${product.name ?? ""} ${product.description ?? ""} ${product.brand ?? ""}`);
+        const familyHints: Record<string, string[]> = {
+          shampoo: ["shampoo", "hair", "haircare", "scalp"],
+          conditioner: ["conditioner", "hair", "haircare", "scalp"],
+          serum: ["serum", "skin", "skincare", "hair", "haircare"],
+          mask: ["mask", "hair", "haircare", "skin", "skincare"],
+          cream: ["cream", "skin", "skincare", "body", "bath"],
+          moisturizer: ["moisturizer", "skin", "skincare", "body", "bath"],
+          oil: ["oil", "hair", "skin", "body"],
+          balm: ["balm", "lip", "lipcare"],
+          lip: ["lip", "balm", "lipcare"],
+          body: ["body", "bath", "milk", "bodymilk"],
+          milk: ["milk", "body", "bath", "bodymilk"],
+          cleanser: ["cleanser", "skin", "skincare", "hair", "haircare"],
+          sunscreen: ["sunscreen", "skin", "skincare"],
+        };
+
+        const categoryMismatch = (categoryText.includes("fragrance") || categoryText.includes("perfume") || categoryText.includes("body") || categoryText.includes("bath")) &&
+          priceScopeTokens.some((token) => token === "shampoo" || token === "conditioner" || token === "serum" || token === "mask" || token === "milk" || token === "lip" || token === "balm");
+
+        if (categoryMismatch) {
+          return false;
+        }
+
+        return priceScopeTokens.some((token) => {
+          const hints = familyHints[token] ?? [token];
+          return hints.some((hint) => categoryText.includes(hint) || productContextText.includes(hint));
+        });
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      if (isPriceIntent) {
+        const aPrice = a.effectivePrice ?? 0;
+        const bPrice = b.effectivePrice ?? 0;
+        if (Number.isFinite(aPrice) && Number.isFinite(bPrice) && aPrice !== bPrice) {
+          return isPriceLowIntent ? aPrice - bPrice : bPrice - aPrice;
+        }
+      }
+      return b.score - a.score;
+    })
     .map(({ product }) => product);
 
   return results.length > 0 ? results.slice(0, 12) : [];
+};
+
+export const getCatalogAvailabilityStatus = ({
+  products = [],
+  query = "",
+  matchedProducts = [],
+  catalogLoading = false,
+  catalogError = null,
+}: {
+  products?: Product[];
+  query?: string;
+  matchedProducts?: Product[];
+  catalogLoading?: boolean;
+  catalogError?: string | null;
+}) => {
+  if (catalogLoading) {
+    return "CATALOG_STATUS: product catalog is still loading; do not claim a product is unavailable until the authoritative catalog has finished loading.";
+  }
+
+  if (catalogError) {
+    return `CATALOG_STATUS: the authoritative product catalog could not be verified (${catalogError}); do not claim a product is absent without a successful catalog load.`;
+  }
+
+  if (!products.length) {
+    return "CATALOG_STATUS: product catalog is not available yet; do not claim a product is unavailable until the catalog finishes loading.";
+  }
+
+  if (query && matchedProducts.length === 0) {
+    return "CATALOG_STATUS: no product in the current catalog matched the request; do not invent or claim availability.";
+  }
+
+  return `CATALOG_STATUS: using ${Math.min(matchedProducts.length || products.length, 12)} matched catalog items relevant to the current query.`;
 };
 
 export const buildCatalogContext = (products: Product[] = [], query = "") => {
@@ -660,7 +844,7 @@ export const buildCatalogContext = (products: Product[] = [], query = "") => {
           `${p.category} ${p.subcategoryId ?? ""} ${p.name} ${p.description ?? ""}`
         );
 
-      const resolvedPrice = p.sellingPrice ?? p.price;
+      const resolvedPrice = getEffectiveProductPrice(p);
       const price = resolvedPrice != null ? `${resolvedPrice} EGP` : "price not set";
       const original =
         p.originalPrice != null || p.marketPrice != null
@@ -686,150 +870,6 @@ export const buildCatalogContext = (products: Product[] = [], query = "") => {
       return lines.join("\n");
     })
     .join("\n\n---\n\n");
-};
-
-export const buildWebSearchQuery = (productName: string, brand?: string) => {
-  const tokens = [brand, productName]
-    .filter(Boolean)
-    .map((part) => String(part).trim())
-    .filter(Boolean)
-    .join(" ");
-
-  return tokens
-    .replace(/\s+/g, " ")
-    .replace(/\s+(?:for|with|and)\s+/gi, " ")
-    .replace(/\b(?:ingredients?|benefits?|reviews?|price|compare|alternatives?|details?)\b/gi, " ")
-    .trim();
-};
-
-export const shouldUseExternalProductResearch = (message = ""): boolean => {
-  const text = String(message ?? "").trim();
-  if (!text) return false;
-
-  const normalized = text.toLowerCase();
-  const englishDetailPattern = /(ingredient|ingredients|benefit|benefits|what does|what is in|how it works|suitable|suitability|for dry|for oily|for acne|for sensitive|compare|comparison|difference|alternative|alternatives|tell me more|why this|why use|why choose|not sure|best for|good for)/i;
-  const arabicDetailPattern = /(مكونات|مكون|فوائد|فائدة|مناسب|مناسبة|مقارنة|فرق|بديل|بدائل|استخدام|كيف|ليه|لماذا|أفضل|احسن|تاثير|تأثير|للبشرة|للشعر|بيشتغل|مفيدة|مناسبه)/i;
-  const lookForProductDetail = englishDetailPattern.test(normalized) || arabicDetailPattern.test(normalized);
-  const mentionsProductLikeWord = /(lip|balm|serum|cleanser|mask|oil|cream|gel|sunscreen|moisturizer|skincare|haircare|product|brand|formula|ingredient|benefit|بالم|سيروم|غسول|مرطب|زيت|كريم|جل|مكياج|منتج|مكونات|فوائد|شعر|بشرة)/i.test(normalized);
-
-  return lookForProductDetail && mentionsProductLikeWord;
-};
-
-const normalizeProductResearchKey = (productName: string, brand?: string) => {
-  const key = `${String(brand || "").trim().toLowerCase()}::${String(productName || "").trim().toLowerCase()}`;
-  return key.replace(/\s+/g, " ").trim();
-};
-
-export const resolveProductResearchTarget = (products: Product[] = [], query = "") => {
-  const trimmedQuery = String(query ?? "").trim();
-  if (!trimmedQuery) return undefined;
-
-  const cleanedQuery = trimmedQuery
-    .replace(/\b(?:what|which|who|is|are|the|a|an|for|with|about|tell|me|more|how|why|this|that|these|those)\b/gi, " ")
-    .replace(/\b(?:ingredients?|benefits?|uses?|features?|compare|comparison|difference|alternatives?|details?|suitable|suitability|reviews?|price|stock|available)\b/gi, " ")
-    .replace(/[?!,.]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const directCandidates = cleanedQuery ? searchCatalogProducts(products, cleanedQuery) : [];
-  if (directCandidates.length > 0) {
-    return directCandidates[0];
-  }
-
-  const exactNameMatches = products.filter((product) => {
-    const haystack = `${product.name} ${product.brand}`.toLowerCase();
-    return haystack.includes(trimmedQuery.toLowerCase()) || trimmedQuery.toLowerCase().includes(haystack);
-  });
-
-  return exactNameMatches[0] || products[0];
-};
-
-export const buildProductResearchContext = (
-  product: Product,
-  research?: { ok: boolean; source?: string; summary?: string; url?: string; error?: string; results?: Array<{ title?: string; description?: string; url?: string; source?: string }> }
-) => {
-  const catalogLine = [
-    "Phermono catalog source:",
-    `Product: ${product?.name || "unknown"}`,
-    `Brand: ${product?.brand || "unknown"}`,
-    `Category: ${product?.category || "unknown"}`,
-    `Website price: ${product?.price ?? "not listed"} EGP`,
-    `Catalog description: ${product?.description || "Not available in catalog."}`,
-  ].join(" | ");
-
-  if (!research || !research.ok || (!research.summary && (!research.results || research.results.length === 0))) {
-    return [
-      catalogLine,
-      "External research: not available or not verified. Do not claim ingredients, benefits, or availability without a trusted source.",
-    ].join("\n");
-  }
-
-  const searchDetails = Array.isArray(research.results) && research.results.length > 0
-    ? research.results
-        .slice(0, 3)
-        .map((result, index) => `${index + 1}. ${result.title || "External result"} — ${result.description || "No summary available."} (${result.url || result.source || "source unavailable"})`)
-        .join(" | ")
-    : "";
-
-  const sourceLine = research.url || research.source || "unknown source";
-  return [
-    catalogLine,
-    `External research source: ${sourceLine}`,
-    searchDetails ? `External research results: ${searchDetails}` : `External research summary: ${research.summary}`,
-    "Important: this is external information only. It does not prove the product is in stock or sold by Phermono.",
-  ].join("\n");
-};
-
-export const fetchProductWebResearch = async (productName: string, brand?: string): Promise<{ ok: boolean; source?: string; summary?: string; url?: string; results?: Array<{ title?: string; description?: string; url?: string; source?: string }>; error?: string }> => {
-  const query = buildWebSearchQuery(productName, brand);
-  if (!query) {
-    return { ok: false, error: "No product name was provided for web research." };
-  }
-
-  const cacheKey = normalizeProductResearchKey(productName, brand);
-  const cached = PRODUCT_RESEARCH_CACHE.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.payload;
-  }
-
-  try {
-    const response = await fetch("/api/product-search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify({
-        productName,
-        brand,
-      }),
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    const normalized = {
-      ok: Boolean(payload?.ok),
-      source: payload?.source || payload?.results?.[0]?.source || "web",
-      summary: payload?.summary || payload?.results?.[0]?.description || "No summary available from the external source.",
-      url: payload?.url || payload?.results?.[0]?.url || "",
-      results: Array.isArray(payload?.results) ? payload.results : [],
-      error: payload?.error || (response.ok ? undefined : "External search service is unavailable."),
-    };
-
-    if (!response.ok || !normalized.ok) {
-      PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload: normalized });
-      return normalized;
-    }
-
-    PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload: normalized });
-    return normalized;
-  } catch (error) {
-    const payload = {
-      ok: false,
-      error: error instanceof Error ? error.message : "External search failed unexpectedly.",
-    };
-    PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload });
-    return payload;
-  }
 };
 
 export const buildDynamicFallback = (query = "", isArabic = true): string => {
@@ -959,7 +999,7 @@ export const formatBotText = (text: string, fallbackText?: string): string => {
   );
 };
 
-export default function ChatWidget({ products = [], mode = "page", sidebarOpen = false }: ChatWidgetProps) {
+export default function ChatWidget({ products = [], catalogLoading = false, catalogError = null, mode = "page", sidebarOpen = false }: ChatWidgetProps) {
   const { user } = useAuth();
   const isPageMode = mode === "page";
   const [isOpen, setIsOpen] = useState(isPageMode);
@@ -1080,48 +1120,27 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
 
       const matchedCatalog = searchCatalogProducts(products, trimmed);
       const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : products, trimmed);
-      const isCatalogEmpty = products.length === 0;
-      const catalogStatusLine = isCatalogEmpty
-        ? "CATALOG_STATUS: product catalog is still loading or unavailable; do not claim a product is unavailable until the catalog fetch has completed successfully."
-        : matchedCatalog.length === 0
-          ? "CATALOG_STATUS: no product in the current catalog matched the request; do not invent or claim availability."
-          : `CATALOG_STATUS: using ${Math.min(matchedCatalog.length, 12)} matched catalog items relevant to the current query.`;
-
-      const shouldResearch = shouldUseExternalProductResearch(trimmed);
-      const productForResearch = shouldResearch ? resolveProductResearchTarget(products, trimmed) : undefined;
-      let externalResearchNote = "EXTERNAL_WEB_RESEARCH: not attempted because the query did not require external product research or no provider is configured.";
-      let researchContext = "";
-
-      if (productForResearch && productForResearch.name) {
-        const research = await fetchProductWebResearch(productForResearch.name, productForResearch.brand);
-        if (research.ok && research.summary) {
-          externalResearchNote = `EXTERNAL_WEB_RESEARCH: used the product name "${productForResearch.name}" and brand "${productForResearch.brand || "unknown"}" to gather external information. This does not prove Phermono inventory. Source: ${research.url || research.source || "external search"}. Summary: ${research.summary}`;
-          researchContext = buildProductResearchContext(productForResearch, research);
-        } else if (research.error) {
-          externalResearchNote = `EXTERNAL_WEB_RESEARCH_STATUS: ${research.error}`;
-          researchContext = buildProductResearchContext(productForResearch, { ok: false, error: research.error });
-        }
-      }
+      const catalogStatusLine = getCatalogAvailabilityStatus({
+        products,
+        query: trimmed,
+        matchedProducts: matchedCatalog,
+        catalogLoading,
+        catalogError,
+      });
 
       const systemPrompt = `You are PhM Concierge — a helpful, friendly shopping assistant for PherMono. Keep replies concise, human, and in the user's detected language (Egyptian Arabic if Arabic detected; otherwise English). Always:
 
     - Use the STORE PRODUCT CATALOG as the source of truth for what is actually sold on this website.
-    - Use the EXTERNAL_PRODUCT_RESEARCH_CONTEXT only as supporting information when available; do not treat web results as live Phermono inventory.
     - Keep recommendations short (max 2 products) and avoid long lists.
     - Do NOT emit markdown, tables, bullets, or numbered lists; respond as natural chat text.
     - If product matching is ambiguous, ask one short clarifying question.
     - When the request does not match any real catalog product, say so clearly and offer the closest available alternatives from the live catalog instead of inventing items.
     - Never claim that a product exists or is unavailable without checking the catalog first.
-    - Keep external research separate from catalog availability and do not invent products, benefits, ingredients, ratings, prices, or stock status from web search results.
-    - If the external source is incomplete or conflicting, say so clearly and do not overstate confidence.
+    - Keep product details grounded in the catalog and do not invent products, benefits, ingredients, ratings, prices, or stock status.
 
     Tone: warm, polite, and conversational (Egyptian Arabic slang when user message is Arabic).
 
     ${catalogStatusLine}
-    ${externalResearchNote}
-
-    EXTERNAL_PRODUCT_RESEARCH_CONTEXT:
-    ${researchContext || "No external product research was needed or no trustworthy source was available."}
 
     STORE PRODUCT CATALOG:
     ${catalog}`;
@@ -1138,7 +1157,10 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
         max_tokens: 800,
       };
 
-      if (GROQ_API_KEYS.length === 0) {
+      const groqApiKeys = getGroqApiKeys();
+      groqKeyIndex = 0;
+
+      if (groqApiKeys.length === 0) {
         throw new Error(
           "Groq API is not configured. Add REACT_APP_GROQ_API_KEY or REACT_APP_GROQ_API_KEYS to your .env file before using the chat assistant."
         );
@@ -1146,8 +1168,8 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
 
       let lastError: Error | null = null;
 
-      for (let attempt = 0; attempt < GROQ_API_KEYS.length; attempt += 1) {
-        const apiKey = getNextGroqKey();
+      for (let attempt = 0; attempt < groqApiKeys.length; attempt += 1) {
+        const apiKey = getNextGroqKey(groqApiKeys);
 
         if (!apiKey) {
           lastError = new Error(
@@ -1159,7 +1181,7 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
         const maskedKey = apiKey ? `${apiKey.slice(0, 3)}...${apiKey.slice(-4)}` : "none";
         console.debug("[Groq fallback] trying API key", {
           attempt: attempt + 1,
-          total: GROQ_API_KEYS.length,
+          total: groqApiKeys.length,
           activeKey: maskedKey,
         });
 

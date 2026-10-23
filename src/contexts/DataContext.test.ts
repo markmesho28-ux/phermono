@@ -691,6 +691,65 @@ describe('DataProvider action stability', () => {
     });
   });
 
+  it('exposes catalog loading and failure state from the authoritative live catalog source', async () => {
+    const supabaseClient = require('../lib/supabase').default;
+    const validProduct = {
+      id: 99,
+      name: 'Clary Shampoo',
+      brand: 'Clary',
+      category_id: 'cat-1',
+      category: 'cat-1',
+      subcategory_id: 'sub-1',
+      subcategory: 'sub-1',
+      selling_price: 260,
+      market_price: 300,
+      admin_cost: 120,
+      stock: 6,
+      is_hidden: false,
+      created_at: '2024-01-02T00:00:00Z',
+      hero: false,
+      tag: null,
+      image: '',
+      description: 'Cleansing shampoo for healthy, soft hair.',
+      rating: 0,
+      reviews: 0,
+    };
+
+    supabaseClient.auth.getUser = jest.fn(() => Promise.resolve({ data: { user: { id: 'admin-1' } } }));
+    supabaseClient.from.mockImplementation((table: string) => {
+      if (table === 'products') {
+        return {
+          select: jest.fn(() => Promise.resolve({ data: [validProduct] })),
+        };
+      }
+      if (table === 'orders') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'categories') return { select: jest.fn(() => Promise.resolve({ data: [{ id: 'cat-1', name: 'Haircare', slug: 'haircare' }] })) };
+      if (table === 'subcategories') return { select: jest.fn(() => Promise.resolve({ data: [{ id: 'sub-1', category_id: 'cat-1', name: 'Shampoos', slug: 'shampoos' }] })) };
+      if (table === 'brands') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'category_brands') return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+      if (table === 'site_settings') return { select: jest.fn(() => ({ order: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve({ data: [] })) })) })) };
+      return { select: jest.fn(() => Promise.resolve({ data: [] })) };
+    });
+
+    function CatalogStateProbe() {
+      const { catalogLoading, catalogError, products } = useData();
+      return React.createElement(
+        'div',
+        { 'data-testid': 'catalog-state' },
+        JSON.stringify({ loading: catalogLoading, error: catalogError, count: products.length, firstProduct: products[0]?.name || null })
+      );
+    }
+
+    render(
+      React.createElement(AuthProvider, null,
+        React.createElement(DataProvider, null, React.createElement(CatalogStateProbe)))
+    );
+
+    await waitFor(() => expect(screen.getByTestId('catalog-state')).toHaveTextContent('"loading":false'));
+    expect(screen.getByTestId('catalog-state')).toHaveTextContent('Clary Shampoo');
+    expect(screen.getByTestId('catalog-state')).not.toHaveTextContent('fetch failed');
+  });
+
   it('keeps valid products when a later empty catalog refresh arrives after initial load', async () => {
     const supabaseClient = require('../lib/supabase').default;
     const validProduct = {

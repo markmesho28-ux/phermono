@@ -1136,8 +1136,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Sync initial data from Supabase when available. This runs once after mount.
-  const [, setLoading] = useState(true);
-  const [, setRemoteError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   // Schema is hard-coded from confirmed live DB columns (see PRODUCT_SCHEMA above).
   // No runtime probing needed — avoids spurious 400 requests on every mount.
   const [schemaInfo] = useState(PRODUCT_SCHEMA);
@@ -1214,6 +1214,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return inFlightCatalogFetchRef.current;
     }
 
+    setCatalogLoading(true);
+    if (explicitRefresh) {
+      setCatalogError(null);
+    }
+
     const minDelayMs = isBackground ? 4000 : 1500;
     if (!explicitRefresh && now - lastCatalogFetchRef.current < minDelayMs) {
       return;
@@ -1226,7 +1231,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     lastCatalogFetchRef.current = now;
     isFetchingRef.current = true;
-    if (!isBackground) setLoading(true);
+    setCatalogLoading(true);
 
     inFlightCatalogFetchRef.current = (async () => {
       try {
@@ -1487,12 +1492,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setSiteSettings(mergedSettings);
         writeCachedSiteSettings(mergedSettings);
 
-        setRemoteError(null);
-        setLoading(false);
+        setCatalogError(null);
+        setCatalogLoading(false);
       } catch (err) {
         console.warn('Supabase sync failed:', err);
-        setRemoteError(String(err));
-        setLoading(false);
+        setCatalogError(String(err));
+        setCatalogLoading(false);
       } finally {
         if (requestId === latestCatalogRequestIdRef.current) {
           isFetchingRef.current = false;
@@ -3474,7 +3479,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const actions = actionsRef.current;
 
   return (
-    <DataContext.Provider value={{ categories, brands, products, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions }}>
+    <DataContext.Provider value={{ categories, brands, products, catalogLoading, catalogError, priceRanges, orders, siteSettings, getBrandsForCategory, updateSiteSettings, applyPromoCommand, actions }}>
       {children}
       <ConfirmModal open={confirmState.open} message={confirmState.message} onConfirm={handleConfirm} onCancel={handleCancel} />
     </DataContext.Provider>

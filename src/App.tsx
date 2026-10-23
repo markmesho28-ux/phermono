@@ -16,8 +16,8 @@ import { formatOrderDate, getOrderDisplayId } from "./utils/orderDate";
 import supabase from "./lib/supabase";
 import type { CartItem, OrderInput, Product } from "./types";
 
-function AssistantPage({ products, sidebarOpen = false }: { products: Product[]; sidebarOpen?: boolean }) {
-  return <ChatWidget products={products} mode="page" sidebarOpen={sidebarOpen} />;
+function AssistantPage({ products, catalogLoading, catalogError, sidebarOpen = false }: { products: Product[]; catalogLoading?: boolean; catalogError?: string | null; sidebarOpen?: boolean }) {
+  return <ChatWidget products={products} catalogLoading={catalogLoading} catalogError={catalogError} mode="page" sidebarOpen={sidebarOpen} />;
 }
 
 interface ToastProps {
@@ -574,7 +574,7 @@ export default function App(){
     resetTransientOverlays();
   }, [resetTransientOverlays]);
 
-  const { products, actions } = useData();
+  const { products, actions, catalogLoading, catalogError } = useData();
   const { user } = useAuth();
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const visibleWishlist = user?.role === 'admin' ? wishlist : wishlist.filter((product) => !product.isHidden);
@@ -1029,7 +1029,7 @@ export default function App(){
           {searchQuery && String(searchQuery).trim() !== '' ? (
             <SearchResults results={searchResults} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
           ) : activeCategory === 'assistant' ? (
-            <AssistantPage products={products} sidebarOpen={mobileMenuOpen} />
+            <AssistantPage products={products} catalogLoading={catalogLoading} catalogError={catalogError} sidebarOpen={mobileMenuOpen} />
           ) : activeCategory === 'home' ? (
             <Homepage onCategorySelect={handleCategorySelect} onBrandSelect={handleBrandSelect} onAddToCart={handleAddToCart} onQuickView={(product: Product) => setQuickViewProduct(product)} onWishlist={handleWishlist} wishlist={wishlist} />
           ) : activeCategory === 'about' ? (
