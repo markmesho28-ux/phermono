@@ -402,6 +402,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    const localUsers = (() => {
+      try {
+        const raw = localStorage.getItem(USERS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    })();
+
+    const localMatch = localUsers.find((item: AuthUserWithPassword) => {
+      const normalizedPhone = normalizePhone(item.phone || '');
+      const candidatePhone = normalizePhone(identifier);
+      return (
+        (candidatePhone && normalizedPhone === candidatePhone) ||
+        (item.name && item.name.toLowerCase() === identifier.toLowerCase())
+      ) && item.password === password;
+    });
+
+    if (localMatch) {
+      const localUser: AuthUser = {
+        name: String(localMatch.name || 'Admin'),
+        phone: String(localMatch.phone || identifier),
+        address: String(localMatch.address || ''),
+        governorate: String(localMatch.governorate || ''),
+        role: String(localMatch.role || 'customer'),
+      };
+      setUser(localUser);
+      return { user: localUser };
+    }
+
     return { error: 'Invalid credentials' };
   };
 

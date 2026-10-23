@@ -3,7 +3,12 @@ import {
   formatBotText,
   buildDynamicFallback,
   buildCatalogContext,
+  buildWebSearchQuery,
+  searchCatalogProducts,
   shouldRetryWithNextGroqKey,
+  shouldUseExternalProductResearch,
+  resolveProductResearchTarget,
+  buildProductResearchContext,
 } from "./ChatWidget";
 
 describe("Groq key fallback retry rules", () => {
@@ -179,6 +184,151 @@ describe("buildCatalogContext injection accuracy", () => {
 
   it("handles empty catalog gracefully", () => {
     expect(buildCatalogContext([])).toBe("No product catalog available yet.");
+  });
+});
+
+describe("external product research helpers", () => {
+  const mockProducts = [
+    {
+      id: 1,
+      name: "Lip Repair Balm",
+      brand: "Phermono",
+      category: "lipcare",
+      subcategory: "lip-care",
+      price: 220,
+      originalPrice: 260,
+      rating: 4.7,
+      reviews: 90,
+      image: "https://example.com/lip-balm.jpg",
+      description: "Hydrating balm for dry, chapped lips that softens and protects the delicate lip area during the day.",
+    },
+    {
+      id: 2,
+      name: "Rose Glow Lip Oil",
+      brand: "Phermono",
+      category: "lipcare",
+      subcategory: "lip-oil",
+      price: 260,
+      rating: 4.5,
+      reviews: 50,
+      image: "https://example.com/lip-oil.jpg",
+      description: "Glossy, glossy-finish lip oil with a shiny finish designed for color and shine rather than deep moisture.",
+    },
+    {
+      id: 3,
+      name: "Vitamin C Serum",
+      brand: "Phermono",
+      category: "skincare",
+      subcategory: "serums",
+      price: 450,
+      rating: 4.8,
+      reviews: 120,
+      image: "https://example.com/serum.jpg",
+      description: "Brightening serum for the face that helps improve the look of dull skin.",
+    },
+  ] as any;
+
+  it("only triggers external research for product-detail and comparison intents", () => {
+    expect(shouldUseExternalProductResearch("what ingredients are in lip repair balm?")).toBe(true);
+    expect(shouldUseExternalProductResearch("compare lip repair balm and rose glow lip oil")).toBe(true);
+    expect(shouldUseExternalProductResearch("what is the price of your lip balm")).toBe(false);
+    expect(shouldUseExternalProductResearch("hi there")).toBe(false);
+  });
+
+  it("resolves the intended product by name and brand before external search", () => {
+    const target = resolveProductResearchTarget(mockProducts, "Phermono Lip Repair Balm ingredients");
+    expect(target?.name).toBe("Lip Repair Balm");
+    expect(target?.brand).toBe("Phermono");
+  });
+
+  it("keeps external research separate from catalog availability and includes source URLs", () => {
+    const context = buildProductResearchContext(
+      mockProducts[0],
+      {
+        ok: true,
+        summary: "This lip balm is formulated to hydrate dry lips and protect the skin barrier.",
+        source: "https://example.com/lip-repair-balm",
+        url: "https://example.com/lip-repair-balm",
+      }
+    );
+
+    expect(context).toContain("Phermono catalog");
+    expect(context).toContain("https://example.com/lip-repair-balm");
+    expect(context).toContain("This lip balm is formulated");
+  });
+});
+
+describe("catalog-aware multilingual matching", () => {
+  const mockProducts = [
+    {
+      id: 1,
+      name: "Lip Repair Balm",
+      brand: "Phermono",
+      category: "lipcare",
+      subcategory: "lip-care",
+      price: 220,
+      originalPrice: 260,
+      rating: 4.7,
+      reviews: 90,
+      image: "https://example.com/lip-balm.jpg",
+      description: "Hydrating balm for dry, chapped lips that softens and protects the delicate lip area during the day.",
+    },
+    {
+      id: 2,
+      name: "Rose Glow Lip Oil",
+      brand: "Phermono",
+      category: "lipcare",
+      subcategory: "lip-oil",
+      price: 260,
+      rating: 4.5,
+      reviews: 50,
+      image: "https://example.com/lip-oil.jpg",
+      description: "Glossy, glossy-finish lip oil with a shiny finish designed for color and shine rather than deep moisture.",
+    },
+    {
+      id: 3,
+      name: "Vitamin C Serum",
+      brand: "Phermono",
+      category: "skincare",
+      subcategory: "serums",
+      price: 450,
+      rating: 4.8,
+      reviews: 120,
+      image: "https://example.com/serum.jpg",
+      description: "Brightening serum for the face that helps improve the look of dull skin.",
+    },
+  ] as any;
+
+  it("finds a real product by English name and translation", () => {
+    const matches = searchCatalogProducts(mockProducts, "lip balm");
+    expect(matches[0].name).toBe("Lip Repair Balm");
+    expect(searchCatalogProducts(mockProducts, "ليب بالم")[0].name).toBe("Lip Repair Balm");
+  });
+
+  it("matches Arabic and need-based descriptions, not just one exact string", () => {
+    const arabicMatches = searchCatalogProducts(mockProducts, "عايز مرطب شفايف");
+    const needMatches = searchCatalogProducts(mockProducts, "I need something to moisturize my lips");
+
+    expect(arabicMatches[0].name).toBe("Lip Repair Balm");
+    expect(needMatches[0].name).toBe("Lip Repair Balm");
+  });
+
+  it("distinguishes by description and ignores false positives", () => {
+    const matches = searchCatalogProducts(mockProducts, "shiny gloss for lips");
+    expect(matches[0].name).toBe("Rose Glow Lip Oil");
+    expect(matches.some((product) => product.name === "Lip Repair Balm")).toBe(false);
+  });
+
+  it("returns no matches for genuinely missing products and keeps empty catalog language clear", () => {
+    expect(searchCatalogProducts(mockProducts, "nonexistent unicorn serum")).toEqual([]);
+    expect(buildCatalogContext(mockProducts, "nonexistent unicorn serum")).toContain("No catalog matches");
+    expect(buildCatalogContext([], "lip balm")).toBe("No product catalog available yet.");
+  });
+
+  it("builds an exact external product search query from the real brand and product name", () => {
+    expect(buildWebSearchQuery("Lip Repair Balm", "Phermono")).toContain("Phermono");
+    expect(buildWebSearchQuery("Lip Repair Balm", "Phermono")).toContain("Lip Repair Balm");
+    expect(buildWebSearchQuery("Lip Repair Balm")).toBe("Lip Repair Balm");
   });
 });
 

@@ -57,6 +57,8 @@ const resolveGroqApiKeys = (): string[] => {
 };
 
 const GROQ_API_KEYS: string[] = resolveGroqApiKeys();
+const PRODUCT_RESEARCH_CACHE_TTL_MS = 1000 * 60 * 30;
+const PRODUCT_RESEARCH_CACHE = new Map<string, { expiresAt: number; payload: { ok: boolean; source?: string; summary?: string; url?: string; error?: string } }>();
 const MAX_DAILY_MESSAGES_PER_USER = 20;
 const GUEST_CHAT_USAGE_TABLE = "guest_chat_usage";
 const USER_CHAT_USAGE_TABLE = "user_chat_usage";
@@ -459,16 +461,200 @@ export const buildGroqMessages = (
   }));
 };
 
-export const buildCatalogContext = (products: Product[] = []) => {
+const normalizeCatalogMatchText = (value: string): string => {
+  if (!value) return "";
+
+  let normalized = String(value)
+    .normalize("NFKC")
+    .replace(/&/g, " and ")
+    .replace(/[\u0640\u0610-\u061A\u064B-\u065F]/g, "")
+    .replace(/[ًٌٍَُِّْ]/g, "")
+    .replace(/[\u200C\u200D]/g, "")
+    .toLowerCase();
+
+  const arabicReplacements: Array<[RegExp, string]> = [
+    [/ليش|ليه|ايه|اى|اي\s*ش|ايش/g, "what"],
+    [/عايز|عايزة|عايزه|عايزين|محتاج|محتاجه|محتاجين|بحاجة|بدور|دور/g, "want"],
+    [/مرطب|رطب|moisturizer|moisturize|hydration|hydrate/g, "moisturizer"],
+    [/بالم|بلم|lip balm|ليب|ليب\s*بالم|ليب\s*بلم|لب/g, "lip balm"],
+    [/شفايف|شفاه|lip\s*area|lips/g, "lips"],
+    [/شعر|hair|شو/g, "hair"],
+    [/وجه|بشرة|skin|skincare|بشـرة|بشرة/g, "skin"],
+    [/سيروم|سرم|serum/g, "serum"],
+    [/غسول|كلينسر|غسيل|cleanser|wash/g, "cleanser"],
+    [/واقي\s*شمس|sunblock|sunscreen|spf|sun cream/g, "sunscreen"],
+    [/بريق|لمعان|لُمعان|gloss|glossy|shine|shiney/g, "gloss"],
+    [/حاجه|حاجة|شي|شئ|منتج|مادة/g, "product"],
+  ];
+
+  for (const [pattern, replacement] of arabicReplacements) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  return normalized
+    .replace(/[\p{P}\p{S}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const getCatalogMatchTokens = (value: string): string[] => {
+  const normalized = normalizeCatalogMatchText(value);
+  if (!normalized) return [];
+
+  const stopWords = new Set([
+    "the", "a", "an", "and", "or", "for", "with", "from", "into", "about", "this", "that", "these",
+    "those", "what", "when", "where", "why", "how", "i", "you", "we", "they", "them", "our", "your",
+    "my", "to", "of", "want", "need", "looking", "wanting", "something", "please", "can", "could", "help", "please",
+    "what", "which", "see", "know", "tell", "give", "show", "need", "want", "look", "search",
+    "عايز", "عايزة", "عايزه", "عايزين", "حاجة", "محتاج", "محتاجه", "محتاجين", "لـ", "على", "في", "من",
+    "ال", "وال", "و", "ب", "ك", "ل", "ا", "اي", "اى", "ه", "هو", "هي", "عن", "لو", "لوحد", "بخصوص", "product"
+  ]);
+
+  return Array.from(new Set(
+    normalized
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 1 && !stopWords.has(token))
+  ));
+};
+
+const PRODUCT_ALIAS_MAP: Array<[RegExp, string[]]> = [
+  [/\b(lip|lips|lipcare|lip care|lip-care|شفايف|شفاه|شفايف|لِب|ليب)\b/i, ["lip", "lips", "lipcare", "شفايف", "شفاه", "ليب"]],
+  [/\b(balm|balmstick|salve|lip balm|lip repair|repair balm|بالم|بلم|ليپ بالم|ليب بالم)\b/i, ["balm", "salve", "repair", "بالم", "ليب"]],
+  [/\b(moisturizer|moisturize|moisture|hydrating|hydrate|hydratant|richer|soften|نضارة|مرطب|رطب|ت moisturize|hydrate|hydration)\b/i, ["moisturize", "hydrate", "hydrating", "moisturizer", "مرطب", "رطب", "نضارة"]],
+  [/\b(gloss|glossy|shine|shiny|lip oil|oil|بريق|لمعان|ألوان|glow|shine)\b/i, ["gloss", "glossy", "shine", "lip oil", "بريق", "لمعان", "أويل", "oil"]],
+  [/\b(serum|سيروم|face|بشرة|skin|skincare|face serum|سرم)\b/i, ["serum", "سيروم", "bacteria", "skin", "بشرة"]],
+  [/\b(cleanser|wash|foam|غسول|غسيل|كلينسر|wash)\b/i, ["cleanser", "wash", "foam", "غسول", "كلينسر"]],
+  [/\b(sunscreen|spf|sunblock|واقي شمس|sun cream|cream)\b/i, ["sunscreen", "spf", "sunblock", "واقي شمس", "sun" ]],
+];
+
+const getCatalogMatchBoost = (queryNormalized: string, productText: string): number => {
+  const text = normalizeCatalogMatchText(productText || "");
+  if (!queryNormalized || !text) return 0;
+
+  let score = 0;
+  if (queryNormalized.includes(text) || text.includes(queryNormalized)) score += 80;
+
+  for (const [regex, aliasList] of PRODUCT_ALIAS_MAP) {
+    if (regex.test(queryNormalized) && aliasList.some((alias) => text.includes(normalizeCatalogMatchText(alias)))) {
+      score += 20;
+    }
+  }
+
+  const queryTokens = getCatalogMatchTokens(queryNormalized);
+  const textTokens = getCatalogMatchTokens(text);
+  if (queryTokens.length > 0) {
+    const shared = queryTokens.filter((token) => textTokens.includes(token));
+    score += shared.length * 12;
+    if (queryTokens.every((token) => textTokens.includes(token) || token.length <= 2)) {
+      score += 10;
+    }
+  }
+
+  if (/(lip|شفايف|شفاه|ليب|balm|بالم|moistur|مرطب|hydrate|hydrating|gloss|shine|بريق|لمعان)/i.test(queryNormalized)) {
+    if (/(lip|شفايف|شفاه|ليب|balm|بالم|moistur|مرطب|hydrate|hydrating|gloss|shine|بريق|لمعان)/i.test(text)) {
+      score += 14;
+    }
+  }
+
+  return score;
+};
+
+export const searchCatalogProducts = (products: Product[] = [], query = "") => {
+  if (!Array.isArray(products) || products.length === 0) return [];
+  const trimmedQuery = String(query ?? "").trim();
+  if (!trimmedQuery) {
+    return products.slice(0, 10);
+  }
+
+  const normalizedQuery = normalizeCatalogMatchText(trimmedQuery);
+  if (!normalizedQuery) {
+    return products.slice(0, 10);
+  }
+
+  const genericQueryTokens = new Set(["serum", "cleanser", "sunscreen", "oil", "balm", "lip", "lips", "gloss", "moisturizer", "skin", "hair", "product"]);
+
+  const results = products
+    .map((product) => {
+      const productText = [
+        product.name,
+        product.brand,
+        product.category,
+        product.subcategory,
+        product.description,
+        product.tag,
+      ].join(" ");
+
+      const normalizedText = normalizeCatalogMatchText(productText);
+      let score = 0;
+
+      if (!normalizedText) {
+        return { product, score: 0 };
+      }
+
+      if (normalizedText.includes(normalizedQuery) || normalizedQuery.includes(normalizedText)) {
+        score += 80;
+      }
+
+      const productName = normalizeCatalogMatchText(product.name || "");
+      if (productName.includes(normalizedQuery) || normalizedQuery.includes(productName)) {
+        score += 45;
+      }
+
+      const description = normalizeCatalogMatchText(product.description || "");
+      if (description.includes(normalizedQuery) || normalizedQuery.includes(description)) {
+        score += 30;
+      }
+
+      const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
+      if (categoryText.includes(normalizedQuery) || normalizedQuery.includes(categoryText)) {
+        score += 15;
+      }
+
+      score += getCatalogMatchBoost(normalizedQuery, productText);
+
+      const queryTokens = getCatalogMatchTokens(normalizedQuery);
+      const textTokens = getCatalogMatchTokens(productText);
+      const shared = queryTokens.filter((token) => textTokens.includes(token));
+      const strongShared = shared.filter((token) => token.length > 3 || genericQueryTokens.has(token) || token.includes("lip") || token.includes("balm") || token.includes("gloss") || token.includes("serum") || token.includes("clean") || token.includes("shade") || token.includes("moist"));
+      score += shared.length * 8;
+
+      const unknownTokens = queryTokens.filter((token) => !genericQueryTokens.has(token) && !textTokens.includes(token));
+      if (queryTokens.length > 1 && unknownTokens.length > 0) {
+        score = 0;
+      }
+
+      if (shared.length === 0 && !productName.includes(normalizedQuery) && !normalizedText.includes(normalizedQuery)) {
+        score = 0;
+      }
+
+      if (shared.length === 1 && strongShared.length === 0) {
+        score = Math.min(score, 12);
+      }
+
+      return { product, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(({ product }) => product);
+
+  return results.length > 0 ? results.slice(0, 12) : [];
+};
+
+export const buildCatalogContext = (products: Product[] = [], query = "") => {
   if (!products.length) {
     return "No product catalog available yet.";
   }
 
-  // Limit catalog context size to reduce token usage
-  return products
-    .slice(0, 30)
+  const relevantProducts = query ? searchCatalogProducts(products, query) : products.slice(0, 30);
+  if (query && relevantProducts.length === 0) {
+    return "No catalog matches for this request. Use the live catalog product names, categories, or the customer’s need to narrow the search.";
+  }
+
+  return relevantProducts
+    .slice(0, 12)
     .map((p, idx) => {
-        const isHair =
+      const isHair =
         p.category === "haircare" ||
         /hair|shampoo|conditioner|curl|scalp|frizz|شعر|كيرلي/i.test(
           `${p.category} ${p.subcategoryId ?? ""} ${p.name} ${p.description ?? ""}`
@@ -500,6 +686,150 @@ export const buildCatalogContext = (products: Product[] = []) => {
       return lines.join("\n");
     })
     .join("\n\n---\n\n");
+};
+
+export const buildWebSearchQuery = (productName: string, brand?: string) => {
+  const tokens = [brand, productName]
+    .filter(Boolean)
+    .map((part) => String(part).trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return tokens
+    .replace(/\s+/g, " ")
+    .replace(/\s+(?:for|with|and)\s+/gi, " ")
+    .replace(/\b(?:ingredients?|benefits?|reviews?|price|compare|alternatives?|details?)\b/gi, " ")
+    .trim();
+};
+
+export const shouldUseExternalProductResearch = (message = ""): boolean => {
+  const text = String(message ?? "").trim();
+  if (!text) return false;
+
+  const normalized = text.toLowerCase();
+  const englishDetailPattern = /(ingredient|ingredients|benefit|benefits|what does|what is in|how it works|suitable|suitability|for dry|for oily|for acne|for sensitive|compare|comparison|difference|alternative|alternatives|tell me more|why this|why use|why choose|not sure|best for|good for)/i;
+  const arabicDetailPattern = /(مكونات|مكون|فوائد|فائدة|مناسب|مناسبة|مقارنة|فرق|بديل|بدائل|استخدام|كيف|ليه|لماذا|أفضل|احسن|تاثير|تأثير|للبشرة|للشعر|بيشتغل|مفيدة|مناسبه)/i;
+  const lookForProductDetail = englishDetailPattern.test(normalized) || arabicDetailPattern.test(normalized);
+  const mentionsProductLikeWord = /(lip|balm|serum|cleanser|mask|oil|cream|gel|sunscreen|moisturizer|skincare|haircare|product|brand|formula|ingredient|benefit|بالم|سيروم|غسول|مرطب|زيت|كريم|جل|مكياج|منتج|مكونات|فوائد|شعر|بشرة)/i.test(normalized);
+
+  return lookForProductDetail && mentionsProductLikeWord;
+};
+
+const normalizeProductResearchKey = (productName: string, brand?: string) => {
+  const key = `${String(brand || "").trim().toLowerCase()}::${String(productName || "").trim().toLowerCase()}`;
+  return key.replace(/\s+/g, " ").trim();
+};
+
+export const resolveProductResearchTarget = (products: Product[] = [], query = "") => {
+  const trimmedQuery = String(query ?? "").trim();
+  if (!trimmedQuery) return undefined;
+
+  const cleanedQuery = trimmedQuery
+    .replace(/\b(?:what|which|who|is|are|the|a|an|for|with|about|tell|me|more|how|why|this|that|these|those)\b/gi, " ")
+    .replace(/\b(?:ingredients?|benefits?|uses?|features?|compare|comparison|difference|alternatives?|details?|suitable|suitability|reviews?|price|stock|available)\b/gi, " ")
+    .replace(/[?!,.]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const directCandidates = cleanedQuery ? searchCatalogProducts(products, cleanedQuery) : [];
+  if (directCandidates.length > 0) {
+    return directCandidates[0];
+  }
+
+  const exactNameMatches = products.filter((product) => {
+    const haystack = `${product.name} ${product.brand}`.toLowerCase();
+    return haystack.includes(trimmedQuery.toLowerCase()) || trimmedQuery.toLowerCase().includes(haystack);
+  });
+
+  return exactNameMatches[0] || products[0];
+};
+
+export const buildProductResearchContext = (
+  product: Product,
+  research?: { ok: boolean; source?: string; summary?: string; url?: string; error?: string; results?: Array<{ title?: string; description?: string; url?: string; source?: string }> }
+) => {
+  const catalogLine = [
+    "Phermono catalog source:",
+    `Product: ${product?.name || "unknown"}`,
+    `Brand: ${product?.brand || "unknown"}`,
+    `Category: ${product?.category || "unknown"}`,
+    `Website price: ${product?.price ?? "not listed"} EGP`,
+    `Catalog description: ${product?.description || "Not available in catalog."}`,
+  ].join(" | ");
+
+  if (!research || !research.ok || (!research.summary && (!research.results || research.results.length === 0))) {
+    return [
+      catalogLine,
+      "External research: not available or not verified. Do not claim ingredients, benefits, or availability without a trusted source.",
+    ].join("\n");
+  }
+
+  const searchDetails = Array.isArray(research.results) && research.results.length > 0
+    ? research.results
+        .slice(0, 3)
+        .map((result, index) => `${index + 1}. ${result.title || "External result"} — ${result.description || "No summary available."} (${result.url || result.source || "source unavailable"})`)
+        .join(" | ")
+    : "";
+
+  const sourceLine = research.url || research.source || "unknown source";
+  return [
+    catalogLine,
+    `External research source: ${sourceLine}`,
+    searchDetails ? `External research results: ${searchDetails}` : `External research summary: ${research.summary}`,
+    "Important: this is external information only. It does not prove the product is in stock or sold by Phermono.",
+  ].join("\n");
+};
+
+export const fetchProductWebResearch = async (productName: string, brand?: string): Promise<{ ok: boolean; source?: string; summary?: string; url?: string; results?: Array<{ title?: string; description?: string; url?: string; source?: string }>; error?: string }> => {
+  const query = buildWebSearchQuery(productName, brand);
+  if (!query) {
+    return { ok: false, error: "No product name was provided for web research." };
+  }
+
+  const cacheKey = normalizeProductResearchKey(productName, brand);
+  const cached = PRODUCT_RESEARCH_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.payload;
+  }
+
+  try {
+    const response = await fetch("/api/product-search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        productName,
+        brand,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    const normalized = {
+      ok: Boolean(payload?.ok),
+      source: payload?.source || payload?.results?.[0]?.source || "web",
+      summary: payload?.summary || payload?.results?.[0]?.description || "No summary available from the external source.",
+      url: payload?.url || payload?.results?.[0]?.url || "",
+      results: Array.isArray(payload?.results) ? payload.results : [],
+      error: payload?.error || (response.ok ? undefined : "External search service is unavailable."),
+    };
+
+    if (!response.ok || !normalized.ok) {
+      PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload: normalized });
+      return normalized;
+    }
+
+    PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload: normalized });
+    return normalized;
+  } catch (error) {
+    const payload = {
+      ok: false,
+      error: error instanceof Error ? error.message : "External search failed unexpectedly.",
+    };
+    PRODUCT_RESEARCH_CACHE.set(cacheKey, { expiresAt: Date.now() + PRODUCT_RESEARCH_CACHE_TTL_MS, payload });
+    return payload;
+  }
 };
 
 export const buildDynamicFallback = (query = "", isArabic = true): string => {
@@ -748,15 +1078,50 @@ export default function ChatWidget({ products = [], mode = "page", sidebarOpen =
         return;
       }
 
-      const catalog = buildCatalogContext(products);
+      const matchedCatalog = searchCatalogProducts(products, trimmed);
+      const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : products, trimmed);
+      const isCatalogEmpty = products.length === 0;
+      const catalogStatusLine = isCatalogEmpty
+        ? "CATALOG_STATUS: product catalog is still loading or unavailable; do not claim a product is unavailable until the catalog fetch has completed successfully."
+        : matchedCatalog.length === 0
+          ? "CATALOG_STATUS: no product in the current catalog matched the request; do not invent or claim availability."
+          : `CATALOG_STATUS: using ${Math.min(matchedCatalog.length, 12)} matched catalog items relevant to the current query.`;
+
+      const shouldResearch = shouldUseExternalProductResearch(trimmed);
+      const productForResearch = shouldResearch ? resolveProductResearchTarget(products, trimmed) : undefined;
+      let externalResearchNote = "EXTERNAL_WEB_RESEARCH: not attempted because the query did not require external product research or no provider is configured.";
+      let researchContext = "";
+
+      if (productForResearch && productForResearch.name) {
+        const research = await fetchProductWebResearch(productForResearch.name, productForResearch.brand);
+        if (research.ok && research.summary) {
+          externalResearchNote = `EXTERNAL_WEB_RESEARCH: used the product name "${productForResearch.name}" and brand "${productForResearch.brand || "unknown"}" to gather external information. This does not prove Phermono inventory. Source: ${research.url || research.source || "external search"}. Summary: ${research.summary}`;
+          researchContext = buildProductResearchContext(productForResearch, research);
+        } else if (research.error) {
+          externalResearchNote = `EXTERNAL_WEB_RESEARCH_STATUS: ${research.error}`;
+          researchContext = buildProductResearchContext(productForResearch, { ok: false, error: research.error });
+        }
+      }
+
       const systemPrompt = `You are PhM Concierge — a helpful, friendly shopping assistant for PherMono. Keep replies concise, human, and in the user's detected language (Egyptian Arabic if Arabic detected; otherwise English). Always:
 
-    - Use only products from the provided STORE PRODUCT CATALOG.
+    - Use the STORE PRODUCT CATALOG as the source of truth for what is actually sold on this website.
+    - Use the EXTERNAL_PRODUCT_RESEARCH_CONTEXT only as supporting information when available; do not treat web results as live Phermono inventory.
     - Keep recommendations short (max 2 products) and avoid long lists.
     - Do NOT emit markdown, tables, bullets, or numbered lists; respond as natural chat text.
-    - Be truthful about inventory; if a requested product is not available, offer the closest alternative.
+    - If product matching is ambiguous, ask one short clarifying question.
+    - When the request does not match any real catalog product, say so clearly and offer the closest available alternatives from the live catalog instead of inventing items.
+    - Never claim that a product exists or is unavailable without checking the catalog first.
+    - Keep external research separate from catalog availability and do not invent products, benefits, ingredients, ratings, prices, or stock status from web search results.
+    - If the external source is incomplete or conflicting, say so clearly and do not overstate confidence.
 
     Tone: warm, polite, and conversational (Egyptian Arabic slang when user message is Arabic).
+
+    ${catalogStatusLine}
+    ${externalResearchNote}
+
+    EXTERNAL_PRODUCT_RESEARCH_CONTEXT:
+    ${researchContext || "No external product research was needed or no trustworthy source was available."}
 
     STORE PRODUCT CATALOG:
     ${catalog}`;
