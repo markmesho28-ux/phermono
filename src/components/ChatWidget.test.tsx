@@ -9,6 +9,7 @@ import ChatWidget, {
   getCatalogAvailabilityStatus,
   searchCatalogProducts,
   shouldRetryWithNextGroqKey,
+  extractIntentSignals,
 } from "./ChatWidget";
 import { useAuth } from "../contexts/AuthContext";
 import supabase from "../lib/supabase";
@@ -624,3 +625,220 @@ describe("catalog-aware multilingual matching", () => {
 
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Semantic intent extraction tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("semantic intent extraction — extractIntentSignals", () => {
+  it("detects leave-in product concept from 'عايز ليف ان'", () => {
+    const signals = extractIntentSignals("عايز ليف ان");
+    expect(signals.productConcepts.some(c => /leave.in|conditioner|treatment/i.test(c))).toBe(true);
+  });
+
+  it("detects frizzy concern from 'شعري هايش'", () => {
+    const signals = extractIntentSignals("شعري هايش");
+    expect(signals.concern).toContain("frizzy");
+    expect(signals.bodyArea).toContain("hair");
+  });
+
+  it("detects acne concern from 'محتاج حاجة للحبوب'", () => {
+    const signals = extractIntentSignals("محتاج حاجة للحبوب");
+    expect(signals.concern).toContain("acne");
+    expect(signals.productConcepts.some(c => /acne|cleanser|treatment/i.test(c))).toBe(true);
+  });
+
+  it("detects face area and moisturizing concern from 'حاجة ترطب وشي'", () => {
+    const signals = extractIntentSignals("حاجة ترطب وشي");
+    expect(signals.bodyArea).toContain("face");
+    expect(signals.concern).toContain("moisturizing");
+  });
+
+  it("detects oily concern from 'للشعر الدهني'", () => {
+    const signals = extractIntentSignals("للشعر الدهني");
+    expect(signals.concern).toContain("oily");
+    expect(signals.bodyArea).toContain("hair");
+  });
+
+  it("detects post-shower / leave-in concept from 'حاجة تفضل على شعري بعد الشاور'", () => {
+    const signals = extractIntentSignals("حاجة تفضل على شعري بعد الشاور");
+    expect(signals.productConcepts.some(c => /leave.in|post.shower|treatment/i.test(c))).toBe(true);
+    expect(signals.bodyArea).toContain("hair");
+  });
+
+  it("detects facial moisturizer intent from English 'I need something to moisturize my face'", () => {
+    const signals = extractIntentSignals("I need something to moisturize my face");
+    expect(signals.bodyArea).toContain("face");
+    expect(signals.concern).toContain("moisturizing");
+    expect(signals.language).toBe("en");
+  });
+
+  it("detects frizzy hair intent from English 'What can I use for frizzy hair?'", () => {
+    const signals = extractIntentSignals("What can I use for frizzy hair?");
+    expect(signals.concern).toContain("frizzy");
+    expect(signals.bodyArea).toContain("hair");
+  });
+
+  it("detects follow-up from 'عايز حاجة أرخص' with history", () => {
+    const history = [
+      { sender: "user" as const, text: "عايز شامبو للشعر الهايش" },
+      { sender: "bot" as const, text: "عندنا TRESemmé Keratin Shampoo" },
+    ];
+    const signals = extractIntentSignals("عايز حاجة أرخص", history);
+    expect(signals.isFollowUp).toBe(true);
+    expect(signals.priceIntent).toBe("cheap");
+    expect(signals.followUpContext).toBe("عايز شامبو للشعر الهايش");
+  });
+
+  it("detects mixed language correctly", () => {
+    const signals = extractIntentSignals("عايز leave-in conditioner");
+    expect(signals.language).toBe("mixed");
+  });
+
+  it("detects cheap price intent from 'مش غالي'", () => {
+    const signals = extractIntentSignals("عايز حاجة كويسة بس مش غالية");
+    expect(signals.priceIntent).toBe("cheap");
+  });
+
+  it("detects expensive price intent from 'غالي'", () => {
+    const signals = extractIntentSignals("عايز أغلى شامبو");
+    expect(signals.priceIntent).toBe("expensive");
+  });
+
+  it("detects dandruff concern from 'قشرة'", () => {
+    const signals = extractIntentSignals("عندي مشكلة قشرة في الشعر");
+    expect(signals.concern).toContain("dandruff");
+    expect(signals.productConcepts.some(c => /dandruff/i.test(c))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Semantic catalog search — expanded intent coverage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("semantic catalog search — expanded intent coverage", () => {
+  const semanticProducts = [
+    { id: 1, name: "Garnier Fructis Leave-In Conditioner", brand: "Garnier", category: "haircare", subcategory: "Hair Treatments", price: 180, description: "Leave-in conditioner for frizzy and dry hair. Apply after shower on damp hair." },
+    { id: 2, name: "OGX Anti-Frizz Keratin Oil", brand: "OGX", category: "haircare", subcategory: "Hair Oils", price: 320, description: "Anti-frizz hair oil that controls frizz and adds shine to unruly hair." },
+    { id: 3, name: "CeraVe Moisturizing Cream", brand: "CeraVe", category: "skincare", subcategory: "Moisturizers", price: 280, description: "Rich moisturizing cream for dry to very dry face and body skin." },
+    { id: 4, name: "La Roche-Posay Effaclar Cleanser", brand: "La Roche-Posay", category: "skincare", subcategory: "Cleansers", price: 450, description: "Foaming gel cleanser for oily and acne-prone skin. Controls excess oil and fights breakouts." },
+    { id: 5, name: "Neutrogena Hydro Boost Gel", brand: "Neutrogena", category: "skincare", subcategory: "Moisturizers", price: 350, description: "Water gel moisturizer that provides intense hydration for face skin." },
+    { id: 6, name: "Head & Shoulders Oily Scalp Shampoo", brand: "Head & Shoulders", category: "haircare", subcategory: "Shampoos", price: 95, description: "Shampoo specifically formulated for oily scalp and hair. Controls excess oil." },
+    { id: 7, name: "TRESemmé Keratin Smooth Shampoo", brand: "TRESemmé", category: "haircare", subcategory: "Shampoos", price: 120, description: "Smoothing shampoo for frizzy and unruly hair with keratin." },
+    { id: 8, name: "Himalaya Anti-Dandruff Shampoo", brand: "Himalaya", category: "haircare", subcategory: "Shampoos", price: 85, description: "Anti-dandruff shampoo for flaky and itchy scalp." },
+  ] as any;
+
+  it("'عايز ليف ان' — finds leave-in conditioners from the catalog", () => {
+    const results = searchCatalogProducts(semanticProducts, "عايز ليف ان");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].name).toBe("Garnier Fructis Leave-In Conditioner");
+  });
+
+  it("'حاجة تفضل على شعري بعد الشاور' — finds leave-in or post-shower hair products", () => {
+    const results = searchCatalogProducts(semanticProducts, "حاجة تفضل على شعري بعد الشاور");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => p.description.toLowerCase().includes("leave-in") || p.description.toLowerCase().includes("after shower") || p.description.toLowerCase().includes("shower"))).toBe(true);
+  });
+
+  it("'شعري هايش، أستخدم إيه؟' — finds anti-frizz products", () => {
+    const results = searchCatalogProducts(semanticProducts, "شعري هايش، أستخدم إيه؟");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /frizz|keratin|smooth/i.test(p.description) || /frizz|keratin|smooth/i.test(p.name))).toBe(true);
+  });
+
+  it("'عايز حاجة ترطب وشي' — finds facial moisturizers", () => {
+    const results = searchCatalogProducts(semanticProducts, "عايز حاجة ترطب وشي");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /moistur|hydrat/i.test(p.description) && /face|facial|skin/i.test(p.description))).toBe(true);
+  });
+
+  it("'محتاج حاجة للحبوب' — finds acne-relevant products", () => {
+    const results = searchCatalogProducts(semanticProducts, "محتاج حاجة للحبوب");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /acne|breakout|oily/i.test(p.description))).toBe(true);
+  });
+
+  it("'عايز حاجة تنظف البشرة' — finds cleansers", () => {
+    const results = searchCatalogProducts(semanticProducts, "عايز حاجة تنظف البشرة");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /cleanser|clean/i.test(p.name) || /cleanser/i.test(p.subcategory))).toBe(true);
+  });
+
+  it("'عايز حاجة للشعر الدهني' — finds oily hair products", () => {
+    const results = searchCatalogProducts(semanticProducts, "عايز حاجة للشعر الدهني");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /oily/i.test(p.description))).toBe(true);
+  });
+
+  it("'I need something to moisturize my face' — finds facial moisturizers", () => {
+    const results = searchCatalogProducts(semanticProducts, "I need something to moisturize my face");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /moistur|hydrat/i.test(p.description) && /face/i.test(p.description))).toBe(true);
+  });
+
+  it("'What can I use for frizzy hair?' — finds anti-frizz hair products", () => {
+    const results = searchCatalogProducts(semanticProducts, "What can I use for frizzy hair?");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => /frizz/i.test(p.description) || /frizz/i.test(p.name))).toBe(true);
+  });
+
+  it("'عايز حاجة كويسة بس مش غالية' — returns products (budget intent)", () => {
+    const results = searchCatalogProducts(semanticProducts, "عايز حاجة كويسة بس مش غالية");
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("semantically equivalent queries return the same top result", () => {
+    const r1 = searchCatalogProducts(semanticProducts, "شامبو للشعر الدهني");
+    const r2 = searchCatalogProducts(semanticProducts, "عايز حاجة للشعر الدهني");
+    expect(r1.length).toBeGreaterThan(0);
+    expect(r2.length).toBeGreaterThan(0);
+    expect(r1.some(p => /oily/i.test(p.description))).toBe(true);
+    expect(r2.some(p => /oily/i.test(p.description))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Follow-up conversation context tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("follow-up conversation context", () => {
+  const products = [
+    { id: 1, name: "TRESemmé Anti-Frizz Conditioner", brand: "TRESemmé", category: "haircare", subcategory: "Conditioners", price: 130, description: "Conditioner for frizzy hair." },
+    { id: 2, name: "TRESemmé Keratin Shampoo", brand: "TRESemmé", category: "haircare", subcategory: "Shampoos", price: 115, description: "Smoothing shampoo for unruly hair." },
+    { id: 3, name: "CeraVe Facial Cleanser", brand: "CeraVe", category: "skincare", subcategory: "Cleansers", price: 290, description: "Gentle foaming cleanser for normal to oily face." },
+  ] as any;
+
+  it("'عايز حاجة أرخص' after shampoo query uses hair context from history", () => {
+    const history = [
+      { sender: "user" as const, text: "عايز شامبو للشعر الهايش" },
+      { sender: "bot" as const, text: "عندنا TRESemmé Keratin Shampoo بـ 115 جنيه" },
+    ];
+    const results = searchCatalogProducts(products, "عايز حاجة أرخص", history);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => p.category === "haircare")).toBe(true);
+  });
+
+  it("'وريني المتاح' after skincare query uses skincare context", () => {
+    const history = [
+      { sender: "user" as const, text: "محتاج غسول للوجه" },
+      { sender: "bot" as const, text: "عندنا CeraVe Facial Cleanser" },
+    ];
+    const results = searchCatalogProducts(products, "وريني المتاح", history);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(p => p.category === "skincare")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Genuine no-match test — does not hallucinate
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("genuine no-match — does not hallucinate", () => {
+  it("returns empty for truly unrelated queries with no catalog match", () => {
+    const results = searchCatalogProducts(
+      [{ id: 1, name: "Clary Shampoo", brand: "Clary", category: "haircare", subcategory: "Shampoos", price: 200, description: "Regular shampoo." }] as any,
+      "أريد شراء سيارة"
+    );
+    expect(results).toEqual([]);
+  });
+});

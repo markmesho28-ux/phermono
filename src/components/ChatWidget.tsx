@@ -471,6 +471,284 @@ const SEARCH_STOP_WORDS = new Set([
   "بخصوص", "product", "منتج", "مادة", "شي", "حاجه"
 ]);
 
+// ─── Semantic expansion map ──────────────────────────────────────────────────
+// Maps colloquial Arabic/English expressions to standard product-search concepts.
+// Values are arrays of search concepts that will be injected into the search query.
+const SEMANTIC_EXPANSION: Record<string, string[]> = {
+  // ── Frizz / unruly hair ──────────────────────────────────────────────────
+  "هايش":      ["frizzy", "frizz", "anti-frizz", "smoothing", "keratin"],
+  "هايشة":     ["frizzy", "frizz", "anti-frizz", "smoothing", "keratin"],
+  "هايشه":     ["frizzy", "frizz", "anti-frizz", "smoothing", "keratin"],
+  "فريزي":     ["frizzy", "frizz", "anti-frizz"],
+  frizzy:       ["frizz control", "anti-frizz", "smoothing", "keratin"],
+  frizz:        ["frizz control", "anti-frizz", "smoothing"],
+
+  // ── Acne / pimples ───────────────────────────────────────────────────────
+  "حبوب":      ["acne", "pimples", "breakouts", "cleanser", "acne treatment", "oily skin"],
+  "بثور":      ["acne", "pimples", "breakouts", "cleanser", "acne treatment"],
+  "اكني":      ["acne", "pimples", "cleanser"],
+  acne:         ["acne treatment", "cleanser", "oily skin"],
+  breakouts:    ["acne", "cleanser", "acne treatment"],
+  pimples:      ["acne", "pimples", "cleanser"],
+
+  // ── Face / skin ──────────────────────────────────────────────────────────
+  "وش":        ["face", "facial", "skin", "skincare"],
+  "وشي":       ["face", "facial", "skin", "skincare"],
+  "وشك":       ["face", "facial", "skin", "skincare"],
+  "وجه":       ["face", "facial", "skin"],
+  "وجهي":      ["face", "facial", "skin"],
+  "بشرة":      ["skin", "skincare", "face"],
+  "بشرتي":     ["skin", "skincare", "face"],
+  "بشرتك":     ["skin", "skincare", "face"],
+
+  // ── Moisturize / hydrate ─────────────────────────────────────────────────
+  "ترطب":      ["moisturize", "hydrate", "moisturizer"],
+  "ترطيب":     ["moisturize", "hydrate", "moisturizer"],
+  "رطب":       ["moisturize", "moisturizer", "hydrating"],
+  "مرطب":      ["moisturizer", "hydrating", "moisturize"],
+  "رطوبة":     ["moisturizer", "hydrating"],
+  "ناشف":      ["dry", "hydrating", "moisturizer"],
+  "جاف":       ["dry", "hydrating", "moisturizer"],
+  "جافة":      ["dry", "hydrating", "moisturizer"],
+  moisturize:   ["moisturizer", "hydrating", "hydration"],
+  hydrate:      ["moisturizer", "hydrating"],
+
+  // ── Leave-in / post-shower products ─────────────────────────────────────
+  "ليف ان":    ["leave-in", "leave in conditioner", "hair treatment"],
+  "ليف-ان":    ["leave-in", "leave in conditioner", "hair treatment"],
+  "ليف":       ["leave-in", "leave in", "hair treatment"],
+  "تفضل على":  ["leave-in", "leave on", "hair treatment"],
+  "بعد الشاور":["leave-in", "post-shower", "hair treatment"],
+  "بعد الاستحمام": ["leave-in", "post-shower", "hair treatment"],
+  "leave-in":   ["leave in conditioner", "hair treatment", "post-shower"],
+  "leave in":   ["leave in conditioner", "hair treatment"],
+
+  // ── Oily hair / scalp ────────────────────────────────────────────────────
+  "دهني":      ["oily", "oil control", "mattifying", "oily hair", "oily scalp"],
+  "دهنية":     ["oily", "oil control", "oily hair", "oily scalp"],
+  "دهن":       ["oily", "oil control"],
+  "دهنى":      ["oily", "oil control", "oily hair", "oily scalp"],
+  oily:         ["oil control", "mattifying", "oily scalp"],
+
+  // ── Dandruff ─────────────────────────────────────────────────────────────
+  "قشرة":      ["dandruff", "anti-dandruff", "flaky scalp"],
+  dandruff:     ["anti-dandruff", "flaky scalp"],
+
+  // ── Hair loss / thinning ─────────────────────────────────────────────────
+  "تساقط":     ["hair loss", "hair fall", "anti-hair loss"],
+  "سقوط الشعر":["hair loss", "hair fall"],
+  "hair loss":  ["anti-hair loss", "hair fall"],
+
+  // ── Glow / brightening ───────────────────────────────────────────────────
+  "نضارة":     ["glow", "brightening", "vitamin c", "radiance"],
+  "بريق":      ["glow", "brightening", "radiance"],
+
+  // ── Wrinkles / anti-aging ────────────────────────────────────────────────
+  "تجاعيد":    ["wrinkles", "anti-aging", "retinol", "anti-wrinkle"],
+  "كبر":       ["anti-aging", "retinol", "wrinkles"],
+
+  // ── Pores ────────────────────────────────────────────────────────────────
+  "مسام":      ["pores", "pore minimizing", "pore control"],
+
+  // ── Cleansing (face / skin) ──────────────────────────────────────────────
+  "تنظيف البشرة": ["cleanser", "face wash", "facial cleanser"],
+  "تنظف البشرة":  ["cleanser", "face wash", "facial cleanser"],
+  "تنظف الوجه":   ["cleanser", "face wash", "facial cleanser"],
+  "غسول":      ["cleanser", "face wash"],
+
+  // ── Curly hair ───────────────────────────────────────────────────────────
+  "كيرلي":     ["curly", "curl", "curl enhancing", "frizz"],
+  "كيرل":      ["curly", "curl", "curl enhancing"],
+  curly:        ["curl enhancing", "frizz", "curl"],
+
+  // ── Budget / price intent ────────────────────────────────────────────────
+  "مش غالية":  ["cheap", "budget", "affordable"],
+  "مش غالي":   ["cheap", "budget", "affordable"],
+  "بالرخيص":   ["cheap", "affordable", "budget"],
+  "كويسة":     ["good", "quality"],
+  "كويس":      ["good", "quality"],
+  affordable:   ["cheap", "budget"],
+  budget:       ["cheap", "affordable"],
+
+  // ── Brand transliterations ───────────────────────────────────────────────
+  "سيرافي":    ["cerave"],
+  "سيراف":     ["cerave"],
+  "سيرافيه":   ["cerave"],
+  "لاروش":     ["la roche", "la roche-posay"],
+  "بيوديرما":  ["bioderma"],
+  "نيتروجينا": ["neutrogena"],
+  "جارنييه":   ["garnier"],
+  "هيد اند شولدرز": ["head and shoulders", "head & shoulders"],
+  "اوجيكس":   ["ogx"],
+
+  // ── Follow-up signal words ───────────────────────────────────────────────
+  "أي نوع":    [],
+  "وريني":     [],
+  "المتاح":    [],
+  "أرخص":      ["cheap"],
+  "أغلى":      ["expensive"],
+  "تاني":      [],
+  "كمان":      [],
+};
+
+// ─── IntentSignals type ────────────────────────────────────────────────────
+export interface IntentSignals {
+  productConcepts: string[];
+  bodyArea: string[];
+  concern: string[];
+  priceIntent: 'cheap' | 'expensive' | null;
+  priceRange: { min?: number; max?: number } | null;
+  brand: string | null;
+  isFollowUp: boolean;
+  followUpContext: string;
+  language: 'ar' | 'en' | 'mixed';
+}
+
+// ─── extractIntentSignals ─────────────────────────────────────────────────
+export const extractIntentSignals = (
+  message: string,
+  conversationHistory?: Array<{ sender: 'user' | 'bot'; text: string }>
+): IntentSignals => {
+  const text = String(message ?? '').trim();
+  // Normalize Arabic alef variants for matching
+  const normalizedText = text.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+
+  // Language detection
+  const hasArabic = /[\u0600-\u06FF]/.test(text);
+  const hasLatin  = /[a-zA-Z]/.test(text);
+  const language: 'ar' | 'en' | 'mixed' = hasArabic && hasLatin ? 'mixed' : hasArabic ? 'ar' : 'en';
+
+  // Follow-up detection - use normalizedText for Arabic phrases, regex for English
+  // normalizedText has أ→ا, ة→ه, ى→ي applied
+  const normForFollowUp = normalizedText; // alias for clarity
+  const followUpArabicPhrases = [
+    // raw form → also check normalized form
+    'اي نوع', 'وريني', 'المتاح', 'فيه تاني', 'مش فارقه', 'اللي عندك', 'اللي متاح',
+    'عايز حاجه ارخص', 'عايز حاجه اغلي', 'برضو', 'وبعدين',
+    // keep original forms too (in case no normalization needed)
+    'أي نوع', 'مش فارقة', 'عايز حاجة أرخص', 'عايز حاجة أغلى',
+  ];
+  const followUpEnglishPattern = /\b(which one|show me more|show me all|any other|cheaper|more expensive|another|similar)\b/i;
+  const isFollowUp = followUpArabicPhrases.some(p => normForFollowUp.includes(p) || text.includes(p)) ||
+    followUpEnglishPattern.test(text);
+
+  let followUpContext = '';
+  if (isFollowUp && conversationHistory && conversationHistory.length > 0) {
+    const userMessages = conversationHistory.filter(m => m.sender === 'user');
+    const lastMeaningful = userMessages.slice().reverse().find(m => {
+      const mNorm = m.text.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+      return !followUpArabicPhrases.some(p => mNorm.includes(p) || m.text.includes(p)) &&
+        !followUpEnglishPattern.test(m.text);
+    });
+    if (lastMeaningful) followUpContext = lastMeaningful.text;
+  }
+
+  // Price intent — match on normalizedText (alef/teh marbuta/alef maqsura normalised)
+  // cheap patterns: ارخص, رخيص, رخيصه, اقل, مش غالي, مش غاليه, بالرخيص
+  // expensive patterns: اغلي (= أغلى normalized), غالي, غاليه, غالي
+  let priceIntent: 'cheap' | 'expensive' | null = null;
+  if (/(cheap|cheapest|lowest|affordable|budget)/i.test(text) ||
+      /ارخص|رخيص|رخيصه|اقل|مش غالي|مش غاليه|بالرخيص/.test(normalizedText)) {
+    priceIntent = 'cheap';
+  } else if (/(expensive|highest|most expensive|priciest)/i.test(text) ||
+      /اغلي|غالي|غاليه/.test(normalizedText)) {
+    priceIntent = 'expensive';
+  }
+
+  // Price range — look for patterns like "under 200", "أقل من 300", "between 100 and 500"
+  let priceRange: { min?: number; max?: number } | null = null;
+  const underMatch = text.match(/(?:under|less than|أقل من|تحت)\s*(\d+)/i);
+  const aboveMatch = text.match(/(?:above|more than|over|أكتر من|فوق)\s*(\d+)/i);
+  const betweenMatch = text.match(/(?:between|بين)\s*(\d+)\s*(?:and|و|to)\s*(\d+)/i);
+  if (betweenMatch) {
+    priceRange = { min: Number(betweenMatch[1]), max: Number(betweenMatch[2]) };
+  } else if (underMatch || aboveMatch) {
+    priceRange = {};
+    if (underMatch) priceRange.max = Number(underMatch[1]);
+    if (aboveMatch) priceRange.min = Number(aboveMatch[1]);
+  }
+
+  // Brand detection
+  const knownBrands = [
+    "cerave", "garnier", "neutrogena", "la roche-posay", "bioderma", "ogx", "tresemme",
+    "head and shoulders", "head & shoulders", "himalaya", "clary", "phermono",
+    "سيرافي", "لاروش", "بيوديرما", "جارنييه", "نيتروجينا",
+  ];
+  const lowerText = text.toLowerCase();
+  const brand = knownBrands.find(b => lowerText.includes(b) || text.includes(b)) ?? null;
+
+  // Body area detection — use includes() for Arabic terms, regex for Latin
+  const bodyArea: string[] = [];
+  if (/\b(hair|shampoo|conditioner|scalp)\b/i.test(text) || /شعر|فروة|شامبو|بلسم/.test(text)) bodyArea.push('hair');
+  if (/\b(face|facial|skin)\b/i.test(text) || /وجه|وش|بشرة/.test(text)) bodyArea.push('face');
+  if (/\b(body)\b/i.test(text) || /جسم|جلد/.test(text)) bodyArea.push('body');
+  if (/\b(lip|lips)\b/i.test(text) || /شفايف|شفاه/.test(text)) bodyArea.push('lips');
+
+  // Concern detection — same approach: Latin uses \b, Arabic uses includes-style regex without \b
+  const concern: string[] = [];
+  if (/\b(frizzy|frizz)\b/i.test(text) || /هايش|هايشة/.test(text)) concern.push('frizzy');
+  if (/\b(oily)\b/i.test(text) || /دهني|دهنية/.test(text)) concern.push('oily');
+  if (/\b(dry)\b/i.test(text) || /ناشف|جاف|جافة/.test(text)) concern.push('dry');
+  if (/\b(acne|breakouts|pimples)\b/i.test(text) || /حبوب|بثور/.test(text)) concern.push('acne');
+  if (/\b(dandruff)\b/i.test(text) || /قشرة/.test(text)) concern.push('dandruff');
+  if (/\b(thinning|hair loss)\b/i.test(text) || /تساقط/.test(text)) concern.push('hair loss');
+  if (/\b(wrinkles|aging)\b/i.test(text) || /تجاعيد/.test(text)) concern.push('anti-aging');
+  if (/\b(glow|brightening)\b/i.test(text) || /نضارة/.test(text)) concern.push('brightening');
+  if (/\b(pores)\b/i.test(text) || /مسام/.test(text)) concern.push('pores');
+  if (/\b(curly|curl)\b/i.test(text) || /كيرلي/.test(text)) concern.push('curly');
+  if (/moistur|hydrat/i.test(text) || /ترطب|ترطيب|مرطب/.test(text)) concern.push('moisturizing');
+  if (/\b(sensitive)\b/i.test(text) || /حساسة|حساس/.test(text)) concern.push('sensitive');
+
+  // Product concepts via semantic expansion map + literal product-type keywords
+  const productConceptsSet = new Set<string>();
+
+  // Scan the full message against every SEMANTIC_EXPANSION key
+  for (const [key, expansions] of Object.entries(SEMANTIC_EXPANSION)) {
+    if (text.includes(key) || lowerText.includes(key.toLowerCase())) {
+      expansions.forEach(e => productConceptsSet.add(e));
+    }
+  }
+
+  // Also detect literal category keywords in Latin script
+  const categoryKeywords = [
+    "shampoo", "conditioner", "serum", "cleanser", "moisturizer", "mask",
+    "cream", "oil", "balm", "sunscreen", "lip", "gloss", "body milk",
+    "leave-in", "treatment", "toner", "exfoliant",
+  ];
+  for (const kw of categoryKeywords) {
+    if (lowerText.includes(kw)) productConceptsSet.add(kw);
+  }
+
+  // And Arabic literal product type keywords
+  const arProductKeywords: Record<string, string> = {
+    "شامبو": "shampoo",
+    "بلسم": "conditioner",
+    "كونديشنر": "conditioner",
+    "سيروم": "serum",
+    "كريم": "cream",
+    "ماسك": "mask",
+    "مرطب": "moisturizer",
+    "غسول": "cleanser",
+    "واقي شمس": "sunscreen",
+    "زيت": "oil",
+  };
+  for (const [ar, en] of Object.entries(arProductKeywords)) {
+    if (text.includes(ar)) productConceptsSet.add(en);
+  }
+
+  return {
+    productConcepts: Array.from(productConceptsSet),
+    bodyArea,
+    concern,
+    priceIntent,
+    priceRange,
+    brand,
+    isFollowUp,
+    followUpContext,
+    language,
+  };
+};
+
 const GENERIC_SEARCH_ALIASES: Record<string, string> = {
   body: "body", bodi: "body", boddy: "body", badi: "body", bodu: "body", boody: "body", boudy: "body",
   "بادي": "body", "بودي": "body", "بدي": "body",
@@ -622,7 +900,11 @@ const getCategoryLikeMatchScore = (queryTokens: string[], fieldText: string): nu
   return score;
 };
 
-export const searchCatalogProducts = (products: Product[] = [], query = "") => {
+export const searchCatalogProducts = (
+  products: Product[] = [],
+  query = "",
+  conversationHistory?: Array<{ sender: 'user' | 'bot'; text: string }>
+) => {
   if (!Array.isArray(products) || products.length === 0) return [];
 
   const trimmedQuery = String(query ?? "").trim();
@@ -630,18 +912,79 @@ export const searchCatalogProducts = (products: Product[] = [], query = "") => {
     return products.slice(0, 10);
   }
 
-  const normalizedQuery = normalizeCatalogMatchText(trimmedQuery);
+  // ── 1. Extract semantic intent signals ──────────────────────────────────
+  const intentSignals = extractIntentSignals(trimmedQuery, conversationHistory);
+
+  // ── 2. When this is a follow-up, resolve the context query from history ─
+  let effectiveQuery = trimmedQuery;
+  if (intentSignals.isFollowUp && intentSignals.followUpContext) {
+    // Combine the prior topic with any price/modifier in the follow-up
+    const priceModifier = intentSignals.priceIntent === 'cheap' ? ' cheap' :
+                          intentSignals.priceIntent === 'expensive' ? ' expensive' : '';
+    effectiveQuery = `${intentSignals.followUpContext}${priceModifier}`;
+  }
+
+  // ── 3. Build expanded query tokens ──────────────────────────────────────
+  const normalizedQuery = normalizeCatalogMatchText(effectiveQuery);
   if (!normalizedQuery) {
     return products.slice(0, 10);
   }
 
-  const queryTokens = getCatalogMatchTokens(normalizedQuery);
-  const isPriceHighIntent = /(expensive|highest|most expensive|priciest|اغلى|غالي|غالية|غالى)/.test(normalizedQuery);
-  const isPriceLowIntent = /(cheap|cheapest|lowest|ارخص|رخيص|اقل|أقل)/.test(normalizedQuery);
+  const baseQueryTokens = getCatalogMatchTokens(normalizedQuery);
+
+  // Inject semantic concepts as additional tokens
+  const semanticTokenSet = new Set<string>(baseQueryTokens);
+
+  for (const concept of intentSignals.productConcepts) {
+    getCatalogMatchTokens(concept).forEach(t => semanticTokenSet.add(t));
+  }
+  for (const area of intentSignals.bodyArea) {
+    semanticTokenSet.add(area);
+  }
+  for (const c of intentSignals.concern) {
+    getCatalogMatchTokens(c).forEach(t => semanticTokenSet.add(t));
+  }
+  if (intentSignals.brand) {
+    getCatalogMatchTokens(intentSignals.brand).forEach(t => semanticTokenSet.add(t));
+  }
+
+  const queryTokens = Array.from(semanticTokenSet).filter(t => t.length > 1);
+
+  // Detect whether semantic signals were injected beyond the raw query
+  const hasSemanticExpansion = queryTokens.some(t => !baseQueryTokens.includes(t));
+
+  const isPriceHighIntent = /(expensive|highest|most expensive|priciest|اغلى|غالي|غالية|غالى)/.test(normalizedQuery) ||
+    intentSignals.priceIntent === 'expensive';
+  const isPriceLowIntent = /(cheap|cheapest|lowest|ارخص|رخيص|اقل|أقل)/.test(normalizedQuery) ||
+    intentSignals.priceIntent === 'cheap';
   const isPriceIntent = isPriceHighIntent || isPriceLowIntent;
   const isDryHairIntent = /(dry.*hair|hair.*dry|جاف.*شعر|شعر.*جاف|dry.*scalp|damaged.*hair)/.test(normalizedQuery);
-  const genericCategoryTerms = new Set(["shampoo", "conditioner", "serum", "cleanser", "sunscreen", "oil", "balm", "lip", "gloss", "moisturizer", "mask", "cream", "hair", "skin"]);
+  const genericCategoryTerms = new Set(["shampoo", "conditioner", "serum", "cleanser", "sunscreen", "oil", "balm", "lip", "gloss", "moisturizer", "mask", "cream", "hair", "skin", "leave-in", "treatment", "anti-frizz", "frizz"]);
   const allGenericQueryTerms = queryTokens.length > 0 && queryTokens.every((token) => genericCategoryTerms.has(token) || token.length <= 2);
+
+  // When pure price intent with no product-type scope from semantic expansion,
+  // return all products sorted by price immediately (no need for scoring)
+  if (isPriceIntent && intentSignals.bodyArea.length === 0 && intentSignals.concern.length === 0 && intentSignals.brand === null) {
+    const priceRelatedTokens = new Set([
+      "expensive", "cheap", "price", "highest", "lowest", "most", "least", "high", "low",
+      "priciest", "budget", "cheapest", "affordable", "good", "quality",
+      // Arabic price-related normalized tokens
+      "غاليه", "غالي", "رخيص", "رخيصه", "ارخص", "اغلي", "اغلى", "اقل",
+      "كويسه", "كويس", "مش", "بس",
+      // "thing/something" tokens (stop-word leakage: حاجة → حاج after normalization)
+      "حاجه", "حاج",
+    ]);
+    const priceScopeTokens = baseQueryTokens.filter(t => !priceRelatedTokens.has(t));
+    if (priceScopeTokens.length === 0) {
+      // Pure price intent — return all products with a price, sorted
+      return products
+        .map(p => ({ p, price: getEffectiveProductPrice(p) }))
+        .filter(({ price }) => price != null && price > 0)
+        .sort((a, b) => isPriceLowIntent ? (a.price! - b.price!) : (b.price! - a.price!))
+        .slice(0, 12)
+        .map(({ p }) => p);
+    }
+  }
 
   const results = products
     .map((product) => {
@@ -706,29 +1049,76 @@ export const searchCatalogProducts = (products: Product[] = [], query = "") => {
       }).length;
       score += fuzzyScore * 18;
 
-      const ignoredTokens = new Set(["any", "expensive", "cheap", "dry", "hair", "طب"]);
-      const unknownTokens = queryTokens.filter((token) => !genericCategoryTerms.has(token) && !combinedTokens.includes(token) && !ignoredTokens.has(token));
-      if (queryTokens.length > 1 && unknownTokens.length > 0 && !isPriceIntent && !isDryHairIntent) {
-        score = Math.max(0, score - unknownTokens.length * 90);
-      }
+      const ignoredTokens = new Set(["any", "expensive", "cheap", "dry", "hair", "طب",
+        // Extended semantic tokens that should NOT be penalized as "unknown"
+        "frizzy", "frizz", "anti-frizz", "smoothing", "keratin", "acne", "pimples", "breakouts",
+        "leave-in", "leave", "post-shower", "oily", "dandruff", "moisturize", "moisturizer",
+        "hydrate", "hydrating", "face", "facial", "skin", "treatment", "curly", "curl",
+        "glow", "brightening", "anti-aging", "wrinkles", "pores", "hair loss",
+      ]);
 
-      if (!isPriceIntent && unknownTokens.length > 0 && !unknownTokens.some((token) => productName.includes(token) || categoryText.includes(token) || descriptionText.includes(token) || brandText.includes(token))) {
-        score = 0;
-      }
+      // Only penalize for truly unknown tokens when there is NO semantic expansion
+      const unknownTokens = queryTokens.filter(
+        (token) => !genericCategoryTerms.has(token) && !combinedTokens.includes(token) && !ignoredTokens.has(token)
+      );
 
-      if (
-        allGenericQueryTerms && queryTokens.length > 1 &&
-        queryTokens.some((token) => !combinedTokens.includes(token)) &&
-        !productName.includes(normalizedQuery) &&
-        !categoryText.includes(normalizedQuery) &&
-        !brandText.includes(normalizedQuery) &&
-        !descriptionText.includes(normalizedQuery)
-      ) {
-        score = 0;
-      }
+      if (!hasSemanticExpansion) {
+        // Original strict scoring — only apply when there was no semantic expansion
+        if (queryTokens.length > 1 && unknownTokens.length > 0 && !isPriceIntent && !isDryHairIntent) {
+          score = Math.max(0, score - unknownTokens.length * 90);
+        }
 
-      if (sharedCombinedTokens.length === 0 && fuzzyScore === 0 && !productName.includes(normalizedQuery) && !categoryText.includes(normalizedQuery) && !brandText.includes(normalizedQuery) && !descriptionText.includes(normalizedQuery)) {
-        score = 0;
+        if (!isPriceIntent && unknownTokens.length > 0 && !unknownTokens.some((token) => productName.includes(token) || categoryText.includes(token) || descriptionText.includes(token) || brandText.includes(token))) {
+          score = 0;
+        }
+
+        if (
+          allGenericQueryTerms && queryTokens.length > 1 &&
+          queryTokens.some((token) => !combinedTokens.includes(token)) &&
+          !productName.includes(normalizedQuery) &&
+          !categoryText.includes(normalizedQuery) &&
+          !brandText.includes(normalizedQuery) &&
+          !descriptionText.includes(normalizedQuery)
+        ) {
+          score = 0;
+        }
+
+        if (sharedCombinedTokens.length === 0 && fuzzyScore === 0 && !productName.includes(normalizedQuery) && !categoryText.includes(normalizedQuery) && !brandText.includes(normalizedQuery) && !descriptionText.includes(normalizedQuery)) {
+          score = 0;
+        }
+      } else {
+        // Semantic expansion was applied — use lighter penalties
+        // Only zero-score if there are ZERO concept matches at all
+        if (sharedCombinedTokens.length === 0 && fuzzyScore === 0) {
+          score = 0;
+        }
+
+        // If the BASE query tokens contain specific LATIN (non-Arabic) words (e.g. "gloss", "balm")
+        // that identify a specific product type, and this product has NONE of those tokens,
+        // zero it out to avoid false positives.
+        // We intentionally do NOT apply this check to Arabic base tokens — they triggered the
+        // semantic expansion precisely because they map to English concepts not present in
+        // the raw product text.
+        if (score > 0 && baseQueryTokens.length > 0) {
+          const areaWords = new Set(['hair', 'face', 'facial', 'skin', 'body', 'lip', 'lips', 'scalp']);
+          const latinBaseTokens = baseQueryTokens.filter(t => {
+            // Only Latin tokens (no Arabic Unicode range U+0600-U+06FF)
+            if (/[\u0600-\u06FF]/.test(t)) return false;
+            if (ignoredTokens.has(t)) return false;
+            if (areaWords.has(t)) return false;
+            if (t.length <= 2) return false;
+            return true;
+          });
+          if (latinBaseTokens.length > 0) {
+            const baseShared = latinBaseTokens.filter(t => combinedTokens.includes(t));
+            const baseFuzzyMatches = latinBaseTokens.filter(t =>
+              combinedTokens.some(c => c !== t && (levenshteinDistance(t, c) <= 1 || c.startsWith(t) || t.startsWith(c)))
+            );
+            if (baseShared.length === 0 && baseFuzzyMatches.length === 0) {
+              score = 0;
+            }
+          }
+        }
       }
 
       return { product, score, effectivePrice };
@@ -777,7 +1167,36 @@ export const searchCatalogProducts = (products: Product[] = [], query = "") => {
       }
 
       return true;
-    })
+    });
+
+  // ── Pass 2 fallback: if no results but body area detected, search broadly ─
+  if (results.filter(({ score }) => score > 0).length === 0 && intentSignals.bodyArea.length > 0 && !isPriceIntent) {
+    const areaTokens = intentSignals.bodyArea.flatMap(area => {
+      if (area === 'hair') return ['hair', 'haircare', 'shampoo', 'conditioner'];
+      if (area === 'face') return ['face', 'skin', 'skincare', 'facial'];
+      if (area === 'body') return ['body', 'bath'];
+      if (area === 'lips') return ['lip', 'balm'];
+      return [area];
+    });
+
+    const fallbackResults = products
+      .map((product) => {
+        const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
+        const nameText = normalizeCatalogMatchText(product.name || "");
+        const descText = normalizeCatalogMatchText(product.description || "");
+        const combined = `${categoryText} ${nameText} ${descText}`;
+        const matchedAreas = areaTokens.filter(t => combined.includes(t));
+        return { product, score: matchedAreas.length * 10, effectivePrice: getEffectiveProductPrice(product) };
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ product }) => product);
+
+    return fallbackResults.length > 0 ? fallbackResults.slice(0, 12) : [];
+  }
+
+  const sortedResults = results
+    .filter(({ score }) => score > 0)
     .sort((a, b) => {
       if (isPriceIntent) {
         const aPrice = a.effectivePrice ?? 0;
@@ -790,7 +1209,7 @@ export const searchCatalogProducts = (products: Product[] = [], query = "") => {
     })
     .map(({ product }) => product);
 
-  return results.length > 0 ? results.slice(0, 12) : [];
+  return sortedResults.length > 0 ? sortedResults.slice(0, 12) : [];
 };
 
 export const getCatalogAvailabilityStatus = ({
@@ -1118,7 +1537,7 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
         return;
       }
 
-      const matchedCatalog = searchCatalogProducts(products, trimmed);
+      const matchedCatalog = searchCatalogProducts(products, trimmed, messages);
       const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : products, trimmed);
       const catalogStatusLine = getCatalogAvailabilityStatus({
         products,
@@ -1133,10 +1552,13 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
     - Use the STORE PRODUCT CATALOG as the source of truth for what is actually sold on this website.
     - Keep recommendations short (max 2 products) and avoid long lists.
     - Do NOT emit markdown, tables, bullets, or numbered lists; respond as natural chat text.
-    - If product matching is ambiguous, ask one short clarifying question.
+    - If product matching is ambiguous, ask ONE short clarifying question only. Do not ask for clarification when the request is a broad category (e.g., "shampoo", "moisturizer").
     - When the request does not match any real catalog product, say so clearly and offer the closest available alternatives from the live catalog instead of inventing items.
     - Never claim that a product exists or is unavailable without checking the catalog first.
     - Keep product details grounded in the catalog and do not invent products, benefits, ingredients, ratings, prices, or stock status.
+    - When a customer describes a PROBLEM (e.g., frizzy hair, acne, dry skin, oily scalp), recommend relevant available products to address that problem — without making medical claims.
+    - Infer product categories from customer descriptions: "تفضل على شعري بعد الشاور" → leave-in conditioner. "شعري هايش" → anti-frizz or smoothing products. "حبوب" → acne cleanser or treatment. "حاجة ترطب وشي" → facial moisturizer. "للشعر الدهني" → oily scalp/hair shampoo. If no exact match, recommend the closest category available.
+    - If the catalog shows relevant products, ALWAYS recommend from the catalog. Do not say "not available" when catalog items exist.
 
     Tone: warm, polite, and conversational (Egyptian Arabic slang when user message is Arabic).
 
