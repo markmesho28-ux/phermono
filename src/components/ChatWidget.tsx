@@ -1000,6 +1000,7 @@ export const searchCatalogProducts = (
         product.subcategory,
         product.description,
         product.tag,
+        product.skinType,
       ].join(" "));
 
       const effectivePrice = getEffectiveProductPrice(product);
@@ -1260,7 +1261,7 @@ export const buildCatalogContext = (products: Product[] = [], query = "") => {
       const isHair =
         p.category === "haircare" ||
         /hair|shampoo|conditioner|curl|scalp|frizz|شعر|كيرلي/i.test(
-          `${p.category} ${p.subcategoryId ?? ""} ${p.name} ${p.description ?? ""}`
+          `${p.category} ${p.subcategoryId ?? ""} ${p.subcategory ?? ""} ${p.name} ${p.description ?? ""}`
         );
 
       const resolvedPrice = getEffectiveProductPrice(p);
@@ -1278,12 +1279,12 @@ export const buildCatalogContext = (products: Product[] = [], query = "") => {
         `RAW_PRODUCT_NAME: ${p.name}`,
         `BRAND: ${p.brand}`,
         `CATEGORY: ${p.category}`,
-        `SUBCATEGORY: ${p.subcategoryId || "general"}`,
+        `SUBCATEGORY: ${p.subcategory || p.subcategoryId || "general"}`,
         `PRICE: ${price}${original}`,
         `${suitabilityLabel}: ${suitabilityValue}`,
         p.tag ? `TAG: ${p.tag}` : "",
         p.rating ? `RATING: ${p.rating} / 5` : "",
-        `OFFICIAL_DATABASE_DESCRIPTION: ${p.description ? p.description.trim() : "Available in store inventory. Use your expert beauty intelligence to describe its benefits and formula."}`,
+        `OFFICIAL_DATABASE_DESCRIPTION: ${p.description ? p.description.trim() : "No official product description available."}`,
       ].filter(Boolean);
 
       return lines.join("\n");
@@ -1537,10 +1538,11 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
         return;
       }
 
-      const matchedCatalog = searchCatalogProducts(products, trimmed, messages);
-      const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : products, trimmed);
+      const visibleProducts = products.filter((p) => user?.role === "admin" || !p.isHidden);
+      const matchedCatalog = searchCatalogProducts(visibleProducts, trimmed, messages);
+      const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : visibleProducts, trimmed);
       const catalogStatusLine = getCatalogAvailabilityStatus({
-        products,
+        products: visibleProducts,
         query: trimmed,
         matchedProducts: matchedCatalog,
         catalogLoading,
@@ -1556,6 +1558,8 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
     - When the request does not match any real catalog product, say so clearly and offer the closest available alternatives from the live catalog instead of inventing items.
     - Never claim that a product exists or is unavailable without checking the catalog first.
     - Keep product details grounded in the catalog and do not invent products, benefits, ingredients, ratings, prices, or stock status.
+    - When a product's OFFICIAL_DATABASE_DESCRIPTION says "No official product description available.", do NOT invent or guess its ingredients, benefits, suitability, or formulation. You may share general category advice, but always make clear it is general guidance and not verified product information.
+    - You may provide general beauty or skincare advice based on your knowledge, but always distinguish it from verified facts about a specific product. Never present general advice as a product fact.
     - When a customer describes a PROBLEM (e.g., frizzy hair, acne, dry skin, oily scalp), recommend relevant available products to address that problem — without making medical claims.
     - Infer product categories from customer descriptions: "تفضل على شعري بعد الشاور" → leave-in conditioner. "شعري هايش" → anti-frizz or smoothing products. "حبوب" → acne cleanser or treatment. "حاجة ترطب وشي" → facial moisturizer. "للشعر الدهني" → oily scalp/hair shampoo. If no exact match, recommend the closest category available.
     - If the catalog shows relevant products, ALWAYS recommend from the catalog. Do not say "not available" when catalog items exist.

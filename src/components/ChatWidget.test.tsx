@@ -842,3 +842,175 @@ describe("genuine no-match — does not hallucinate", () => {
     expect(results).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSION: Audit fix #1 — subcategory label sent to Groq
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildCatalogContext — subcategory and isHair regression", () => {
+  const hairProductWithSubcategory = {
+    id: 1,
+    name: "Argan Oil Leave-In",
+    brand: "Moroccanoil",
+    category: "haircare",
+    subcategory: "Hair Treatments",
+    subcategoryId: null,
+    price: 350,
+    description: "Leave-in treatment for dry hair.",
+    skinType: null,
+    tag: null,
+    rating: null,
+    originalPrice: null,
+    marketPrice: null,
+  } as any;
+
+  const skinProductWithSubcategoryOnly = {
+    id: 2,
+    name: "CeraVe Moisturizing Cream",
+    brand: "CeraVe",
+    category: "skincare",
+    subcategory: "Moisturizers",
+    subcategoryId: null,
+    price: 280,
+    description: null,
+    skinType: "Dry",
+    tag: null,
+    rating: null,
+    originalPrice: null,
+    marketPrice: null,
+  } as any;
+
+  it("uses human-readable subcategory when subcategoryId is null", () => {
+    const ctx = buildCatalogContext([hairProductWithSubcategory], "leave-in");
+    expect(ctx).toContain("SUBCATEGORY: Hair Treatments");
+    expect(ctx).not.toContain("SUBCATEGORY: general");
+  });
+
+  it("falls back to subcategoryId when subcategory is absent", () => {
+    const p = { ...hairProductWithSubcategory, subcategory: null, subcategoryId: "hair-treatments" };
+    const ctx = buildCatalogContext([p], "leave-in");
+    expect(ctx).toContain("SUBCATEGORY: hair-treatments");
+  });
+
+  it("falls back to 'general' when both subcategory and subcategoryId are absent", () => {
+    const p = { ...hairProductWithSubcategory, subcategory: null, subcategoryId: null };
+    const ctx = buildCatalogContext([p], "leave-in");
+    expect(ctx).toContain("SUBCATEGORY: general");
+  });
+
+  it("classifies haircare product as HAIR_AND_SCALP_TYPE via subcategory when subcategoryId is null", () => {
+    // subcategoryId is null, subcategory = "Hair Treatments" → isHair should still be true
+    const ctx = buildCatalogContext([hairProductWithSubcategory], "leave-in");
+    expect(ctx).toContain("HAIR_AND_SCALP_TYPE");
+    expect(ctx).not.toContain("SKIN_TYPE_SUITABILITY");
+  });
+
+  it("uses neutral fallback description when product description is null", () => {
+    const ctx = buildCatalogContext([skinProductWithSubcategoryOnly], "moisturizer");
+    expect(ctx).toContain("No official product description available.");
+    expect(ctx).not.toContain("beauty intelligence");
+    expect(ctx).not.toContain("Use your expert");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSION: Audit fix #2 — skinType included in search
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("searchCatalogProducts — skinType field regression", () => {
+  const oilySkinProduct = {
+    id: 10,
+    name: "Neutrogena Oil-Free Moisturizer",
+    brand: "Neutrogena",
+    category: "skincare",
+    subcategory: "Moisturizers",
+    subcategoryId: "moisturizers",
+    price: 220,
+    description: "Lightweight moisturizer.",
+    skinType: "Oily",
+    tag: null,
+  } as any;
+
+  const drySkinProduct = {
+    id: 11,
+    name: "Cetaphil Rich Cream",
+    brand: "Cetaphil",
+    category: "skincare",
+    subcategory: "Moisturizers",
+    subcategoryId: "moisturizers",
+    price: 310,
+    description: "Rich cream for intense hydration.",
+    skinType: "Dry",
+    tag: null,
+  } as any;
+
+  it("finds oily-skin product when query contains 'oily'", () => {
+    const results = searchCatalogProducts([oilySkinProduct, drySkinProduct], "moisturizer for oily skin");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].id).toBe(10);
+  });
+
+  it("Arabic query 'مرطب للبشرة الدهنية' finds oily-skin product via skinType", () => {
+    const results = searchCatalogProducts([oilySkinProduct, drySkinProduct], "مرطب للبشرة الدهنية");
+    // Semantic expansion should resolve to 'oily' / 'moisturizer', and oily product scores higher
+    expect(results.length).toBeGreaterThan(0);
+    const foundOily = results.some((p) => p.skinType === "Oily");
+    expect(foundOily).toBe(true);
+  });
+
+  it("finds dry-skin product when query contains 'dry skin'", () => {
+    const results = searchCatalogProducts([oilySkinProduct, drySkinProduct], "cream for dry skin");
+    expect(results.length).toBeGreaterThan(0);
+    // dry skin product should appear in results
+    expect(results.some((p) => p.skinType === "Dry")).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSION: Audit fix #4 — hidden products excluded from chatbot results
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("searchCatalogProducts — isHidden products excluded", () => {
+  const visibleProduct = {
+    id: 20,
+    name: "Visible Shampoo",
+    brand: "Brand A",
+    category: "haircare",
+    subcategory: "Shampoos",
+    price: 100,
+    description: "A great shampoo.",
+    isHidden: false,
+    skinType: null,
+    tag: null,
+  } as any;
+
+  const hiddenProduct = {
+    id: 21,
+    name: "Secret Shampoo",
+    brand: "Brand B",
+    category: "haircare",
+    subcategory: "Shampoos",
+    price: 100,
+    description: "A hidden shampoo.",
+    isHidden: true,
+    skinType: null,
+    tag: null,
+  } as any;
+
+  // Note: isHidden filtering is done in handleSend() before calling searchCatalogProducts().
+  // The test below verifies that searchCatalogProducts itself does not re-introduce hidden
+  // products when the caller has already pre-filtered — i.e., passing only visible products
+  // still returns only visible products.
+  it("searchCatalogProducts returns only the products passed to it (isHidden filtering is caller responsibility)", () => {
+    // Caller pre-filters: only visibleProduct is passed
+    const results = searchCatalogProducts([visibleProduct], "شامبو");
+    expect(results.every((p) => !p.isHidden)).toBe(true);
+    expect(results.some((p) => p.id === 20)).toBe(true);
+  });
+
+  it("hidden product is not returned when caller pre-filters hidden products", () => {
+    const visibleOnly = [visibleProduct]; // simulates the filter in handleSend
+    const results = searchCatalogProducts(visibleOnly, "secret shampoo");
+    expect(results.some((p) => p.id === 21)).toBe(false);
+  });
+});
