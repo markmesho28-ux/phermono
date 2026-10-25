@@ -99,7 +99,10 @@ export default function CheckoutModal({ open, onClose, cartItems, subtotal, onCo
         <div className="bg-stone-50 p-3 rounded">
           <div className="flex justify-between text-sm text-stone-600"><span>Subtotal</span><span>EGP {subtotal.toFixed(2)}</span></div>
           {promoDiscount > 0 && <div className="flex justify-between text-sm text-emerald-700"><span>Promo Discount</span><span>-EGP {promoDiscount.toFixed(2)}</span></div>}
-          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>EGP {getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate)).toFixed(2)}</span></div>
+          <div className="flex justify-between text-sm text-stone-600"><span>Shipping</span><span>{(() => {
+            const shippingValue = getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate));
+            return shippingValue === 0 ? 'Free' : `EGP ${shippingValue.toFixed(2)}`;
+          })()}</span></div>
           <div className="flex justify-between text-base font-bold text-brand-black mt-2"><span>Total</span><span>EGP {(subtotalAfterPromo + getFreeShippingFee(subtotalAfterPromo, siteSettings, getShippingCost(form.governorate))).toFixed(2)}</span></div>
         </div>
         <div className="flex justify-end gap-2">

@@ -38,6 +38,23 @@ describe('AuthModal auth flow', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
+  it('defaults to sign up when opened in guest entry mode and can switch back to sign in', async () => {
+    const onClose = jest.fn();
+
+    const { rerender } = render(<AuthModal open={false} onClose={onClose} defaultMode="signup" />);
+    rerender(<AuthModal open={true} onClose={onClose} defaultMode="signup" />);
+
+    await waitFor(() => expect(screen.getByPlaceholderText('e.g. Sarah Connor')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Sign Up' })).toHaveClass('bg-brand-black');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
+    await waitFor(() => expect(screen.getByPlaceholderText('Enter your registered phone number')).toBeInTheDocument());
+
+    rerender(<AuthModal open={false} onClose={onClose} defaultMode="signup" />);
+    rerender(<AuthModal open={true} onClose={onClose} defaultMode="signup" />);
+    await waitFor(() => expect(screen.getByPlaceholderText('e.g. Sarah Connor')).toBeInTheDocument());
+  });
+
   it('keeps the modal open and shows the server error on failed sign in', async () => {
     const onClose = jest.fn();
     loginMock.mockResolvedValue({ error: 'Invalid credentials' });

@@ -509,6 +509,7 @@ export default function App(){
   const [cartOpen, setCartOpen] = useState(false);
   const [cartCheckoutMode, setCartCheckoutMode] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [authDefaultMode, setAuthDefaultMode] = useState<'signin' | 'signup'>('signin');
   const [authIntent, setAuthIntent] = useState<string | null>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [wishlist, setWishlist] = useState<Product[]>(() => getInitialWishlist(getWishlistStorageKey()));
@@ -984,8 +985,8 @@ export default function App(){
         cartCount={totalCartCount}
         wishlistCount={visibleWishlist.length}
         cartOpen={cartOpen}
-        onCartOpen={() => { if(user) { setCartOpen(true); } else { resetTransientOverlays(); setAuthIntent('openCart'); setAuthOpen(true); } }}
-        onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { resetTransientOverlays(); setAuthIntent('openTracking'); setAuthOpen(true); } }}
+        onCartOpen={() => { if(user) { setCartOpen(true); } else { resetTransientOverlays(); setAuthIntent('openCart'); setAuthDefaultMode('signin'); setAuthOpen(true); } }}
+        onTrackOpen={() => { if(user) setActiveCategory('tracking'); else { resetTransientOverlays(); setAuthIntent('openTracking'); setAuthDefaultMode('signin'); setAuthOpen(true); } }}
         onAssistantOpen={() => {
           resetTransientOverlays();
           setActiveCategory('assistant');
@@ -993,7 +994,7 @@ export default function App(){
           setSearchQuery('');
           scrollToTop();
         }}
-        onProfileOpen={() => { if(user) setActiveCategory('profile'); else { resetTransientOverlays(); setAuthIntent('openProfile'); setAuthOpen(true); } }}
+        onProfileOpen={() => { if(user) setActiveCategory('profile'); else { resetTransientOverlays(); setAuthIntent('openProfile'); setAuthDefaultMode('signin'); setAuthOpen(true); } }}
         onWishlistOpen={() => {
           resetTransientOverlays();
           setActiveCategory('favorites');
@@ -1011,6 +1012,7 @@ export default function App(){
           }
           resetTransientOverlays();
           setAuthIntent(null);
+          setAuthDefaultMode('signup');
           setAuthOpen(!!v);
         }}
         onMenuToggle={handleMenuToggle}
@@ -1078,7 +1080,7 @@ export default function App(){
         onBackToBag={() => setCartCheckoutMode(false)}
         onPlaceOrder={handlePlaceOrder}
         onCheckout={() => {
-          if(user){ setCartCheckoutMode(true); } else { resetTransientOverlays(); setAuthIntent('checkout'); setAuthOpen(true); }
+          if(user){ setCartCheckoutMode(true); } else { resetTransientOverlays(); setAuthIntent('checkout'); setAuthDefaultMode('signin'); setAuthOpen(true); }
         }}
       />
 
@@ -1088,7 +1090,12 @@ export default function App(){
 
       {/* Profile and Wishlist are now dedicated full-page views handled by `activeCategory` */}
 
-      <AuthModal open={authOpen} onClose={()=>{ setAuthOpen(false); setAuthIntent(null); }} onSuccess={(u)=>{ setAuthOpen(false); if(authIntent === 'openCart'){ setCartOpen(true); } else if(authIntent === 'checkout'){ setCartOpen(true); setCartCheckoutMode(true); } else if(authIntent === 'openTracking'){ setActiveCategory('tracking'); } else if(authIntent === 'openProfile'){ setActiveCategory('profile'); } setAuthIntent(null); }} />
+      <AuthModal
+        open={authOpen}
+        defaultMode={authDefaultMode}
+        onClose={()=>{ setAuthOpen(false); setAuthIntent(null); }}
+        onSuccess={(u)=>{ setAuthOpen(false); if(authIntent === 'openCart'){ setCartOpen(true); } else if(authIntent === 'checkout'){ setCartOpen(true); setCartCheckoutMode(true); } else if(authIntent === 'openTracking'){ setActiveCategory('tracking'); } else if(authIntent === 'openProfile'){ setActiveCategory('profile'); } setAuthIntent(null); }}
+      />
 
       {/* Add Category Modal */}
       {isAddCategoryModalOpen && (

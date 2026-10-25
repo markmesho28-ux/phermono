@@ -10,6 +10,7 @@ import ChatWidget, {
   searchCatalogProducts,
   shouldRetryWithNextGroqKey,
   extractIntentSignals,
+  handleAdminSiteSettingsCommand,
 } from "./ChatWidget";
 import { useAuth } from "../contexts/AuthContext";
 import supabase from "../lib/supabase";
@@ -28,13 +29,19 @@ jest.mock("../lib/supabase", () => ({
 const originalFetch = global.fetch;
 
 const mockSupabaseGuestUsage = () => {
-  (supabase as any).from.mockImplementation(() => ({
-    select: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
-    upsert: jest.fn().mockResolvedValue({ error: null }),
-    update: jest.fn().mockReturnThis(),
-  }));
+  (supabase as any).from.mockImplementation(() => {
+    const base = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+      single: jest.fn().mockResolvedValue({ data: null, error: null }),
+      update: jest.fn().mockReturnThis(),
+      upsert: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ data: [{ key: 'site_config', value: {} }], error: null }),
+      }),
+    };
+    return base;
+  });
 };
 
 beforeEach(() => {
@@ -65,6 +72,263 @@ afterEach(() => {
   });
   delete process.env.REACT_APP_GROQ_API_KEY;
   delete process.env.REACT_APP_GROQ_API_KEYS;
+});
+
+describe("admin promotion commands", () => {
+  it("rejects invalid promotion percentages and blocks non-admins", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const customerUser = { id: 'cust-1', name: 'Customer', phone: '01000000000', role: 'customer' };
+
+    await expect(handleAdminSiteSettingsCommand('make a 0% off', adminUser)).resolves.toMatchObject({
+      handled: true,
+      message: expect.stringContaining('1 and 100'),
+    });
+
+    await expect(handleAdminSiteSettingsCommand('make a 60% off', customerUser)).resolves.toEqual({
+      handled: false,
+      message: '',
+    });
+
+    await expect(handleAdminSiteSettingsCommand('make a 60% off', adminUser)).resolves.toMatchObject({
+      handled: true,
+      message: expect.stringContaining('60%'),
+    });
+  });
+
+  it("accepts the free-delivery admin command for verified admins only", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const customerUser = { id: 'cust-1', name: 'Customer', phone: '01000000000', role: 'customer' };
+
+    await expect(handleAdminSiteSettingsCommand('make a free delivery', adminUser)).resolves.toMatchObject({
+      handled: true,
+      message: expect.stringContaining('free shipping'),
+    });
+
+    await expect(handleAdminSiteSettingsCommand('make a free delivery', customerUser)).resolves.toEqual({
+      handled: false,
+      message: '',
+    });
+  });
+
+  it("cancels the current offer without activating free shipping", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const currentSettings = {
+      active_promo: 'percentage_discount',
+      promo_rule: 'percentage_discount',
+      promo_discount_percent: 30,
+      is_free_shipping_active: false,
+      free_shipping_threshold: 200,
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+    };
+    const captured = [] as Record<string, any>[];
+
+    (supabase as any).from.mockImplementation((table: string) => {
+      if (table !== 'site_settings') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          upsert: jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }),
+        };
+      }
+
+      return {
+        select: jest.fn(() => ({
+          eq: jest.fn(() => ({
+            maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+          })),
+        })),
+        upsert: jest.fn((rows: any[]) => {
+          captured.push(rows[0].value);
+          return {
+            select: jest.fn().mockResolvedValue({ data: [{ key: 'site_config', value: rows[0].value }], error: null }),
+          };
+        }),
+      };
+    });
+
+    const result = await handleAdminSiteSettingsCommand('cancel offer', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(result.message).toMatch(/cancelled|canceled|offer/i);
+    expect(result.message).not.toMatch(/free shipping|shipping is now active/i);
+    expect(captured[0]).toMatchObject({
+      active_promo: 'none',
+      promo_rule: 'none',
+      is_free_shipping_active: false,
+      promo_discount_percent: 0,
+      buy_x: 0,
+      get_y: 0,
+    });
+    expect(captured[0]).not.toHaveProperty('promo_banner_text');
+  });
+
+  it("returns without persisting when cancel is requested with no active offer", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const currentSettings = {
+      active_promo: 'none',
+      promo_rule: 'none',
+      promo_discount_percent: 0,
+      is_free_shipping_active: false,
+      free_shipping_threshold: 200,
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+      promo_banner_text: 'Current banner text',
+    };
+    const upsert = jest.fn(() => ({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }));
+
+    (supabase as any).from.mockImplementation((table: string) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+        })),
+      })),
+      upsert,
+    }));
+
+    const result = await handleAdminSiteSettingsCommand('cancel offer', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(result.message).toMatch(/no active offer|already cancelled|no active/i);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a second offer while free shipping is active and leaves the existing offer unchanged", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const currentSettings = {
+      active_promo: 'free_shipping',
+      promo_rule: 'free_shipping',
+      promo_discount_percent: 0,
+      is_free_shipping_active: true,
+      free_shipping_threshold: 200,
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+    };
+    const upsert = jest.fn(() => ({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }));
+
+    (supabase as any).from.mockImplementation((table: string) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+        })),
+      })),
+      upsert,
+    }));
+
+    const result = await handleAdminSiteSettingsCommand('make a 30% off', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(result.message).toMatch(/active|cancel the current offer/i);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a second offer while a percentage discount is active and leaves the existing offer unchanged", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const currentSettings = {
+      active_promo: 'percentage_discount',
+      promo_rule: 'percentage_discount',
+      promo_discount_percent: 30,
+      is_free_shipping_active: false,
+      free_shipping_threshold: 200,
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+    };
+    const upsert = jest.fn(() => ({ select: jest.fn().mockResolvedValue({ data: [], error: null }) }));
+
+    (supabase as any).from.mockImplementation((table: string) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+        })),
+      })),
+      upsert,
+    }));
+
+    const result = await handleAdminSiteSettingsCommand('make a free delivery', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(result.message).toMatch(/active|cancel the current offer/i);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("keeps promo_banner_text out of the persisted payload for activation and cancellation", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const captured = [] as Record<string, any>[];
+    const currentSettings = {
+      active_promo: 'free_shipping',
+      promo_rule: 'free_shipping',
+      promo_discount_percent: 0,
+      is_free_shipping_active: true,
+      free_shipping_threshold: 200,
+      promo_banner_text: 'Banner should stay manual',
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+    };
+
+    (supabase as any).from.mockImplementation((table: string) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+        })),
+      })),
+      upsert: jest.fn((rows: any[]) => {
+        captured.push(rows[0].value);
+        return { select: jest.fn().mockResolvedValue({ data: [{ key: 'site_config', value: rows[0].value }], error: null }) };
+      }),
+    }));
+
+    const result = await handleAdminSiteSettingsCommand('cancel offer', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(captured[0]).not.toHaveProperty('promo_banner_text');
+  });
+
+  it("clears the previous offer when a new offer is activated after cancellation", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const currentSettings = {
+      active_promo: 'none',
+      promo_rule: 'none',
+      promo_discount_percent: 0,
+      is_free_shipping_active: false,
+      free_shipping_threshold: 200,
+      buy_x: 0,
+      get_y: 0,
+      promotion_scope: 'all',
+    };
+    const captured = [] as Record<string, any>[];
+
+    (supabase as any).from.mockImplementation((table: string) => ({
+      select: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: currentSettings }, error: null }),
+        })),
+      })),
+      upsert: jest.fn((rows: any[]) => {
+        captured.push(rows[0].value);
+        return { select: jest.fn().mockResolvedValue({ data: [{ key: 'site_config', value: rows[0].value }], error: null }) };
+      }),
+    }));
+
+    const result = await handleAdminSiteSettingsCommand('make a free delivery', adminUser);
+
+    expect(result.handled).toBe(true);
+    expect(captured[0]).toMatchObject({
+      active_promo: 'free_shipping',
+      promo_rule: 'free_shipping',
+      is_free_shipping_active: true,
+      promo_discount_percent: 0,
+      buy_x: 0,
+      get_y: 0,
+    });
+    expect(captured[0]).not.toHaveProperty('promo_banner_text');
+  });
+
 });
 
 describe("Groq key fallback retry rules", () => {

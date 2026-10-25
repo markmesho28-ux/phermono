@@ -82,9 +82,50 @@ export const getPromoDiscountPercent = (settings: Partial<SiteSettings> = {}): n
   return Math.min(Math.max(value, 0), 100);
 };
 
-export const getFreeShippingFee = (subtotal: number, settings: Partial<SiteSettings> = {}, fallbackFee = 50): number => {
+export const normalizeSingleActiveOfferState = (settings: Partial<SiteSettings> = {}): Partial<SiteSettings> => {
+  const activePromo = String(settings.active_promo ?? settings.promo_rule ?? '').trim().toLowerCase();
+  const normalizedActivePromo = activePromo === 'none' || activePromo === 'cancelled' || activePromo === 'canceled' ? 'none' : activePromo;
+  const nextSettings: Partial<SiteSettings> = { ...settings };
+
+  if (!normalizedActivePromo || normalizedActivePromo === 'none') {
+    nextSettings.active_promo = 'none';
+    nextSettings.promo_rule = 'none';
+    nextSettings.is_free_shipping_active = false;
+    nextSettings.promo_discount_percent = 0;
+    nextSettings.buy_x = 0;
+    nextSettings.get_y = 0;
+    return nextSettings;
+  }
+
+  nextSettings.active_promo = normalizedActivePromo;
+  nextSettings.promo_rule = normalizedActivePromo;
+  nextSettings.is_free_shipping_active = normalizedActivePromo === 'free_shipping';
+  nextSettings.promo_discount_percent = normalizedActivePromo === 'percentage_discount'
+    ? Number(nextSettings.promo_discount_percent ?? 0)
+    : 0;
+  nextSettings.buy_x = normalizedActivePromo === 'buy_one_get_one' ? Number(nextSettings.buy_x ?? 0) : 0;
+  nextSettings.get_y = normalizedActivePromo === 'buy_one_get_one' ? Number(nextSettings.get_y ?? 0) : 0;
+
+  return nextSettings;
+};
+
+export const getCurrentStorePriceForPromo = (generalPrice?: number | null, currentStorePrice?: number | null): number => {
+  const currentStore = Number(currentStorePrice ?? 0);
+  if (Number.isFinite(currentStore) && currentStore > 0) {
+    return currentStore;
+  }
+
+  const general = Number(generalPrice ?? 0);
+  if (Number.isFinite(general) && general > 0) {
+    return general;
+  }
+
+  return 0;
+};
+
+export const getFreeShippingFee = (subtotal: number, settings: Partial<SiteSettings> = {}, fallbackFee = 0): number => {
   const threshold = Number(settings.free_shipping_threshold ?? DEFAULT_SITE_SETTINGS.free_shipping_threshold ?? 200);
-  const normalizedFallbackFee = Number.isFinite(Number(fallbackFee)) ? Number(fallbackFee) : 50;
+  const normalizedFallbackFee = Number.isFinite(Number(fallbackFee)) ? Number(fallbackFee) : 0;
   const activeFreeShipping = Boolean(settings.is_free_shipping_active);
   const qualifiesForFreeShipping = activeFreeShipping && Number.isFinite(threshold) && subtotal >= threshold;
 
@@ -155,6 +196,26 @@ const extractFirstNumber = (value: string): number | null => {
   return Number.isFinite(candidate) && candidate > 0 ? candidate : null;
 };
 
+const getDiscountPercentFromText = (value: string): number | null => {
+  const normalized = normalizeArabicCommandText(String(value ?? ''));
+  const matches = [
+    normalized.match(/(?:make\s+(?:a\s+)?)?(\d{1,3})\s*(?:%|٪)\s*(?:off|discount|sale|offer)/i),
+    normalized.match(/(?:make\s+(?:a\s+)?)?(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,3})\s*(?:%|٪)/i),
+    normalized.match(/(\d{1,3})\s*(?:%|٪)\s*(?:off|discount|sale|offer)/i),
+    normalized.match(/(?:خصم|تخفيض|discount|percentage|percent|offer|off|sale)[^\d]*?(\d{1,3})\s*(?:%|٪)/i),
+    normalized.match(/(?:خصم|تخفيض)\s*(?:على|كل|ال)?[^\d]*?(\d{1,3})\s*(?:%|٪)/i),
+  ].filter(Boolean) as RegExpMatchArray[];
+
+  for (const match of matches) {
+    const extracted = Number(String(match[1] ?? match[0] ?? '').replace(/[^0-9]/g, ''));
+    if (Number.isFinite(extracted) && extracted >= 1 && extracted <= 100) {
+      return extracted;
+    }
+  }
+
+  return null;
+};
+
 export const parseSitePromoCommand = (command: string): Partial<SiteSettings> => {
   const text = String(command ?? '').trim();
   if (!text) return {};
@@ -178,14 +239,12 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
   if (isGlobalReset) {
     updates.active_promo = 'none';
     updates.promo_rule = 'none';
-    updates.promo_banner_text = '';
     updates.promo_discount_percent = 0;
     updates.buy_x = 0;
     updates.get_y = 0;
-    updates.free_shipping_threshold = 200;
     updates.is_free_shipping_active = false;
     updates.promotion_scope = 'all';
-    return updates;
+    return normalizeSingleActiveOfferState(updates);
   }
 
   const hasShippingFeature = /(شحن|توصيل|shipping|delivery)/i.test(normalized);
@@ -194,11 +253,10 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
     updates.is_free_shipping_active = false;
     updates.active_promo = 'none';
     updates.promo_rule = 'none';
-    updates.promo_banner_text = '';
     updates.promo_discount_percent = 0;
     updates.buy_x = 0;
     updates.get_y = 0;
-    return updates;
+    return normalizeSingleActiveOfferState(updates);
   }
 
   const freeShippingActivationPattern = /(make|set|create|apply|start)\s*(?:a\s+)?(?:free\s+)?shipping|(?:enable|activate|turn\s*on|turnon|start)\s*(?:free\s+)?shipping|(?:free\s+shipping|الشحن\s*المجاني|الشحن\s*المجانى|شحن\s*مجاني|شحن\s*مجانى)\s*(?:for|ل|على)?\s*(?:all\s+orders|كل\s*الطلبات|الطلبات)?/i;
@@ -207,7 +265,6 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
     updates.is_free_shipping_active = true;
     updates.active_promo = 'free_shipping';
     updates.promo_rule = 'free_shipping';
-    updates.promo_banner_text = 'Free shipping';
   }
 
   const directShippingThresholdPatterns = [
@@ -242,7 +299,6 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
       updates.is_free_shipping_active = true;
       updates.active_promo = 'free_shipping';
       updates.promo_rule = 'free_shipping';
-      updates.promo_banner_text = `Free shipping over ${parsedValue}`;
     }
   }
 
@@ -262,44 +318,30 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
     updates.promo_rule = 'buy_one_get_one';
     updates.buy_x = buyCount > 0 ? buyCount : 1;
     updates.get_y = freeCount > 0 ? freeCount : 1;
-    updates.promo_banner_text = `Buy ${updates.buy_x} Get ${updates.get_y} Free`;
   }
 
-  const percentMatch = lower.match(/(?:make\s+(?:a\s+)?)?(\d{1,2})\s*%\s*(?:off|discount|sale|offer)/i)
-    || lower.match(/(?:make\s+(?:a\s+)?)?(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,2})\s*(?:%|٪)/i)
-    || lower.match(/(\d{1,2})\s*%/i)
-    || normalized.match(/(\d{1,2})\s*٪/i)
-    || normalized.match(/(?:خصم|تخفيض|discount|percentage|percent|offer|off|sale)[\s\S]{0,20}(\d{1,2})/i)
-    || normalized.match(/(\d{1,2})\s*(?:%|٪)\s*(?:off|discount|sale|offer)/i)
-    || normalized.match(/(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,2})\s*(?:%|٪)/i)
-    || normalized.match(/(?:خصم|تخفيض)\s*(?:على|كل|ال)?[\s\S]{0,20}(\d{1,2})\s*(?:%|٪)/i);
-  if (percentMatch) {
-    const percentValue = Number((percentMatch[1] ?? percentMatch[0] ?? '0').toString().replace(/[^0-9]/g, ''));
-    if (Number.isFinite(percentValue) && percentValue >= 0 && percentValue <= 100) {
-      updates.promo_discount_percent = Math.max(0, Math.min(100, percentValue));
-      updates.active_promo = 'percentage_discount';
-      updates.promo_rule = 'percentage_discount';
-      updates.promotion_scope = /skincare|skin care|بشرة|beauty|مكياج|cosmetics|مستحضرات/i.test(normalized) ? 'skincare' : 'all';
-      updates.promo_banner_text = `${percentValue}% off on your order`;
-    }
+  const percentValue = getDiscountPercentFromText(normalized);
+
+  if (percentValue !== null && percentValue >= 1 && percentValue <= 100) {
+    updates.promo_discount_percent = Math.max(1, Math.min(100, percentValue));
+    updates.active_promo = 'percentage_discount';
+    updates.promo_rule = 'percentage_discount';
+    updates.promotion_scope = /skincare|skin care|بشرة|beauty|مكياج|cosmetics|مستحضرات/i.test(normalized) ? 'skincare' : 'all';
   }
 
   if (shippingVariant.test(normalized) && !shippingDisable.test(normalized) && !shippingEnable.test(normalized) && !thresholdMatch && Object.keys(updates).length === 0) {
     updates.active_promo = 'free_shipping';
     updates.promo_rule = 'free_shipping';
     updates.is_free_shipping_active = true;
-    updates.promo_banner_text = 'Free shipping';
   } else if (/(gift|هدية|قطعة هدية|piece gift|offer with free gift|هدية مجانية|مكافأة|present)/i.test(normalized) && !buyXGetYMatch) {
     updates.active_promo = 'gift_with_purchase';
     updates.promo_rule = 'gift_with_purchase';
-    updates.promo_banner_text = 'Gift with purchase';
   } else if (/(clear|disable|remove|none|لا عرض|خلاص|أزل|سحب|نهي|إلغاء|end promo|remove promo|cancel promo)/i.test(normalized) && /(promo|campaign|عرض|برومو|حملة|offer|discount)/i.test(normalized)) {
     updates.active_promo = 'none';
     updates.promo_rule = 'none';
     updates.promo_discount_percent = 0;
     updates.buy_x = 0;
     updates.get_y = 0;
-    updates.promo_banner_text = '';
   }
 
   const explicitPromoMatch = lower.match(/(?:set\s+active\s+promo\s+to|promo\s+to|active promo\s+is|العرض\s+النشط\s+هو|حدد\s+العرض\s+النشط|ضع\s+عرض\s+)\s*([a-z0-9\s-]+)/i)
@@ -309,7 +351,6 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
     if (label && label.toLowerCase() !== 'none' && !/لا\s*عرض|none/i.test(label)) {
       updates.active_promo = label.toLowerCase().replace(/\s+/g, '_');
       updates.promo_rule = label.toLowerCase().replace(/\s+/g, '_');
-      updates.promo_banner_text = label;
     }
   }
 
@@ -317,20 +358,16 @@ export const parseSitePromoCommand = (command: string): Partial<SiteSettings> =>
     return {};
   }
 
-  if (!('promo_banner_text' in updates) && updates.active_promo && updates.active_promo !== 'none') {
-    updates.promo_banner_text = updates.active_promo.replace(/_/g, ' ');
-  }
-
-  if (updates.active_promo === 'none' || /^(none|لا عرض|لا توجد عروض|cancelled|cancelled promo|مسح|إلغاء)$/i.test(String(updates.active_promo || ''))) {
+  if (updates.active_promo === 'none' || /^(none|لا عرض|لا توجد عروض|cancelled|canceled|cancelled promo|مسح|إلغاء)$/i.test(String(updates.active_promo || ''))) {
     updates.active_promo = 'none';
     updates.promo_rule = 'none';
-    updates.promo_banner_text = '';
     updates.promo_discount_percent = 0;
     updates.buy_x = 0;
     updates.get_y = 0;
+    updates.is_free_shipping_active = false;
   }
 
-  return updates;
+  return normalizeSingleActiveOfferState(updates);
 };
 
 // Hard-coded live schema facts for the `products` table.
@@ -1079,7 +1116,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       nextState.active_promo = 'none';
       nextState.promo_rule = 'none';
       nextState.is_free_shipping_active = false;
-      nextState.promo_banner_text = '';
       nextState.promo_discount_percent = 0;
       nextState.buy_x = 0;
       nextState.get_y = 0;

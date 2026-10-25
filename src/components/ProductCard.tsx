@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ShoppingBag, Heart, Eye, EyeOff, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getBestSellerState, getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
+import { getBestSellerState, getCurrentStorePriceForPromo, getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
 import type { Product } from "../types";
 
 const TAG_STYLES: Record<string, string> = {
@@ -41,7 +41,8 @@ const ProductCard = React.memo(function ProductCard({
     const store = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
     const our = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
     const dynamicDiscountPercent = getPromoDiscountPercent(siteSettings);
-    const activeDisplay = typeof store === 'number' ? getDiscountedPrice(store, siteSettings) : (typeof general === 'number' ? getDiscountedPrice(general, siteSettings) : 0);
+    const currentStoreForPromo = getCurrentStorePriceForPromo(general, store);
+    const activeDisplay = currentStoreForPromo > 0 ? getDiscountedPrice(currentStoreForPromo, siteSettings) : 0;
     const discount = (typeof general === 'number' && typeof store === 'number' && general > 0)
       ? Math.round(((general - store) / general) * 100)
       : null;

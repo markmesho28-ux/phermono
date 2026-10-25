@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import supabase from "../lib/supabase";
 import { MessageCircleMore, SendHorizonal, Sparkles, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { parseSitePromoCommand } from "../contexts/DataContext";
+import { normalizeSingleActiveOfferState, parseSitePromoCommand } from "../contexts/DataContext";
 import type { Product } from "../types";
 import { checkIsAdminRole, isAdminPhone } from "../utils/admin";
 
@@ -265,7 +265,7 @@ export const looksLikeAdminCommandIntent = (message: string): boolean => {
     || /(free shipping|shipping free|free delivery|delivery free|promo|discount|offer|reset|cancel|stop|remove|disable|enable|activate|buy one|get one|bogo|الغي|الغى|إيقاف|تفعيل|خصم|تخفيض|عرض|العرض|شحن مجانى|الشحن المجانى|شحن مجاني|الشحن المجاني|هدية|gift)/i.test(text);
 };
 
-const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any) => {
+export const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any) => {
   const isAdmin = !!currentUser && (checkIsAdminRole(currentUser) || isAdminPhone(currentUser.phone));
   const looksLikeAdminIntent = looksLikeAdminCommandIntent(message);
 
@@ -273,7 +273,33 @@ const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any
     return { handled: false, message: '' };
   }
 
-  const updates = parseSitePromoCommand(message);
+  const normalized = String(message ?? '').trim();
+  const invalidPercentMessage = (() => {
+    const raw = normalized.toLowerCase();
+    const percentPattern = /(?:make\s+(?:a\s+)?)?(?:\d{1,3}\s*%\s*(?:off|discount|sale|offer)|(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*\d{1,3}\s*(?:%|٪))/i;
+    if (!percentPattern.test(raw)) return null;
+
+    const extracted = (() => {
+      const match = normalized.match(/(?:make\s+(?:a\s+)?)?(\d{1,3})\s*(?:%|٪)\s*(?:off|discount|sale|offer)/i)
+        || normalized.match(/(?:discount|offer|sale|off)\s*(?:on|for)?\s*(?:all\s+orders|all\s+products|everything|all\s+items|the\s+store)?\s*(\d{1,3})\s*(?:%|٪)/i)
+        || normalized.match(/(\d{1,3})\s*(?:%|٪)/i);
+      if (!match) return null;
+      const value = Number(String(match[1] ?? match[0] ?? '').replace(/[^0-9]/g, ''));
+      return Number.isFinite(value) ? value : null;
+    })();
+
+    if (extracted !== null && extracted >= 1 && extracted <= 100) {
+      return null;
+    }
+
+    return 'Please send a valid percentage between 1 and 100, for example: "make a 60% off".';
+  })();
+
+  if (invalidPercentMessage) {
+    return { handled: true, message: invalidPercentMessage };
+  }
+
+  const updates = normalizeSingleActiveOfferState(parseSitePromoCommand(message));
   if (!updates || Object.keys(updates).length === 0) {
     return { handled: false, message: '' };
   }
@@ -283,45 +309,56 @@ const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any
   }
 
   try {
-    const { data: existingRow } = await supabase
+    const { data: existingRow, error: existingSettingsError } = await supabase
       .from('site_settings')
       .select('*')
       .eq('key', 'site_config')
       .maybeSingle();
 
-    const currentValue = existingRow && existingRow.value && typeof existingRow.value === 'object' ? existingRow.value : {};
-    const resetDefaults = {
-      free_shipping_threshold: 200,
-      active_promo: 'none',
-      is_free_shipping_active: false,
-      promo_banner_text: '',
-      promo_discount_percent: 0,
-      promo_rule: 'none',
-      buy_x: 0,
-      get_y: 0,
-      promotion_scope: 'all',
-      promo_start_at: null,
-      promo_end_at: null,
-    };
-    const nextValue = {
-      ...resetDefaults,
-      ...currentValue,
-      ...updates,
-    };
-
-    if (updates.active_promo === 'none' || updates.is_free_shipping_active === false) {
-      Object.assign(nextValue, {
-        free_shipping_threshold: 200,
-        active_promo: 'none',
-        is_free_shipping_active: false,
-        promo_banner_text: '',
-        promo_discount_percent: 0,
-        promo_rule: 'none',
-        buy_x: 0,
-        get_y: 0,
-        promotion_scope: 'all',
-      });
+    if (existingSettingsError) {
+      console.warn('Admin site settings read failed:', existingSettingsError.message || existingSettingsError);
+      return { handled: true, message: 'I could not verify the current offer state. No changes were made.' };
     }
+
+    const currentValue = existingRow && existingRow.value && typeof existingRow.value === 'object' ? existingRow.value : {};
+    const currentWithoutBanner = (({ promo_banner_text: _ignoredPromoBannerText, ...rest }) => rest)(currentValue as Record<string, any>);
+    const normalizedUpdates = normalizeSingleActiveOfferState(updates);
+    const { promo_banner_text: _ignoredPromoBannerText, ...promoSafeUpdates } = normalizedUpdates;
+    const requestedOffer = String(normalizedUpdates.active_promo ?? normalizedUpdates.promo_rule ?? 'none').trim().toLowerCase();
+    const currentOffer = String(normalizeSingleActiveOfferState(currentValue).active_promo ?? normalizeSingleActiveOfferState(currentValue).promo_rule ?? 'none').trim().toLowerCase();
+    const hasActiveOffer = !!currentOffer && currentOffer !== 'none' && currentOffer !== 'cancelled' && currentOffer !== 'canceled';
+    const isCancellationRequest = requestedOffer === 'none' || /^(none|لا عرض|لا توجد عروض|cancelled|canceled|cancelled promo|مسح|إلغاء)$/i.test(String(requestedOffer || ''));
+    const isActivationRequest = !isCancellationRequest && !!requestedOffer && requestedOffer !== 'none';
+
+    if (isActivationRequest && hasActiveOffer) {
+      return {
+        handled: true,
+        message: 'A promotion is already active. Cancel the current offer before creating a new one.'
+      };
+    }
+
+    if (isCancellationRequest && !hasActiveOffer) {
+      return {
+        handled: true,
+        message: 'There is no active offer to cancel.'
+      };
+    }
+
+    const nextValue = normalizeSingleActiveOfferState(isCancellationRequest
+      ? {
+          ...currentWithoutBanner,
+          active_promo: 'none',
+          promo_rule: 'none',
+          promo_discount_percent: 0,
+          is_free_shipping_active: false,
+          buy_x: 0,
+          get_y: 0,
+        }
+      : {
+          ...currentWithoutBanner,
+          ...promoSafeUpdates,
+        }
+    );
 
     const { error } = await supabase
       .from('site_settings')
@@ -344,25 +381,25 @@ const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any
     const isArabicMessage = /[\u0600-\u06FF]/.test(message);
     const summary = [] as string[];
 
-    if (typeof updates.free_shipping_threshold === 'number' && updates.free_shipping_threshold > 0) {
-      const thresholdMessage = isArabicMessage
-        ? `تم تحديث إعدادات الموقع بنجاح: الشحن المجاني أصبح مفعل للطلبات فوق ${updates.free_shipping_threshold} جنيه`
-        : `✅ Live site settings updated successfully: free shipping is now active for orders over ${updates.free_shipping_threshold} EGP`;
-      return { handled: true, message: thresholdMessage };
-    }
-
-    if (updates.active_promo === 'none' && updates.is_free_shipping_active === false) {
+    if (normalizedUpdates.active_promo === 'none' && normalizedUpdates.is_free_shipping_active === false) {
       return {
         handled: true,
         message: isArabicMessage
-          ? 'تم إلغاء العرض النشط والشحن المجاني بنجاح. الموقع الآن في الوضع الافتراضي.'
-          : '✅ The active promo and free shipping were cancelled successfully. The storefront is back to default settings.'
+          ? 'تم إلغاء العرض النشط بنجاح. لا يوجد عرض نشط الآن.'
+          : '✅ The active offer was cancelled successfully. There is no active offer right now.'
       };
     }
 
-    if (typeof updates.is_free_shipping_active === 'boolean') summary.push(isArabicMessage ? `الشحن المجاني: ${updates.is_free_shipping_active ? 'مفعل' : 'غير مفعل'}` : `free shipping: ${updates.is_free_shipping_active ? 'enabled' : 'disabled'}`);
-    if (updates.active_promo && updates.active_promo !== 'none') summary.push(isArabicMessage ? `العرض النشط: ${updates.active_promo}` : `active promo: ${updates.active_promo}`);
-    if (updates.promo_banner_text) summary.push(isArabicMessage ? `الشعار: ${updates.promo_banner_text}` : `banner: ${updates.promo_banner_text}`);
+    if (typeof normalizedUpdates.free_shipping_threshold === 'number' && normalizedUpdates.free_shipping_threshold > 0 && normalizedUpdates.is_free_shipping_active === true) {
+      const thresholdMessage = isArabicMessage
+        ? `تم تحديث إعدادات الموقع بنجاح: الشحن المجاني أصبح مفعل للطلبات فوق ${normalizedUpdates.free_shipping_threshold} جنيه`
+        : `✅ Live site settings updated successfully: free shipping is now active for orders over ${normalizedUpdates.free_shipping_threshold} EGP`;
+      return { handled: true, message: thresholdMessage };
+    }
+
+    if (typeof normalizedUpdates.is_free_shipping_active === 'boolean') summary.push(isArabicMessage ? `الشحن المجاني: ${normalizedUpdates.is_free_shipping_active ? 'مفعل' : 'غير مفعل'}` : `free shipping: ${normalizedUpdates.is_free_shipping_active ? 'enabled' : 'disabled'}`);
+    if (typeof normalizedUpdates.promo_discount_percent === 'number' && normalizedUpdates.promo_discount_percent > 0) summary.push(isArabicMessage ? `الخصم: ${normalizedUpdates.promo_discount_percent}%` : `discount: ${normalizedUpdates.promo_discount_percent}%`);
+    if (normalizedUpdates.active_promo && normalizedUpdates.active_promo !== 'none') summary.push(isArabicMessage ? `العرض النشط: ${normalizedUpdates.active_promo}` : `active promo: ${normalizedUpdates.active_promo}`);
 
     const summaryText = summary.length > 0 ? ` (${summary.join(' • ')})` : '';
     return { handled: true, message: isArabicMessage ? `تم تحديث إعدادات الموقع بنجاح${summaryText}.` : `✅ Live site settings updated successfully${summaryText}.` };

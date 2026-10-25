@@ -73,7 +73,7 @@ export function CartDrawer({
   }, [user, checkoutMode, isOpen]);
 
   const getShippingFee = (governorate?: string) => {
-    return getFreeShippingFee(subtotalAfterPromo, siteSettings, 50);
+    return getFreeShippingFee(subtotalAfterPromo, siteSettings, 0);
   };
 
   const shippingFee = getShippingFee(orderGovernorate);
@@ -233,7 +233,7 @@ export function CartDrawer({
                   )}
                   <div className="flex justify-between text-sm text-stone-600 mb-2">
                     <span>Shipping</span>
-                    <span className="font-semibold text-emerald-700">EGP {shippingFee.toFixed(2)}</span>
+                    <span className="font-semibold text-emerald-700">{shippingFee === 0 ? 'Free' : `EGP ${shippingFee.toFixed(2)}`}</span>
                   </div>
                   <div className="border-t border-stone-200 pt-2 flex justify-between text-base font-bold text-brand-black">
                     <span>Total</span>
@@ -351,8 +351,8 @@ export function CartDrawer({
                     <span className="font-semibold text-brand-black">EGP {subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-stone-500 text-xs">
-                    <span>Pharmacy Shipping</span>
-                    <span className="text-emerald-700 font-bold">EGP {shippingFee.toFixed(2)}</span>
+                    <span>Shipping</span>
+                    <span className="text-emerald-700 font-bold">{shippingFee === 0 ? 'Free' : `EGP ${shippingFee.toFixed(2)}`}</span>
                   </div>
                   <div className="border-t border-stone-200 pt-2 flex justify-between text-base font-bold text-brand-black">
                     <span>Total Amount</span>

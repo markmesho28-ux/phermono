@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AuthUser } from '../types';
@@ -7,15 +7,22 @@ interface AuthModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: (user?: AuthUser) => void;
+  defaultMode?: 'signin' | 'signup';
 }
 
-export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
+export default function AuthModal({ open, onClose, onSuccess, defaultMode = 'signin' }: AuthModalProps) {
   const { login, signup } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup'>(defaultMode);
   const [form, setForm] = useState({ name: '', phone: '', address: '', password: '', governorate: '' });
   const [error, setError] = useState<string | null>(null);
   // Guard against duplicate/delayed submissions: mark when submitting to let pointerdown-triggered handlers avoid double-submit
   const submittingRef = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setMode(defaultMode);
+    setError(null);
+  }, [open, defaultMode]);
 
   const GOVERNORATES = ['أسوان','أسيوط'];
 

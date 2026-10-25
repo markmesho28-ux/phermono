@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData, getBestSellerState, mergeBestSellerIntentOverrides, bestSellerIntentStore, resolveBestSellerValue } from './DataContext';
+import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSitePromoCommand, getFreeShippingFee, resolveCategoryIdForInsert, resolveCategoryIdForRelation, DataProvider, useData, getBestSellerState, mergeBestSellerIntentOverrides, bestSellerIntentStore, resolveBestSellerValue, getDiscountedPrice } from './DataContext';
 import { AuthProvider, useAuth } from './AuthContext';
 import CategoryView from '../components/CategoryView';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
@@ -192,10 +192,11 @@ describe('resolveCategoryIdForUpdate', () => {
 });
 
 describe('getFreeShippingFee', () => {
-  it('returns the standard default shipping fee when free shipping is off or below threshold', () => {
+  it('returns the store default shipping fee when free shipping is off or below threshold', () => {
+    expect(getFreeShippingFee(120, { is_free_shipping_active: false, free_shipping_threshold: 200 })).toBe(0);
+    expect(getFreeShippingFee(120, { is_free_shipping_active: true, free_shipping_threshold: 200 })).toBe(0);
+    expect(getFreeShippingFee(250, { is_free_shipping_active: false, free_shipping_threshold: 200 })).toBe(0);
     expect(getFreeShippingFee(120, { is_free_shipping_active: false, free_shipping_threshold: 200 }, 50)).toBe(50);
-    expect(getFreeShippingFee(120, { is_free_shipping_active: true, free_shipping_threshold: 200 }, 50)).toBe(50);
-    expect(getFreeShippingFee(250, { is_free_shipping_active: false, free_shipping_threshold: 200 }, 50)).toBe(50);
   });
 
   it('returns zero only when free shipping is active and the subtotal meets the threshold', () => {
@@ -898,6 +899,8 @@ describe('parseSitePromoCommand', () => {
   });
 
   it('detects BOGO and percentage offers in natural language', () => {
+    expect(getDiscountedPrice(800, { promo_discount_percent: 60 })).toBe(320);
+
     expect(parseSitePromoCommand('أي قطعة عليها قطعة تانية هدية')).toMatchObject({
       active_promo: 'buy_one_get_one',
       promo_rule: 'buy_one_get_one',
@@ -911,6 +914,8 @@ describe('parseSitePromoCommand', () => {
       buy_x: 1,
       get_y: 1,
     });
+
+    expect(parseSitePromoCommand('make a 60% off')).not.toHaveProperty('promo_banner_text');
 
     expect(parseSitePromoCommand('خصم 20% على كل المنتجات')).toMatchObject({
       active_promo: 'percentage_discount',
