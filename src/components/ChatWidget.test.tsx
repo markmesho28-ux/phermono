@@ -8,6 +8,7 @@ import ChatWidget, {
   buildCatalogContext,
   getCatalogAvailabilityStatus,
   searchCatalogProducts,
+  buildGroqMessages,
   shouldRetryWithNextGroqKey,
   extractIntentSignals,
   handleAdminSiteSettingsCommand,
@@ -766,7 +767,22 @@ describe("catalog-aware multilingual matching", () => {
   it("finds a real product by English name and translation", () => {
     const matches = searchCatalogProducts(mockProducts, "lip balm");
     expect(matches[0].name).toBe("Lip Repair Balm");
-    expect(searchCatalogProducts(mockProducts, "ليب بالم")[0].name).toBe("Lip Repair Balm");
+    const arabicMatches = searchCatalogProducts(mockProducts, "ليب بالم");
+    expect(arabicMatches[0].name).toBe("Lip Repair Balm");
+  });
+
+  it("preserves canonical English product identity in Egyptian Arabic transliterations", () => {
+    const transliterationProducts = [
+      { id: 1, name: "Lip Gloss", brand: "Phermono", category: "lipcare", subcategory: "Lip Gloss", price: 210, description: "Glossy shine for the lips." },
+      { id: 2, name: "Lip Balm", brand: "Phermono", category: "lipcare", subcategory: "Lip Balm", price: 180, description: "Hydrating balm for dry and chapped lips." },
+      { id: 3, name: "Seropipe Intense Nutrition Hair Shampoo 300 ml", brand: "Seropip", category: "haircare", subcategory: "Shampoos", price: 245, description: "Dry and damaged hair shampoo." },
+      { id: 4, name: "Leave-In Conditioner", brand: "Phermono", category: "haircare", subcategory: "Hair Treatments", price: 260, description: "Leave-in conditioner for soft, manageable hair after shower." },
+    ] as any;
+
+    expect(searchCatalogProducts(transliterationProducts, "ليب جلوس")[0].name).toBe("Lip Gloss");
+    expect(searchCatalogProducts(transliterationProducts, "ليب بالم")[0].name).toBe("Lip Balm");
+    expect(searchCatalogProducts(transliterationProducts, "سيروبايب")[0].name).toBe("Seropipe Intense Nutrition Hair Shampoo 300 ml");
+    expect(searchCatalogProducts(transliterationProducts, "ليف إن")[0].name).toBe("Leave-In Conditioner");
   });
 
   it("matches punctuation-heavy product names and spacing variants like Clary Shampoo", () => {
@@ -804,6 +820,31 @@ describe("catalog-aware multilingual matching", () => {
 
     expect(arabicMatches[0].name).toBe("Lip Repair Balm");
     expect(needMatches[0].name).toBe("Lip Repair Balm");
+  });
+
+  it("matches previously unseen Egyptian phonetic spellings without relying on dictionary entries", () => {
+    const unseenPhoneticProducts = [
+      { id: 1, name: "Lip Gloss", brand: "Phermono", category: "lipcare", subcategory: "Lip Gloss", price: 210, description: "Glossy shine for the lips." },
+      { id: 2, name: "Lip Balm", brand: "Phermono", category: "lipcare", subcategory: "Lip Balm", price: 180, description: "Hydrating balm for dry and chapped lips." },
+      { id: 3, name: "Leave-In Conditioner", brand: "Phermono", category: "haircare", subcategory: "Hair Treatments", price: 260, description: "Leave-in conditioner for soft, manageable hair after shower." },
+    ] as any;
+
+    expect(searchCatalogProducts(unseenPhoneticProducts, "ليب جلاووس")[0].name).toBe("Lip Gloss");
+    expect(searchCatalogProducts(unseenPhoneticProducts, "ليف اني")[0].name).toBe("Leave-In Conditioner");
+    expect(searchCatalogProducts(unseenPhoneticProducts, "ليب بلام")[0].name).toBe("Lip Balm");
+  });
+
+  it("keeps similar-sounding but different product families distinct", () => {
+    const familyProducts = [
+      { id: 1, name: "Lip Gloss", brand: "Phermono", category: "lipcare", subcategory: "Lip Gloss", price: 210, description: "Glossy shine for the lips." },
+      { id: 2, name: "Leave-In Conditioner", brand: "Phermono", category: "haircare", subcategory: "Hair Treatments", price: 260, description: "Leave-in conditioner for soft, manageable hair after shower." },
+      { id: 3, name: "Hydrating Moisturizer", brand: "Phermono", category: "skincare", subcategory: "Moisturizers", price: 240, description: "Rich hydration for dry skin and sensitive areas." },
+    ] as any;
+
+    expect(searchCatalogProducts(familyProducts, "ليب جلاووس")[0].name).toBe("Lip Gloss");
+    expect(searchCatalogProducts(familyProducts, "ليف اني")[0].name).toBe("Leave-In Conditioner");
+    expect(searchCatalogProducts(familyProducts, "بادي ميلك")).toHaveLength(0);
+    expect(searchCatalogProducts(familyProducts, "مرطب للوجه")[0].name).toBe("Hydrating Moisturizer");
   });
 
   it("matches Arabic and English product names across transliteration, order, and mixed-language variants", () => {
@@ -924,6 +965,44 @@ describe("catalog-aware multilingual matching", () => {
     const englishPriceQuery = searchCatalogProducts(priceProducts, "highest price shampoo");
     expect(englishPriceQuery[0].name).toBe("Clary anti dandruff shampoo 300ml");
     expect(englishPriceQuery.every((product) => product.category === "haircare")).toBe(true);
+  });
+
+  it("prioritizes a matching subcategory over a misleading product-name match", () => {
+    const subcategoryPriorityProducts = [
+      {
+        id: 201,
+        name: "Balm & Glow",
+        brand: "Phermono",
+        category: "lipcare",
+        subcategory: "Lip Gloss",
+        price: 200,
+        description: "Shiny gloss that gives lips a glossy finish.",
+      },
+      {
+        id: 202,
+        name: "Daily Lip Care",
+        brand: "Phermono",
+        category: "lipcare",
+        subcategory: "Lip Balm",
+        price: 180,
+        description: "Moisturizing balm for dry and chapped lips.",
+      },
+    ] as any;
+
+    expect(searchCatalogProducts(subcategoryPriorityProducts, "lip balm")[0].id).toBe(202);
+    expect(searchCatalogProducts(subcategoryPriorityProducts, "ليب بالم")[0].id).toBe(202);
+  });
+
+  it("uses subcategory matches before product names across unrelated categories", () => {
+    const categoryProducts = [
+      { id: 301, name: "CeraVe Cream Face Wash", brand: "CeraVe", category: "skincare", subcategory: "Cleansers", price: 240, description: "Gentle face wash clean for daily use." },
+      { id: 302, name: "Hydrating Cleanser", brand: "Phermono", category: "skincare", subcategory: "Moisturizers", price: 260, description: "Hydrating cream for sensitive skin." },
+      { id: 303, name: "Daily Shampoo", brand: "Phermono", category: "haircare", subcategory: "Shampoos", price: 220, description: "Cleansing and freshening shampoo for everyday use." },
+    ] as any;
+
+    expect(searchCatalogProducts(categoryProducts, "غسول للوجه")[0].id).toBe(301);
+    expect(searchCatalogProducts(categoryProducts, "face cleanser")[0].id).toBe(301);
+    expect(searchCatalogProducts(categoryProducts, "شامبو")[0].id).toBe(303);
   });
 
   it("distinguishes by description and ignores false positives", () => {
@@ -1141,6 +1220,41 @@ describe("follow-up conversation context", () => {
     const results = searchCatalogProducts(products, "وريني المتاح", history);
     expect(results.length).toBeGreaterThan(0);
     expect(results.some(p => p.category === "skincare")).toBe(true);
+  });
+
+  it("does not carry prior lip-product context into a new unrelated product request", () => {
+    const lipProducts = [
+      { id: 10, name: "Rose Glow Lip Gloss", brand: "Phermono", category: "lipcare", subcategory: "Lip Gloss", price: 220, description: "Glossy lip gloss with shine." },
+      { id: 11, name: "Lip Repair Balm", brand: "Phermono", category: "lipcare", subcategory: "Lip Balm", price: 210, description: "Hydrating balm for dry, chapped lips." },
+      { id: 12, name: "Seropipe Intense Nutrition Hair Shampoo 300 ml", brand: "Seropip", category: "haircare", subcategory: "Shampoos", price: 245, description: "Dry and Damaged Hair" },
+    ] as any;
+
+    const history = [
+      { sender: "user" as const, text: "Lip Gloss" },
+      { sender: "bot" as const, text: "Rose Glow Lip Gloss is available." },
+      { sender: "user" as const, text: "Lip Balm" },
+      { sender: "bot" as const, text: "Lip Repair Balm is available." },
+    ];
+
+    const results = searchCatalogProducts(lipProducts, "Seropipe", history);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].name).toBe("Seropipe Intense Nutrition Hair Shampoo 300 ml");
+  });
+
+  it("keeps prior context only for explicit follow-up references", () => {
+    const history = [
+      { sender: "user" as const, text: "Lip Gloss" },
+      { sender: "bot" as const, text: "Rose Glow Lip Gloss is available." },
+    ];
+
+    const filtered = buildGroqMessages(history, { sender: "user", text: "what about its price?" });
+    expect(filtered.some((m) => /Lip Gloss/i.test(m.content))).toBe(true);
+    expect(filtered.some((m) => /what about its price/i.test(m.content))).toBe(true);
+
+    const isolated = buildGroqMessages(history, { sender: "user", text: "Seropipe" });
+    expect(isolated.some((m) => /Lip Gloss/i.test(m.content))).toBe(false);
+    expect(isolated).toHaveLength(1);
+    expect(isolated[0].content).toBe("Seropipe");
   });
 });
 

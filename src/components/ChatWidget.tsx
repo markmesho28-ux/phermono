@@ -522,11 +522,52 @@ const incrementUserUsage = async (userId: string) => {
   return getUsageLimitStatus(nextCount);
 };
 
+const getFollowUpPatterns = () => {
+  const english = /\b(which one|what about|what about its|what about this|show me more|show me all|any other|cheaper|more expensive|another|another one|other one|another option|similar|same but|same one|different one|its price|its availability|show me another|what else|show me other|details)\b/i;
+  const arabic = /\b(اي نوع|أي نوع|وريني|ورينيه|المتاح|تاني|تانيه|كمان|برضو|وبعدين|أرخص|أغلى|السعر|سعره|متاح|موجود|حاجة تانيه|اخري|غيره|كمان)\b/;
+
+  return { english, arabic };
+};
+
+const isExplicitFollowUpRequest = (message: string = "") => {
+  const text = String(message ?? "").trim();
+  if (!text) return false;
+
+  const normalized = text
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي");
+
+  const { english, arabic } = getFollowUpPatterns();
+  return english.test(text) || arabic.test(text) || english.test(normalized) || arabic.test(normalized);
+};
+
+export const getRelevantConversationHistory = (
+  history: Array<{ sender: "user" | "bot"; text: string }> = [],
+  latestMessage?: { sender: "user" | "bot"; text: string } | null
+) => {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  if (!latestMessage) return history.slice(-6);
+
+  if (!isExplicitFollowUpRequest(latestMessage.text)) {
+    return [];
+  }
+
+  const lastSix = history.slice(-6);
+  return lastSix.filter((message) => {
+    if (message.sender === "user") {
+      return !isExplicitFollowUpRequest(message.text);
+    }
+    return true;
+  });
+};
+
 export const buildGroqMessages = (
   history: Array<{ sender: "user" | "bot"; text: string }> = [],
   latestMessage?: { sender: "user" | "bot"; text: string } | null
 ) => {
-  const messages = latestMessage ? [...history, latestMessage] : [...history];
+  const relevantHistory = getRelevantConversationHistory(history, latestMessage);
+  const messages = latestMessage ? [...relevantHistory, latestMessage] : [...relevantHistory];
 
   return messages.slice(-6).map((message) => ({
     role: message.sender === "user" ? "user" : "assistant",
@@ -701,9 +742,9 @@ export const extractIntentSignals = (
     // keep original forms too (in case no normalization needed)
     'أي نوع', 'مش فارقة', 'عايز حاجة أرخص', 'عايز حاجة أغلى',
   ];
-  const followUpEnglishPattern = /\b(which one|show me more|show me all|any other|cheaper|more expensive|another|similar)\b/i;
+  const { english: followUpEnglishPattern, arabic: followUpArabicPattern } = getFollowUpPatterns();
   const isFollowUp = followUpArabicPhrases.some(p => normForFollowUp.includes(p) || text.includes(p)) ||
-    followUpEnglishPattern.test(text);
+    followUpEnglishPattern.test(text) || followUpArabicPattern.test(text) || followUpEnglishPattern.test(normalizedText) || followUpArabicPattern.test(normalizedText);
 
   let followUpContext = '';
   if (isFollowUp && conversationHistory && conversationHistory.length > 0) {
@@ -711,7 +752,10 @@ export const extractIntentSignals = (
     const lastMeaningful = userMessages.slice().reverse().find(m => {
       const mNorm = m.text.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
       return !followUpArabicPhrases.some(p => mNorm.includes(p) || m.text.includes(p)) &&
-        !followUpEnglishPattern.test(m.text);
+        !followUpEnglishPattern.test(m.text) &&
+        !followUpArabicPattern.test(m.text) &&
+        !followUpEnglishPattern.test(mNorm) &&
+        !followUpArabicPattern.test(mNorm);
     });
     if (lastMeaningful) followUpContext = lastMeaningful.text;
   }
@@ -838,14 +882,76 @@ const GENERIC_SEARCH_ALIASES: Record<string, string> = {
   mask: "mask", masque: "mask", "ماسك": "mask", cleanser: "cleanser", wash: "cleanser", foam: "cleanser",
   "غسول": "cleanser", "غسيل": "cleanser", "كلينسر": "cleanser", sunscreen: "sunscreen", sunblock: "sunscreen",
   suncream: "sunscreen", "واقي شمس": "sunscreen", "sun cream": "sunscreen", "sun block": "sunscreen",
-  lip: "lip", lips: "lip", lipcare: "lip", "شفايف": "lip", "شفاه": "lip", "ليب": "lip",
-  balm: "balm", salve: "balm", balsam: "balm", "بالم": "balm", "بلم": "balm", "لبم": "balm",
+  lip: "lip", lips: "lip", lipcare: "lip", "شفايف": "lip", "شفاه": "lip", "ليب": "lip", "ليپ": "lip",
+  balm: "balm", salve: "balm", balsam: "balm", "بالم": "balm", "بلم": "balm", "لبم": "balm", "بلام": "balm",
   gloss: "gloss", glossy: "gloss", shine: "gloss", shiny: "gloss", "بريق": "gloss", "لمعان": "gloss", "ألوان": "gloss",
+  "جلوس": "gloss", "جلوص": "gloss", "جلاوس": "gloss", "جلوش": "gloss", "جليوس": "gloss",
+  "سيروبايب": "seropipe", "سيروبايبـ": "seropipe", "سيروبأيب": "seropipe", "سيروب ايب": "seropipe", "سيروبيب": "seropipe",
+  "ليف": "leave-in", "ليف ان": "leave-in", "ليف-ان": "leave-in", "ليف إن": "leave-in", "ليفان": "leave-in",
   oil: "oil", oils: "oil", "أويل": "oil", "زيت": "oil", hair: "hair", "شعر": "hair", dry: "dry", "جاف": "dry",
   skin: "skin", "بشرة": "skin", "وجه": "skin", face: "skin", "مكياج": "makeup",
   expensive: "expensive", "اغلى": "expensive", "اغلي": "expensive", "غلى": "expensive", "غلي": "expensive",
   "غالي": "expensive", "غالى": "expensive", "غاليه": "expensive", "غالية": "expensive",
   cheap: "cheap", "ارخص": "cheap", "رخص": "cheap", "رخيص": "cheap", "رخيصة": "cheap", "اقل": "cheap", "أقل": "cheap"
+};
+
+const inferProductTypeHints = (value: string): string[] => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+
+  const normalized = raw
+    .normalize("NFKC")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[ًٌٍَُِّْ]/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/[\u200C\u200D]/g, "")
+    .replace(/[\p{P}\p{S}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  const hints = new Set<string>();
+
+  const matchesGloss = /(gl|gla|glo|jla|jlo|gloos|glao|glaow|gloos|glos|جلوس|جلا|جلو|جلوص|جلاو|glaow|gloow|glooss)/i.test(normalized);
+  if (matchesGloss && /(lip|ليب|شفايف|شفاه|gloss)/i.test(normalized)) {
+    hints.add("gloss");
+  }
+
+  const matchesBalm = /(balm|balmm|blm|bllm|بالم|بلم|بلام|بلام|lbm|balam)/i.test(normalized);
+  if (matchesBalm && /(lip|ليب|شفايف|شفاه|balm)/i.test(normalized)) {
+    hints.add("balm");
+  }
+
+  const matchesLeaveIn = /(?:leave|liv|lif|لايف|ليف|لِف).*(?:in|ان|اني|يني|انـ|eni|ini|in)/i.test(normalized);
+  if (matchesLeaveIn) {
+    hints.add("leave-in");
+  }
+
+  const matchesSeropipe = /(?:serop|siro|sirob|serob|سيروب|سيرو).*(?:pipe|بايب|بايب|pib|pb|pip)/i.test(normalized);
+  if (matchesSeropipe) {
+    hints.add("seropipe");
+  }
+
+  const matchesBodyMilk = /(body|بودي|بادي|milk|ميلك|مليك|bidy|bodi).*(?:milk|ميلك|مليك|midk|mlk)/i.test(normalized) ||
+    /(milk|ميلك|مليك|midk|mlk).*(?:body|بودي|بادي|bodi|body)/i.test(normalized);
+  if (matchesBodyMilk) {
+    hints.add("body milk");
+  }
+
+  const matchesShampoo = /(shampoo|شامبو|شامپو|شامب|shamp|shampo|shamoo)/i.test(normalized);
+  if (matchesShampoo) hints.add("shampoo");
+
+  const matchesConditioner = /(cond|condition|كوند|كوندي|بلسم|كند|كندي|kond|kondish|conditioner)/i.test(normalized);
+  if (matchesConditioner) hints.add("conditioner");
+
+  const matchesSerum = /(serum|سرم|سيروم|سيرم|serom|serm)/i.test(normalized);
+  if (matchesSerum) hints.add("serum");
+
+  const matchesLip = /(lip|ليب|شفايف|شفاه|lips)/i.test(normalized);
+  if (matchesLip) hints.add("lip");
+
+  return Array.from(hints);
 };
 
 const normalizeCatalogToken = (token: string): string => {
@@ -1004,11 +1110,12 @@ export const searchCatalogProducts = (
   }
 
   const baseQueryTokens = getCatalogMatchTokens(normalizedQuery);
+  const inferredProductHints = inferProductTypeHints(trimmedQuery);
 
   // Inject semantic concepts as additional tokens
   const semanticTokenSet = new Set<string>(baseQueryTokens);
 
-  for (const concept of intentSignals.productConcepts) {
+  for (const concept of [...intentSignals.productConcepts, ...inferredProductHints]) {
     getCatalogMatchTokens(concept).forEach(t => semanticTokenSet.add(t));
   }
   for (const area of intentSignals.bodyArea) {
@@ -1064,6 +1171,7 @@ export const searchCatalogProducts = (
       const productName = normalizeCatalogMatchText(product.name || "");
       const brandText = normalizeCatalogMatchText(product.brand || "");
       const categoryText = normalizeCatalogMatchText(`${product.category ?? ""} ${product.subcategory ?? ""}`);
+      const subcategoryText = normalizeCatalogMatchText(`${product.subcategory ?? ""} ${product.subcategoryId ?? ""}`);
       const descriptionText = normalizeCatalogMatchText(product.description || "");
       const tagText = normalizeCatalogMatchText(product.tag || "");
       const combinedText = normalizeCatalogMatchText([
@@ -1079,6 +1187,11 @@ export const searchCatalogProducts = (
       const effectivePrice = getEffectiveProductPrice(product);
       let score = 0;
 
+      if (subcategoryText) {
+        if (subcategoryText === normalizedQuery) score += 320;
+        if (subcategoryText.includes(normalizedQuery) || normalizedQuery.includes(subcategoryText)) score += 140;
+      }
+
       if (productName === normalizedQuery) score += 220;
       if (productName.includes(normalizedQuery) || normalizedQuery.includes(productName)) score += 80;
       if (brandText.includes(normalizedQuery) || normalizedQuery.includes(brandText)) score += 50;
@@ -1087,26 +1200,29 @@ export const searchCatalogProducts = (
       if (tagText.includes(normalizedQuery) || normalizedQuery.includes(tagText)) score += 25;
 
       const nameTokens = getCatalogMatchTokens(productName);
+      const subcategoryTokens = getCatalogMatchTokens(subcategoryText);
       const categoryTokens = getCatalogMatchTokens(categoryText);
       const descriptionTokens = getCatalogMatchTokens(descriptionText);
       const combinedTokens = getCatalogMatchTokens(combinedText);
 
       const sharedNameTokens = queryTokens.filter((token) => nameTokens.includes(token));
+      const sharedSubcategoryTokens = queryTokens.filter((token) => subcategoryTokens.includes(token));
       const sharedCategoryTokens = queryTokens.filter((token) => categoryTokens.includes(token));
       const sharedDescriptionTokens = queryTokens.filter((token) => descriptionTokens.includes(token));
       const sharedCombinedTokens = queryTokens.filter((token) => combinedTokens.includes(token));
 
       score += sharedCombinedTokens.length * 32;
+      score += sharedSubcategoryTokens.length * 70;
       score += sharedNameTokens.length * 28;
       score += sharedCategoryTokens.length * 18;
       score += sharedDescriptionTokens.length * 12;
 
       if (queryTokens.length > 0) {
-        const categoryLikeBoost = getCategoryLikeMatchScore(queryTokens, categoryText) + getCategoryLikeMatchScore(queryTokens, productName) + getCategoryLikeMatchScore(queryTokens, descriptionText);
+        const categoryLikeBoost = getCategoryLikeMatchScore(queryTokens, subcategoryText) + getCategoryLikeMatchScore(queryTokens, categoryText) + getCategoryLikeMatchScore(queryTokens, productName) + getCategoryLikeMatchScore(queryTokens, descriptionText);
         score += categoryLikeBoost;
       }
 
-      const categoryMatches = queryTokens.filter((token) => genericCategoryTerms.has(token) && (categoryText.includes(token) || productName.includes(token) || descriptionText.includes(token)));
+      const categoryMatches = queryTokens.filter((token) => genericCategoryTerms.has(token) && (subcategoryText.includes(token) || categoryText.includes(token) || productName.includes(token) || descriptionText.includes(token)));
       if (categoryMatches.length > 0) score += categoryMatches.length * 35;
 
       const isCategoryOnlySearch = queryTokens.length > 0 && queryTokens.every((token) => genericCategoryTerms.has(token) || token.length <= 2);
@@ -1612,7 +1728,8 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
       }
 
       const visibleProducts = products.filter((p) => user?.role === "admin" || !p.isHidden);
-      const matchedCatalog = searchCatalogProducts(visibleProducts, trimmed, messages);
+      const relevantHistory = getRelevantConversationHistory(messages, userMessage);
+      const matchedCatalog = searchCatalogProducts(visibleProducts, trimmed, relevantHistory);
       const catalog = buildCatalogContext(matchedCatalog.length > 0 ? matchedCatalog : visibleProducts, trimmed);
       const catalogStatusLine = getCatalogAvailabilityStatus({
         products: visibleProducts,
@@ -1623,6 +1740,8 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
       });
 
       const systemPrompt = `You are PhM Concierge — a helpful, friendly shopping assistant for PherMono. Keep replies concise, human, and in the user's detected language (Egyptian Arabic if Arabic detected; otherwise English). Always:
+
+    - Resolve the product and intent for the current message before answering. Do not carry a previous product into a new request unless the user clearly refers back to it with phrases like "what about its price?", "another one", or "show me more".
 
     - Use the STORE PRODUCT CATALOG as the source of truth for what is actually sold on this website.
     - Keep recommendations short (max 2 products) and avoid long lists.
@@ -1644,7 +1763,7 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
     STORE PRODUCT CATALOG:
     ${catalog}`;
 
-      const recent = buildGroqMessages(messages, userMessage);
+      const recent = buildGroqMessages(relevantHistory, userMessage);
       const requestBody = {
         model: GROQ_MODEL,
         messages: [
