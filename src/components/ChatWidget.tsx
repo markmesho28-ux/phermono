@@ -265,9 +265,45 @@ export const looksLikeAdminCommandIntent = (message: string): boolean => {
     || /(free shipping|shipping free|free delivery|delivery free|promo|discount|offer|reset|cancel|stop|remove|disable|enable|activate|buy one|get one|bogo|الغي|الغى|إيقاف|تفعيل|خصم|تخفيض|عرض|العرض|شحن مجانى|الشحن المجانى|شحن مجاني|الشحن المجاني|هدية|gift)/i.test(text);
 };
 
+const isUserAuthorizedAdmin = async (currentUser?: any): Promise<boolean> => {
+  if (currentUser && (checkIsAdminRole(currentUser) || isAdminPhone(currentUser.phone))) {
+    return true;
+  }
+
+  if (!supabase) {
+    return false;
+  }
+
+  try {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
+      return false;
+    }
+
+    const authUser = authData.user as any;
+    if (checkIsAdminRole(authUser)) {
+      return true;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (profileError && profileError.code !== 'PGRST116') {
+      return false;
+    }
+
+    return Boolean(profile && checkIsAdminRole(profile));
+  } catch {
+    return false;
+  }
+};
+
 export const handleAdminSiteSettingsCommand = async (message: string, currentUser?: any) => {
-  const isAdmin = !!currentUser && (checkIsAdminRole(currentUser) || isAdminPhone(currentUser.phone));
   const looksLikeAdminIntent = looksLikeAdminCommandIntent(message);
+  const isAdmin = await isUserAuthorizedAdmin(currentUser);
 
   if (!isAdmin || !looksLikeAdminIntent) {
     return { handled: false, message: '' };

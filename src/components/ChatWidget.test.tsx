@@ -23,6 +23,9 @@ jest.mock("../lib/supabase", () => ({
   __esModule: true,
   default: {
     from: jest.fn(),
+    auth: {
+      getUser: jest.fn(),
+    },
   },
 }));
 
@@ -56,6 +59,7 @@ beforeEach(() => {
   ].join(",");
 
   (useAuth as jest.Mock).mockReturnValue({ user: null });
+  (supabase as any).auth.getUser.mockResolvedValue({ data: { user: null }, error: null });
   mockSupabaseGuestUsage();
   Object.defineProperty(global, "fetch", {
     value: jest.fn(),
@@ -75,6 +79,53 @@ afterEach(() => {
 });
 
 describe("admin promotion commands", () => {
+  it("requires an authenticated admin session before mutating promo settings", async () => {
+    const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
+    const upsert = jest.fn(() => ({
+      select: jest.fn().mockResolvedValue({ data: [{ key: 'site_config', value: { active_promo: 'percentage_discount', promo_discount_percent: 30 } }], error: null }),
+    }));
+
+    (supabase as any).auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(handleAdminSiteSettingsCommand('make a 30% off on shampoo')).resolves.toEqual({
+      handled: false,
+      message: '',
+    });
+
+    (supabase as any).auth.getUser.mockResolvedValueOnce({ data: { user: { id: 'admin-1' } }, error: null });
+    (supabase as any).from.mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'admin-1', role: 'admin' }, error: null }),
+        };
+      }
+
+      if (table === 'site_settings') {
+        return {
+          select: jest.fn(() => ({
+            eq: jest.fn(() => ({
+              maybeSingle: jest.fn().mockResolvedValue({ data: { key: 'site_config', value: { active_promo: 'none', promo_discount_percent: 0 } }, error: null }),
+            })),
+          })),
+          upsert,
+        };
+      }
+
+      return {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+      };
+    });
+
+    await expect(handleAdminSiteSettingsCommand('make a 30% off on shampoo')).resolves.toMatchObject({
+      handled: true,
+      message: expect.stringContaining('30%'),
+    });
+    expect(upsert).toHaveBeenCalled();
+  });
+
   it("rejects invalid promotion percentages and blocks non-admins", async () => {
     const adminUser = { id: 'admin-1', name: 'Admin', phone: '01225502425', role: 'admin' };
     const customerUser = { id: 'cust-1', name: 'Customer', phone: '01000000000', role: 'customer' };
