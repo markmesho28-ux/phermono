@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { X, ChevronDown, ChevronUp, Filter, Sparkles, ArrowUpDown, Tag, PlusCircle, Edit2, Trash2 } from "lucide-react";
+import { X, Filter, Sparkles, ArrowUpDown, Tag, PlusCircle, Edit2, Trash2 } from "lucide-react";
 import ProductCard from "./ProductCard";
 import { useData, createUuid, uploadImageFile } from "../contexts/DataContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -44,7 +44,6 @@ export default function CategoryView({
   const [selectedPriceRange, setSelectedPriceRange] = useState("all");
   const [selectedSkinType, setSelectedSkinType] = useState("all");
   const [sortBy, setSortBy] = useState("price-asc");
-  const [showAllBrands, setShowAllBrands] = useState(false);
 
   useEffect(() => {
     setSelectedSubcategory("all");
@@ -52,7 +51,6 @@ export default function CategoryView({
     setSelectedPriceRange("all");
     setSelectedSkinType("all");
     setSortBy("popular");
-    setShowAllBrands(false);
   }, [categoryId, initialBrand]);
 
   // Always use products from DataContext (Supabase source). Do not fall back to any externally
@@ -243,13 +241,6 @@ export default function CategoryView({
                   <span className="invisible text-[11px] font-bold">Reset Brand</span>
                 )}
               </span>
-              {availableBrands.length > 8 ? (
-                <button type="button" onClick={()=>setShowAllBrands(!showAllBrands)} className="flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-[#7b5333] transition-colors hover:text-[#1d130d] touch-target">
-                  {showAllBrands ? <><span>Show Less</span> <ChevronUp size={13} /></> : <><span>View All ({availableBrands.length})</span> <ChevronDown size={13} /></>}
-                </button>
-              ) : (
-                <span className="invisible whitespace-nowrap text-[11px] font-bold">View All (0)</span>
-              )}
             </div>
           </div>
 
@@ -268,7 +259,7 @@ export default function CategoryView({
               </span>
             </button>
 
-            {(showAllBrands ? availableBrands : availableBrands.slice(0,8)).map((brand)=>{
+            {availableBrands.map((brand)=>{
               const isSelected = selectedBrand===brand;
               const brandCount = brandCountsBySelection.get(brand) ?? 0;
               return (
@@ -414,7 +405,6 @@ export default function CategoryView({
           onBrandAdded={(name) => {
             if (name) {
               setSelectedBrand(name);
-              setShowAllBrands(true);
             }
           }}
         />

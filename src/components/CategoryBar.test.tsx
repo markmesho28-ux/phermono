@@ -10,6 +10,16 @@ describe('CategoryBar', () => {
     { id: 'body', label: 'Body', icon: 'Droplets' as const, color: '#fff', accent: '#000', subcategories: [{ id: 'all', label: 'All' }], brands: [] },
   ];
 
+  it('does not render a Shop Collection button and still triggers category selection when the card is clicked', () => {
+    const onSelect = jest.fn();
+    render(<CategoryBar categories={categories} onSelect={onSelect} />);
+
+    expect(screen.queryByText('Shop Collection')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /category: skin/i })[0]);
+    expect(onSelect).toHaveBeenCalledWith('skin');
+  });
+
   it('does not queue a nested animation-frame reset when the loop snaps back to a valid index', () => {
     const rafSpy = jest.spyOn(window, 'requestAnimationFrame');
     const { container } = render(<CategoryBar categories={categories} />);

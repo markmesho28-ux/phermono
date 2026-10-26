@@ -22,7 +22,8 @@ describe('AuthModal auth flow', () => {
     const onClose = jest.fn();
     loginMock.mockResolvedValue({ user: { name: 'Test User', phone: '01000000000', address: '', governorate: 'أسوان', role: 'customer' } });
 
-    render(<AuthModal open={true} onClose={onClose} />);
+    render(<AuthModal open={true} onClose={onClose} defaultMode="signup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     fireEvent.change(screen.getByPlaceholderText('Enter your registered phone number'), {
       target: { value: '01000000000' },
@@ -59,7 +60,8 @@ describe('AuthModal auth flow', () => {
     const onClose = jest.fn();
     loginMock.mockResolvedValue({ error: 'Invalid credentials' });
 
-    render(<AuthModal open={true} onClose={onClose} />);
+    render(<AuthModal open={true} onClose={onClose} defaultMode="signup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     fireEvent.change(screen.getByPlaceholderText('Enter your registered phone number'), {
       target: { value: '01000000000' },

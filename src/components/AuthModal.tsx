@@ -10,7 +10,7 @@ interface AuthModalProps {
   defaultMode?: 'signin' | 'signup';
 }
 
-export default function AuthModal({ open, onClose, onSuccess, defaultMode = 'signin' }: AuthModalProps) {
+export default function AuthModal({ open, onClose, onSuccess, defaultMode = 'signup' }: AuthModalProps) {
   const { login, signup } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>(defaultMode);
   const [form, setForm] = useState({ name: '', phone: '', address: '', password: '', governorate: '' });

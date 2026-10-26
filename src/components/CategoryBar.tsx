@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Category } from '../types';
 
 interface CategoryBarProps {
@@ -371,12 +371,6 @@ export default function CategoryBar({ categories, activeId = null, onSelect }: C
                   </div>
                 </div>
 
-                <div className="absolute inset-x-3.5 sm:inset-x-4 bottom-3.5 sm:bottom-4 z-20 flex justify-center pointer-events-none">
-                  <div className="inline-flex items-center justify-center gap-1.5 rounded-full border border-white/20 bg-[#111111]/80 px-3 py-1.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap text-white shadow-[0_10px_20px_rgba(0,0,0,0.22)] tracking-[0.08em] backdrop-blur-sm">
-                    <ShoppingBag size={11} className="text-[#f5d9a6] shrink-0" />
-                    <span>Shop Collection</span>
-                  </div>
-                </div>
               </button>
             );
           })}

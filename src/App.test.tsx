@@ -103,6 +103,21 @@ describe('App overlay interactions', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('opens guest auth entry points in sign up mode by default', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.getByRole('button', { name: 'Sign Up' })).toHaveClass('bg-brand-black');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bag' }));
+    expect(screen.getByRole('button', { name: 'Sign Up' })).toHaveClass('bg-brand-black');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Track Orders' }));
+    expect(screen.getByRole('button', { name: 'Sign Up' })).toHaveClass('bg-brand-black');
+  });
+
   it('does not re-trigger the catalog refresh on repeated renders while the catalog is still empty', () => {
     sessionStorage.setItem('phermono_active_category_v1', 'skincare');
     const refreshCatalog = jest.fn();
