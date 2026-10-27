@@ -694,6 +694,55 @@ const SEMANTIC_EXPANSION: Record<string, string[]> = {
   "جارنييه":   ["garnier"],
   "هيد اند شولدرز": ["head and shoulders", "head & shoulders"],
   "اوجيكس":   ["ogx"],
+  // ── Deodorant — main category (Arabic meanings, Arabizi, phonetic variants) ──────────────────
+  // These all mean "deodorant" or describe the desire to control body odour.
+  // Reusable: add further entries here when onboarding new deodorant-adjacent concepts.
+  // Stored catalog values: category="Deodorant", subcategories="Roll-On","Spray","Stick"
+  "ديودرانت":      ["deodorant", "odor control"],
+  "ديودرنت":       ["deodorant", "odor control"],
+  "ديودورانت":     ["deodorant", "odor control"],
+  "ديو":           ["deodorant", "odor control"],
+  "مزيل عرق":      ["deodorant", "odor control"],
+  "مزيل للعرق":    ["deodorant", "odor control"],
+  "مزيلات العرق":  ["deodorant", "odor control"],
+  "مزيل ريحة العرق": ["deodorant", "odor control"],
+  "ريحة العرق":    ["deodorant", "odor control"],
+  "مزيل":          ["deodorant", "odor control"],
+  "عرق":           ["deodorant", "odor control"],
+  deodorant:        ["deodorant", "odor control", "roll-on", "spray"],
+  deo:              ["deodorant", "odor control"],
+
+  // ── Deodorant — Roll-On subcategory ────────────────────────────────────────────
+  // Stored catalog value: subcategory="Roll-On"
+  "رول أون":   ["roll-on", "deodorant", "roll on"],
+  "رول اون":   ["roll-on", "deodorant", "roll on"],
+  "رول-أون":   ["roll-on", "deodorant", "roll on"],
+  "رولون":     ["roll-on", "deodorant", "roll on"],
+  "رول":       ["roll-on", "deodorant"],
+  "مزيل عرق بالرول": ["roll-on", "deodorant"],
+  "rollon":     ["roll-on", "deodorant"],
+  "roll on":    ["roll-on", "deodorant"],
+  "roll-on":    ["roll-on", "deodorant"],
+
+  // ── Deodorant — Spray subcategory ────────────────────────────────────────────
+  // Stored catalog value: subcategory="Spray"
+  // Note: "سبراي" alone is intentionally NOT mapped here — it is ambiguous
+  // (hair spray vs. deodorant spray). Disambiguation happens in inferProductTypeHints
+  // and extractIntentSignals when explicit deodorant-context words are present.
+  "سبراي ديودرانت": ["spray", "deodorant"],
+  "سبراي مزيل":     ["spray", "deodorant"],
+  "بخاخ مزيل":      ["spray", "deodorant"],
+  "بخاخ عرق":       ["spray", "deodorant"],
+  "مزيل عرق بخاخ":  ["spray", "deodorant"],
+  "مزيل عرق سبراي": ["spray", "deodorant"],
+
+  // ── Deodorant — Stick subcategory ────────────────────────────────────────────
+  // Stored catalog value: subcategory="Stick"
+  // Currently 0 products in this subcategory; recognised as a type but never fabricated.
+  "ستيك مزيل":     ["stick", "deodorant"],
+  "مزيل عرق ستيك": ["stick", "deodorant"],
+  "ديودرانت ستيك": ["stick", "deodorant"],
+
 
   // ── Follow-up signal words ───────────────────────────────────────────────
   "أي نوع":    [],
@@ -703,6 +752,817 @@ const SEMANTIC_EXPANSION: Record<string, string[]> = {
   "أغلى":      ["expensive"],
   "تاني":      [],
   "كمان":      [],
+};
+
+// ─── Skin Care Category Architecture (Strictly Separated Two-Path System) ────
+// Subcategory exact database identifiers:
+export const SKIN_CARE_SUBCATEGORIES = [
+  "Face cleanser",
+  "body lotion",
+  "Face Creams & Moisturizers",
+  "BODY WASH",
+  "SunSCREEN",
+  "NAIL OIL",
+  "LIP PALM",
+  "Serum",
+  "eye contour",
+  "body Urea",
+  "Hair Lotion",
+  "Hair Serum",
+  "Hair Mask",
+  "body cream",
+  "Toner",
+  "Foundation",
+  "Body Oil",
+  "LIP GLOSS",
+  "bikini",
+  "Hand cream",
+] as const;
+
+export type SkinCareSubcategory = typeof SKIN_CARE_SUBCATEGORIES[number];
+
+export interface SubcategoryMatchResult {
+  categoryId: 'skincare';
+  subcategoryId: SkinCareSubcategory;
+  matchType: 'phonetic' | 'semantic' | 'both';
+  matchedTerm: string;
+  confidence: number;
+}
+
+export interface SubcategoryResolutionResult {
+  categoryId: 'skincare';
+  subcategoryId: SkinCareSubcategory | 'Skin Care';
+  matchType: 'phonetic' | 'semantic' | 'both';
+  matchedTerm: string;
+  isAmbiguous?: boolean;
+  ambiguousOptions?: string[];
+  clarifyingQuestion?: string;
+}
+
+/**
+ * Reusable phonetic normalizer for Arabic transliterations of English product sounds.
+ * Normalizes common Egyptian phonetic substitutions (e.g. پ->ب, ڤ->ف, ص->س, alef variants,
+ * diacritics, and tatweel) while strictly preserving word identity.
+ */
+export const normalizeArabicPhonetic = (input: string): string => {
+  return String(input ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[أإآء]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[ًٌٍَُِّْ]/g, '')
+    .replace(/[\u0640]/g, '')
+    .replace(/پ/g, 'ب')
+    .replace(/ڤ/g, 'ف')
+    .replace(/ص/g, 'س')
+    .replace(/[\p{P}\p{S}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
+ * PATH A: Phonetic transliteration of English names into Arabic script.
+ * Identifies when Egyptian Arabic speakers write the SOUND of an English product or
+ * subcategory name using Arabic letters (e.g. بادي لوشن, فيس كلينزر, صن سكرين, سيروم).
+ * Must NOT match pure Arabic translations or semantic equivalents.
+ */
+export const matchSkinCarePhonetic = (text: string): SubcategoryMatchResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Hair subcategories inside Skin Care hierarchy (e.g. هير لوشن, هير سيروم, هير ماسك)
+  if (/(?:هير|هير)\s*(?:لوشن|لوسيون|لوسن)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Lotion', matchType: 'phonetic', matchedTerm: 'هير لوشن', confidence: 0.95 };
+  }
+  if (/(?:هير)\s*(?:سيروم|سيرم|سيرام)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Serum', matchType: 'phonetic', matchedTerm: 'هير سيروم', confidence: 0.95 };
+  }
+  if (/(?:هير)\s*(?:ماسك|مسك)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Mask', matchType: 'phonetic', matchedTerm: 'هير ماسك', confidence: 0.95 };
+  }
+
+  // Face Cleanser phonetic transliteration (e.g. فيس كلينزر, كلينزر, كلينسر)
+  if (/(?:فيس\s*)?كلين[زس][ي]?ر/i.test(norm) || /فيس\s*كلين/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Face cleanser', matchType: 'phonetic', matchedTerm: 'كلينزر', confidence: 0.9 };
+  }
+
+  // Body Wash phonetic transliteration (e.g. بادي ووش, بودي واش)
+  if (/(?:بادي|بودي|بدي)\s*(?:ووش|واش|وش)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'BODY WASH', matchType: 'phonetic', matchedTerm: 'بادي واش', confidence: 0.95 };
+  }
+
+  // Body Urea phonetic transliteration (e.g. بادي يوريا, بودي يوريا)
+  if (/(?:بادي|بودي|بدي)\s*يوريا|يوريا\s*(?:بادي|بودي)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body Urea', matchType: 'phonetic', matchedTerm: 'بادي يوريا', confidence: 0.95 };
+  }
+
+  // Body Lotion phonetic transliteration (e.g. بادي لوشن, بودي لوشن, بادي لوسيون, بودي لوسن)
+  if (/(?:بادي|بودي|بدي)\s*(?:لوشن|لوسيون|لوسن)/i.test(norm) || /(?:لوشن|لوسيون|لوسن)\s*(?:بادي|بودي|بدي)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body lotion', matchType: 'phonetic', matchedTerm: 'بادي لوشن', confidence: 0.95 };
+  }
+
+  // Body Cream phonetic transliteration (e.g. بادي كريم, بودي كريم)
+  if (/(?:بادي|بودي|بدي)\s*كريم|كريم\s*(?:بادي|بودي|بدي)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body cream', matchType: 'phonetic', matchedTerm: 'بادي كريم', confidence: 0.9 };
+  }
+
+  // Body Oil phonetic transliteration (e.g. بادي اويل, بودي اويل)
+  if (/(?:بادي|بودي|بدي)\s*(?:اويل|أويل|ايل)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Body Oil', matchType: 'phonetic', matchedTerm: 'بادي اويل', confidence: 0.9 };
+  }
+
+  // Sunscreen phonetic transliteration (e.g. صن سكرين, سن سكرين, صنسكرين, صن بلوك, سن بلوك)
+  if (/(?:صن|سن|سان)\s*(?:سكرين|سکرین|بلوك|بلوق)|(?:صنسكرين|سنكرين|صنبلوك)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'SunSCREEN', matchType: 'phonetic', matchedTerm: 'صن سكرين', confidence: 0.95 };
+  }
+
+  // Nail Oil phonetic transliteration (e.g. نيل اويل, نايل اويل)
+  if (/(?:نيل|نايل)\s*(?:اويل|أويل|ايل)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'NAIL OIL', matchType: 'phonetic', matchedTerm: 'نيل اويل', confidence: 0.95 };
+  }
+
+  // Lip Palm (Balm) phonetic transliteration (e.g. ليب بالم, ليب بلم, ليب بلام, ليب پالم)
+  if (/(?:ليب|ليپ)\s*(?:بالم|بلم|بلام|پالم|پلم)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'LIP PALM', matchType: 'phonetic', matchedTerm: 'ليب بالم', confidence: 0.95 };
+  }
+
+  // Lip Gloss phonetic transliteration (e.g. ليب جلوس, ليب جلوص, ليب جلاوس)
+  if (/(?:ليب|ليپ)\s*(?:جلوس|جلوص|جلاوس|جلوش)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'LIP GLOSS', matchType: 'phonetic', matchedTerm: 'ليب جلوس', confidence: 0.95 };
+  }
+
+  // Eye Contour phonetic transliteration (e.g. آي كونتور, اي كونتور, كونتور العين)
+  if (/(?:اي|آي|اى)\s*كونتور|كونتور\s*(?:اي|آي|اى|العين)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'eye contour', matchType: 'phonetic', matchedTerm: 'اي كونتور', confidence: 0.95 };
+  }
+
+  // Hand cream phonetic transliteration (e.g. هاند كريم, هاندكريم)
+  if (/هاند\s*كريم|هاندكريم/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hand cream', matchType: 'phonetic', matchedTerm: 'هاند كريم', confidence: 0.95 };
+  }
+
+  // Face Creams & Moisturizers phonetic transliteration (e.g. فيس كريم, مويستشرايزر, مويسترايزر)
+  if (/فيس\s*كريم|مويست[ش]?ر[ا]?ي?ز[ي]?ر/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Face Creams & Moisturizers', matchType: 'phonetic', matchedTerm: 'فيس كريم', confidence: 0.9 };
+  }
+
+  // Toner phonetic transliteration (e.g. تونر, تونار)
+  if (/(?:^|\s)(?:ال)?(?:تونر|تونار)(?:$|\s)/i.test(norm) || /تونر/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Toner', matchType: 'phonetic', matchedTerm: 'تونر', confidence: 0.9 };
+  }
+
+  // Foundation phonetic transliteration (e.g. فاونديشن, فونديشن, فوندشين)
+  if (/ف[ا]?ون?د[اي]?ش[ي]?ن/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Foundation', matchType: 'phonetic', matchedTerm: 'فاونديشن', confidence: 0.9 };
+  }
+
+  // Bikini phonetic transliteration (e.g. بيكيني, بكيني)
+  if (/(?:^|\s)(?:ال)?ب[ي]?كيني(?:$|\s)/i.test(norm) || /ب[ي]?كيني/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'bikini', matchType: 'phonetic', matchedTerm: 'بكيني', confidence: 0.9 };
+  }
+
+  // Serum phonetic transliteration (e.g. سيروم, سيرم)
+  if (/(?:^|\s)(?:ال)?(?:سيروم|سيرم|سيرام)(?:$|\s)/i.test(norm) || /(?:سيروم|سيرم|سيرام)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Serum', matchType: 'phonetic', matchedTerm: 'سيروم', confidence: 0.85 };
+  }
+
+  return null;
+};
+
+/**
+ * PATH B: Accurate Arabic translation and semantic equivalents.
+ * Separately determines the actual Arabic meaning of each subcategory and matches natural
+ * Arabic expressions describing function or need (e.g. غسول الوجه, مرطب للجسم, واقي شمس, كريم العين).
+ * Must NOT mistake transliteration sounds for semantic meaning.
+ */
+export const matchSkinCareSemantic = (text: string): SubcategoryMatchResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Hair subcategories inside Skin Care hierarchy
+  if (/لوشن\s*(?:شعر|للشعر|فروة)/i.test(norm) || /(?:شعر|للشعر)\s*لوشن/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Lotion', matchType: 'semantic', matchedTerm: 'لوشن للشعر', confidence: 0.95 };
+  }
+  if (/سيروم\s*(?:شعر|للشعر)|مصل\s*(?:شعر|للشعر)/i.test(norm) || /(?:شعر|للشعر)\s*(?:سيروم|مصل)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Serum', matchType: 'semantic', matchedTerm: 'سيروم للشعر', confidence: 0.95 };
+  }
+  if (/ماسك\s*(?:شعر|للشعر)|قناع\s*(?:شعر|للشعر)|حمام\s*كريم/i.test(norm) || /(?:شعر|للشعر)\s*(?:ماسك|قناع)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hair Mask', matchType: 'semantic', matchedTerm: 'ماسك للشعر', confidence: 0.95 };
+  }
+
+  // Sunscreen: واقي شمس, كريم حماية من الشمس, واقي من الشمس, حماية من الشمس, حاجة تحمي من الشمس
+  if (/(?:واقي|حماي[هة]|تحمي|كريم)\s*(?:من\s*)?(?:اشع[هة]\s*)?(?:ال)?شمس/i.test(norm) || (/واقي/i.test(norm) && /شمس/i.test(norm))) {
+    return { categoryId: 'skincare', subcategoryId: 'SunSCREEN', matchType: 'semantic', matchedTerm: 'واقي شمس', confidence: 0.95 };
+  }
+
+  // Foundation: كريم أساس, مستحضر أساس للمكياج, كريم اساس (check before generic face cream)
+  if (/كريم\s*(?:ال)?اساس|مستحضر\s*(?:ال)?اساس/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Foundation', matchType: 'semantic', matchedTerm: 'كريم أساس', confidence: 0.95 };
+  }
+
+  // Eye contour: كريم العين, مرطب حول العين, جفاف حوالين العين, هالات سوداء, تجاعيد العين
+  if (/(?:كريم|مرطب|سيروم|عناي[هة]|جفاف|هالات|تجاعيد|انتفاخ|منتج)?\s*(?:ل)?(?:منطق[هة]|محيط)?\s*(?:حولين|حول|تحت)?\s*(?:ال)?(?:عين|عيون)|(?:حولين|حول|تحت|محيط)\s*(?:ال)?(?:عين|عيون)/i.test(norm)) {
+    if (/عين|عيون/i.test(norm)) {
+      return { categoryId: 'skincare', subcategoryId: 'eye contour', matchType: 'semantic', matchedTerm: 'كريم العين', confidence: 0.95 };
+    }
+  }
+
+  // Nail oil: زيت أظافر, زيت للأظافر, عناية بالأظافر, زيت ظوافر
+  if (/زيت\s*(?:ل|لل|لـ|لـل|ال)?(?:اظافر|ظوافر|ضوافر)|عناي[هة]\s*ب(?:ال)?اظافر|مقوي\s*(?:ال)?اظافر/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'NAIL OIL', matchType: 'semantic', matchedTerm: 'زيت أظافر', confidence: 0.95 };
+  }
+
+  // Lip Palm / Balm: مرطب شفاه, مرطب شفايف, بلسم شفاه, بلسم شفايف, حاجة ترطب شفايفي, تشقق الشفايف
+  if (/(?:مرطب|بلسم|ترطيب|تشقق|حماي[هة])\s*(?:ل|لل|لـ|ال)?(?:شفاه|شفايف|شفايفي|الشفاه|الشفايف)/i.test(norm) || /ترطب\s*شفايفي/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'LIP PALM', matchType: 'semantic', matchedTerm: 'مرطب شفاه', confidence: 0.95 };
+  }
+
+  // Lip Gloss: ملمع شفاه, جلوس شفاه, ملمع شفايف, تلميع الشفاه, لمعان للشفايف
+  if (/(?:ملمع|جلوس|تلميع|لمعان)\s*(?:ل|لل|ال)?(?:شفاه|شفايف|الشفاه|الشفايف)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'LIP GLOSS', matchType: 'semantic', matchedTerm: 'ملمع شفاه', confidence: 0.95 };
+  }
+
+  // Hand cream: كريم إيد, كريم لليدين, مرطب اليدين, كريم يدين, جفاف الايد
+  if (/(?:كريم|مرطب|ترطيب|جفاف)\s*(?:ل|لل|لـ|ال)?(?:ايد|يد|ايدين|يدين|كفوف|الايد|اليد|اليدين|الايدين)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Hand cream', matchType: 'semantic', matchedTerm: 'كريم لليدين', confidence: 0.95 };
+  }
+
+  // Bikini: تفتيح المناطق الحساسة, كريم بكيني, العناية بالمنطقة الحساسة
+  if (/(?:تفتيح|ترطيب|عناي[هة]|كريم)?\s*(?:ب)?(?:ال)?(?:منطق[هة]|مناطق)?\s*(?:ال)?(?:حساس[هة]|بكيني|بيكيني)/i.test(norm)) {
+    if (/حساس[هة]|بكيني|بيكيني/i.test(norm)) {
+      return { categoryId: 'skincare', subcategoryId: 'bikini', matchType: 'semantic', matchedTerm: 'كريم بكيني', confidence: 0.95 };
+    }
+  }
+
+  // Body Wash: غسول الجسم, شاور جل, منظف الجسم, صابون استحمام للجسم
+  if (/غسول\s*(?:ل|لل|ال)?(?:جسم|جسمي)|شاور\s*جل|منظف\s*(?:ل|لل|ال)?(?:جسم|جسمي)|صابون\s*استحمام/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'BODY WASH', matchType: 'semantic', matchedTerm: 'غسول الجسم', confidence: 0.95 };
+  }
+
+  // Body Urea: يوريا للجسم, كريم يوريا للجسم, مرطب يوريا
+  if (/يوريا\s*(?:ل|لل|ال)?(?:جسم|جسمي)|(?:كريم|مرطب)\s*يوريا/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body Urea', matchType: 'semantic', matchedTerm: 'يوريا للجسم', confidence: 0.95 };
+  }
+
+  // Body Oil: زيت جسم, زيت للجسم, زيت ترطيب الجسم
+  if (/زيت\s*(?:ل|لل|ال)?(?:جسم|جسمي)|زيت\s*ترطيب\s*(?:ال)?جسم/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Body Oil', matchType: 'semantic', matchedTerm: 'زيت جسم', confidence: 0.95 };
+  }
+
+  // Body Cream: كريم جسم, كريم ترطيب الجسم, كريم للجسم
+  if (/كريم\s*(?:ل|لل|ال)?(?:جسم|جسمي)|كريم\s*ترطيب\s*(?:ال)?جسم/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body cream', matchType: 'semantic', matchedTerm: 'كريم جسم', confidence: 0.95 };
+  }
+
+  // Body Lotion: لوشن للجسم, مرطب للجسم, مستحضر ترطيب الجسم
+  if (/لوشن\s*(?:ل|لل|ال)?(?:جسم|جسمي)|مرطب\s*(?:ل|لل|ال)?(?:جسم|جسمي)|ترطيب\s*(?:ال)?جسم|مستحضر\s*ترطيب\s*(?:ال)?جسم/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'body lotion', matchType: 'semantic', matchedTerm: 'مرطب للجسم', confidence: 0.95 };
+  }
+
+  // Face Cleanser: غسول الوجه, غسول الوش, منظف الوجه, منظف البشرة, تنظيف الوش, تنظف وشي
+  if (/غسول\s*(?:ل|لل|لـ|ال)?(?:وجه|وش|بشره|الوجه|الوش|البشره)|منظف\s*(?:ل|لل|لـ|ال)?(?:وجه|وش|بشره|الوجه|الوش|البشره)|تنظيف\s*(?:ل|لل|لـ|ال)?(?:وجه|وش|بشره|الوجه|الوش|البشره)|تنظف\s*(?:وجهي|وشي|بشرتي)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Face cleanser', matchType: 'semantic', matchedTerm: 'غسول الوجه', confidence: 0.95 };
+  }
+
+  // Toner: تونر للوجه, منقي مسام الوجه, قابض مسام
+  if (/تونر\s*(?:ل|لل|ال)?(?:وجه|وش|بشره)|منقي\s*(?:ال)?مسام|قابض\s*(?:ال)?مسام/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Toner', matchType: 'semantic', matchedTerm: 'تونر للوجه', confidence: 0.95 };
+  }
+
+  // Face Creams & Moisturizers: كريم وجه, مرطب وش, كريم ترطيب البشرة, ترطيب الوش, حاجة ترطب وشي
+  if (/(?:كريم|مرطب|ترطيب)\s*(?:ل|لل|لـ|ال)?(?:وجه|وش|بشره|الوجه|الوش|البشره)|ترطب\s*(?:وشي|وجهي|بشرتي)|كريم\s*(?:نهاري|ليلي)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Face Creams & Moisturizers', matchType: 'semantic', matchedTerm: 'كريم ترطيب البشرة', confidence: 0.95 };
+  }
+
+  // Serum: مصل للبشرة, مصل للوجه, سيروم للبشرة
+  if (/مصل\s*(?:ل|لل|ال)?(?:بشره|وجه|وش|البشره|الوجه|الوش)|سيروم\s*(?:ل|لل|ال)?(?:بشره|وجه|وش|نضاره)/i.test(norm)) {
+    return { categoryId: 'skincare', subcategoryId: 'Serum', matchType: 'semantic', matchedTerm: 'مصل للبشرة', confidence: 0.95 };
+  }
+
+  return null;
+};
+
+/**
+ * Unified Skin Care subcategory resolver combining Path A (phonetic) and Path B (semantic).
+ * Detects whether a request is phonetic, semantic, or both.
+ * Handles ambiguity resolution using body-area clues or conversation history.
+ */
+export const resolveSkinCareSubcategory = (
+  text: string,
+  conversationHistory: Array<{ sender: 'user' | 'bot'; text: string }> = []
+): SubcategoryResolutionResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+
+  const phoneticMatch = matchSkinCarePhonetic(raw);
+  const semanticMatch = matchSkinCareSemantic(raw);
+
+  if (phoneticMatch && semanticMatch) {
+    if (phoneticMatch.subcategoryId === semanticMatch.subcategoryId) {
+      return {
+        categoryId: 'skincare',
+        subcategoryId: phoneticMatch.subcategoryId,
+        matchType: 'both',
+        matchedTerm: `${phoneticMatch.matchedTerm} + ${semanticMatch.matchedTerm}`,
+      };
+    }
+    // If they differ, semantic takes priority as it specifies explicit meaning
+    return {
+      categoryId: 'skincare',
+      subcategoryId: semanticMatch.subcategoryId,
+      matchType: 'semantic',
+      matchedTerm: semanticMatch.matchedTerm,
+    };
+  }
+
+  if (phoneticMatch) {
+    return {
+      categoryId: 'skincare',
+      subcategoryId: phoneticMatch.subcategoryId,
+      matchType: 'phonetic',
+      matchedTerm: phoneticMatch.matchedTerm,
+    };
+  }
+
+  if (semanticMatch) {
+    return {
+      categoryId: 'skincare',
+      subcategoryId: semanticMatch.subcategoryId,
+      matchType: 'semantic',
+      matchedTerm: semanticMatch.matchedTerm,
+    };
+  }
+
+  // Ambiguity Resolution: handle generic isolated words like كريم, زيت, غسول, سيروم, لوشن
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Check history context helper
+  const getHistoricalArea = (): 'face' | 'body' | 'hand' | 'hair' | 'nail' | 'eye' | null => {
+    if (!conversationHistory || conversationHistory.length === 0) return null;
+    const rev = conversationHistory.slice().reverse();
+    for (const msg of rev) {
+      const hNorm = normalizeArabicPhonetic(msg.text);
+      if (/وجه|وش|بشره/i.test(hNorm)) return 'face';
+      if (/شعر/i.test(hNorm)) return 'hair';
+      if (/جسم|جلد/i.test(hNorm)) return 'body';
+      if (/ايد|يد/i.test(hNorm)) return 'hand';
+      if (/عين|عيون/i.test(hNorm)) return 'eye';
+      if (/اظافر|ظوافر/i.test(hNorm)) return 'nail';
+    }
+    return null;
+  };
+
+  // Ambiguous: "كريم" alone (e.g. عايز كريم, طب وريني كريم, كريم) without specified area
+  if (/(?:^|\s)(?:كريم|الكريم)(?:$|\s)/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'face') {
+      return { categoryId: 'skincare', subcategoryId: 'Face Creams & Moisturizers', matchType: 'semantic', matchedTerm: 'كريم للوجه (بالسياق)' };
+    }
+    if (historical === 'body') {
+      return { categoryId: 'skincare', subcategoryId: 'body cream', matchType: 'semantic', matchedTerm: 'كريم للجسم (بالسياق)' };
+    }
+    if (historical === 'hand') {
+      return { categoryId: 'skincare', subcategoryId: 'Hand cream', matchType: 'semantic', matchedTerm: 'كريم لليدين (بالسياق)' };
+    }
+    return {
+      categoryId: 'skincare',
+      subcategoryId: 'Face Creams & Moisturizers',
+      matchType: 'semantic',
+      matchedTerm: 'كريم',
+      isAmbiguous: true,
+      ambiguousOptions: ['Face Creams & Moisturizers', 'body cream', 'Hand cream'],
+      clarifyingQuestion: 'حابب كريم للوجه ولا للجسم ولا لليدين؟',
+    };
+  }
+
+  // Ambiguous: "زيت" alone
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:زيت|الـ?زيت)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'body') {
+      return { categoryId: 'skincare', subcategoryId: 'Body Oil', matchType: 'semantic', matchedTerm: 'زيت للجسم (بالسياق)' };
+    }
+    if (historical === 'nail') {
+      return { categoryId: 'skincare', subcategoryId: 'NAIL OIL', matchType: 'semantic', matchedTerm: 'زيت للأظافر (بالسياق)' };
+    }
+    return {
+      categoryId: 'skincare',
+      subcategoryId: 'Body Oil',
+      matchType: 'semantic',
+      matchedTerm: 'زيت',
+      isAmbiguous: true,
+      ambiguousOptions: ['Body Oil', 'NAIL OIL'],
+      clarifyingQuestion: 'بتدور على زيت للجسم ولا للأظافر ولا للشعر؟',
+    };
+  }
+
+  // Ambiguous: "غسول" alone
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:غسول|الـ?غسول)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'body') {
+      return { categoryId: 'skincare', subcategoryId: 'BODY WASH', matchType: 'semantic', matchedTerm: 'غسول للجسم (بالسياق)' };
+    }
+    if (historical === 'face') {
+      return { categoryId: 'skincare', subcategoryId: 'Face cleanser', matchType: 'semantic', matchedTerm: 'غسول للوجه (بالسياق)' };
+    }
+    return {
+      categoryId: 'skincare',
+      subcategoryId: 'Face cleanser',
+      matchType: 'semantic',
+      matchedTerm: 'غسول',
+      isAmbiguous: true,
+      ambiguousOptions: ['Face cleanser', 'BODY WASH'],
+      clarifyingQuestion: 'محتاج غسول للوجه ولا غسول للجسم (شاور جل)؟',
+    };
+  }
+
+  // Ambiguous: "سيروم" alone
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:سيروم|سيرم|الـ?سيروم)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'hair') {
+      return { categoryId: 'skincare', subcategoryId: 'Hair Serum', matchType: 'semantic', matchedTerm: 'سيروم للشعر (بالسياق)' };
+    }
+    // Default to face serum if no hair context
+    return { categoryId: 'skincare', subcategoryId: 'Serum', matchType: 'semantic', matchedTerm: 'سيروم للبشرة' };
+  }
+
+  // Main category requests: "عناية بالبشرة", "منتجات البشرة", "سكين كير", "روتين البشرة"
+  if (/عناي[هة]\s*ب(?:ال)?بشره|منتجات\s*بشره|سكين\s*كير|اسكين\s*كير|روتين\s*(?:ال)?بشره/i.test(norm)) {
+    const isPhonetic = /سكين\s*كير|اسكين\s*كير/i.test(norm);
+    return {
+      categoryId: 'skincare',
+      subcategoryId: 'Skin Care',
+      matchType: isPhonetic ? 'phonetic' : 'semantic',
+      matchedTerm: isPhonetic ? 'سكين كير' : 'عناية بالبشرة',
+    };
+  }
+
+  return null;
+};
+
+// ─── Haircare Category Architecture (Strictly Separated Two-Path System) ─────
+// Subcategory exact database identifiers:
+export const HAIRCARE_SUBCATEGORIES = [
+  "Shampoo",
+  "Conditioner",
+  "ampoules",
+  "serum",
+  "mask",
+  "leave in",
+  "spray",
+  "hair water",
+  "scalp",
+  "hair mist",
+  "EYELASH SERUM",
+  "Oil",
+  "Hair Lotion",
+  "Cream",
+  "fb",
+] as const;
+
+export type HaircareSubcategory = typeof HAIRCARE_SUBCATEGORIES[number];
+
+export interface HaircareMatchResult {
+  categoryId: 'haircare';
+  subcategoryId: HaircareSubcategory;
+  matchType: 'phonetic' | 'semantic' | 'both';
+  matchedTerm: string;
+  confidence: number;
+}
+
+export interface HaircareResolutionResult {
+  categoryId: 'haircare';
+  subcategoryId: HaircareSubcategory | 'Haircare';
+  matchType: 'phonetic' | 'semantic' | 'both';
+  matchedTerm: string;
+  isAmbiguous?: boolean;
+  ambiguousOptions?: string[];
+  clarifyingQuestion?: string;
+}
+
+/**
+ * PATH A: Phonetic transliteration of English names into Arabic script for Haircare.
+ * Identifies when users write the SOUND of an English Haircare subcategory name using Arabic letters
+ * (e.g. شامبو, كوندشنر, أمبولز, ليف إن, آيلاش سيروم, سكالپ, هير ووتر, هير ميست).
+ * Must NOT match pure Arabic translations or semantic equivalents.
+ */
+export const matchHaircarePhonetic = (text: string): HaircareMatchResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Eyelash serum: آيلاش سيروم, ايلاش سيروم, لاش سيروم
+  if (/(?:اي|آي|اى)?\s*لاش\s*(?:سيروم|سيرم|سيرام)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'EYELASH SERUM', matchType: 'phonetic', matchedTerm: 'ايلاش سيروم', confidence: 0.95 };
+  }
+
+  // Hair water: هير ووتر, هير واتر, هير وتر
+  if (/(?:هير|شعر)\s*(?:ووتر|واتر|وتر)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'hair water', matchType: 'phonetic', matchedTerm: 'هير ووتر', confidence: 0.95 };
+  }
+
+  // Hair mist: هير ميست, هير مست
+  if (/(?:هير\s*(?:ميست|مست)|(?:ميست|مست)\s*شعر)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'hair mist', matchType: 'phonetic', matchedTerm: 'هير ميست', confidence: 0.95 };
+  }
+
+  // Hair Lotion: هير لوشن, هير لوسيون, هير لوسن
+  if (/(?:هير\s*(?:لوشن|لوسيون|لوسن)|(?:لوشن|لوسيون|لوسن)\s*شعر)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Hair Lotion', matchType: 'phonetic', matchedTerm: 'هير لوشن', confidence: 0.95 };
+  }
+
+  // Leave-in: ليف إن, ليف ان, ليفان
+  if (/(?:ليف\s*(?:ان|إن)|ليفان)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'leave in', matchType: 'phonetic', matchedTerm: 'ليف ان', confidence: 0.95 };
+  }
+
+  // Scalp: سكالپ, سكالب
+  if (/(?:^|\s)(?:ال)?سكال[بپ](?:$|\s)|سكال[بپ]/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'scalp', matchType: 'phonetic', matchedTerm: 'سكالب', confidence: 0.95 };
+  }
+
+  // Conditioner: كوندشنر, كونديشنر, كوندشينر, كنديشنر
+  if (/ك[و]?ند[ي]?ش[ي]?ن[ي]?ر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Conditioner', matchType: 'phonetic', matchedTerm: 'كونديشنر', confidence: 0.95 };
+  }
+
+  // Ampoules: أمبولز, امبولز, أمبول, امبول, امبولات
+  if (/[اأ]م?ن?بول[زس]?|[اأ]ن?بولات/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'ampoules', matchType: 'phonetic', matchedTerm: 'امبولز', confidence: 0.95 };
+  }
+
+  // Shampoo: شامبو, شمبو, شامبوا
+  if (/شامبو|شمبو|شامبوا/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Shampoo', matchType: 'phonetic', matchedTerm: 'شامبو', confidence: 0.95 };
+  }
+
+  // Hair oil: هير اويل
+  if (/(?:هير\s*(?:اويل|أويل|ايل)|(?:اويل|أويل|ايل)\s*شعر)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Oil', matchType: 'phonetic', matchedTerm: 'هير اويل', confidence: 0.9 };
+  }
+
+  // Hair cream: هير كريم
+  if (!/(?:حمام|عين|عيون|وجه|وش|ايد|يد|هاند|جسم|بادي|بودي|اساس|أساس|مرطب)/.test(norm) && /(?:هير\s*كريم|كريم(?:\s*شعر)?)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Cream', matchType: 'phonetic', matchedTerm: 'هير كريم', confidence: 0.9 };
+  }
+
+  // Hair spray: هير سبراي, سبراي شعر
+  if (/(?:هير\s*(?:سبراي|سبراى)|(?:سبراي|سبراى)(?:\s*شعر)?)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'spray', matchType: 'phonetic', matchedTerm: 'سبراي شعر', confidence: 0.9 };
+  }
+
+  // Hair mask: هير ماسك, ماسك شعر
+  if (/(?:هير\s*ماسك|ماسك(?:\s*شعر)?)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'mask', matchType: 'phonetic', matchedTerm: 'ماسك شعر', confidence: 0.9 };
+  }
+
+  // Hair serum: هير سيروم, سيروم شعر
+  if (!norm.includes('رموش') && /(?:هير\s*(?:سيروم|سيرم)|(?:سيروم|سيرم)(?:\s*شعر)?)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'serum', matchType: 'phonetic', matchedTerm: 'هير سيروم', confidence: 0.9 };
+  }
+
+  // fb: اف بي, fb (0 products, unknown meaning)
+  if (/(?:^|\s)(?:اف\s*بي|[إا]ف\s*بي|[إا]ف\s*بى|fb)(?:$|\s)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'fb', matchType: 'phonetic', matchedTerm: 'fb', confidence: 0.9 };
+  }
+
+  return null;
+};
+
+/**
+ * PATH B: Accurate Arabic translation and semantic equivalents for Haircare.
+ * Understands genuine Arabic meanings and functional expressions describing the product type or need
+ * (e.g. بلسم للشعر, حاجة تنعم الشعر بعد الغسيل, سيروم للرموش, حمام كريم, حاجة تتساب على الشعر من غير شطف).
+ * Must NOT mistake transliteration sounds for semantic meaning.
+ */
+export const matchHaircareSemantic = (text: string): HaircareMatchResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Eyelash serum: سيروم للرموش, مستحضر للعناية بالرموش, تطويل وتكثيف الرموش, حاجة لرموشي
+  if (/(?:رموش|رموشي|الرموش)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'EYELASH SERUM', matchType: 'semantic', matchedTerm: 'سيروم للرموش', confidence: 0.95 };
+  }
+
+  // Leave-in: منتج للشعر يترك دون شطف, كريم يترك على الشعر, حاجة تفضل على شعري بعد الشاور, حاجة تتساب على الشعر من غير شطف, بلسم بدون شطف
+  if (/(?:يترك|تترك|تفضل|تتساب)\s*(?:علي|على)?\s*(?:شعر|شعري|الشعر)?|بديل\s*الزيت|(?:دون|من\s*غير|بدون)\s*شطف/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'leave in', matchType: 'semantic', matchedTerm: 'منتج يترك على الشعر بدون شطف', confidence: 0.95 };
+  }
+
+  // Conditioner: بلسم للشعر, بلسم, حاجة تنعم الشعر بعد الغسيل, بلسم بعد الشامبو
+  if (/بلسم|حاجه\s*تنعم\s*شعري|تنعيم\s*(?:ال)?شعر\s*بعد\s*الغسيل|ملين\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Conditioner', matchType: 'semantic', matchedTerm: 'بلسم للشعر', confidence: 0.95 };
+  }
+
+  // Mask: حمام كريم للشعر, حمام كريم, ماسك للشعر, قناع للشعر
+  if (/حمام\s*كريم|قناع\s*(?:لل|لـ|ل|ال)?شعر|ماسك\s*(?:لل|لـ|ل|ال)?شعر|علاج\s*مكثف\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'mask', matchType: 'semantic', matchedTerm: 'حمام كريم للشعر', confidence: 0.95 };
+  }
+
+  // Scalp: منتج لفروة الرأس, عناية بفروة الرأس, علاج فروة الرأس, جفاف في فروة الرأس
+  if (/(?:فرو[هة]|جلدة|جلده)\s*(?:ال)?(?:راس|رأس|راسي)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'scalp', matchType: 'semantic', matchedTerm: 'عناية بفروة الرأس', confidence: 0.95 };
+  }
+
+  // Hair water: مستحضر مائي للشعر, مياه للشعر, ماء للعناية بالشعر
+  if (/(?:مستحضر\s*مائي|مياه|ما[ءا])\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'hair water', matchType: 'semantic', matchedTerm: 'مستحضر مائي للشعر', confidence: 0.95 };
+  }
+
+  // Hair mist: معطر للشعر, عطر للشعر, رذاذ معطر للشعر, برفان شعر
+  if (/(?:معطر|عطر|رذاذ\s*معطر|برفان)\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'hair mist', matchType: 'semantic', matchedTerm: 'معطر للشعر', confidence: 0.95 };
+  }
+
+  // Ampoules: أمبولات للشعر, علاج للشعر في أمبولات, كورس أمبولات
+  if (/(?:امبولات|أمبولات|علاج\s*في\s*امبولات|كورس\s*امبولات)/i.test(norm) && (/(?:شعر|شعري|تساقط|فروة)/i.test(norm) || !/(?:بشرة|وجه|وش)/i.test(norm))) {
+    return { categoryId: 'haircare', subcategoryId: 'ampoules', matchType: 'semantic', matchedTerm: 'أمبولات للشعر', confidence: 0.95 };
+  }
+
+  // Hair Lotion: لوشن للشعر, مستحضر سائل للعناية بالشعر
+  if (/(?:لوشن|مستحضر\s*سائل)\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Hair Lotion', matchType: 'semantic', matchedTerm: 'لوشن للشعر', confidence: 0.95 };
+  }
+
+  // Hair Oil: زيت للشعر, زيت مخصص للعناية بالشعر, حمام زيت للشعر
+  if (/(?:زيت|حمام\s*زيت|زيوت)\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Oil', matchType: 'semantic', matchedTerm: 'زيت للشعر', confidence: 0.95 };
+  }
+
+  // Hair Cream: كريم للشعر, كريم للعناية بالشعر, كريم تصفيف الشعر, دهان للشعر
+  if (/(?:كريم|دهان)(?:\s*ت[سص]فيف)?\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Cream', matchType: 'semantic', matchedTerm: 'كريم للشعر', confidence: 0.95 };
+  }
+
+  // Hair Spray: بخاخ للشعر, سبراي للعناية بالشعر, رذاذ للشعر
+  if (/(?:بخاخ|سبراي|رذاذ)\s*(?:لل|لـ|ل|ال)?شعر/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'spray', matchType: 'semantic', matchedTerm: 'بخاخ للشعر', confidence: 0.95 };
+  }
+
+  // Hair Serum: سيروم للعناية بالشعر, مصل للشعر, سيروم لتغذية أو تنعيم الشعر
+  if (/(?:سيروم|مصل)\s*(?:لل|لـ|ل|ال)?(?:شعر|شعري|الشعر|هيشان|اطراف)/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'serum', matchType: 'semantic', matchedTerm: 'سيروم للشعر', confidence: 0.95 };
+  }
+
+  // Shampoo: شامبو للشعر, منظف للشعر, غسيل الشعر, حاجة لغسل الشعر, تنظيف الشعر
+  if (/(?:شامبو|منظف|غسيل|غسل|تنظيف)\s*(?:لل|لـ|ل|ال)?شعر|حاجه\s*(?:ل)?غسل\s*الشعر|شامبو/i.test(norm)) {
+    return { categoryId: 'haircare', subcategoryId: 'Shampoo', matchType: 'semantic', matchedTerm: 'شامبو للشعر', confidence: 0.95 };
+  }
+
+  return null;
+};
+
+/**
+ * Unified Haircare subcategory resolver combining Path A (phonetic) and Path B (semantic).
+ * Detects whether a request is phonetic, semantic, or both.
+ * Handles ambiguity resolution using area clues or conversation history.
+ */
+export const resolveHaircareSubcategory = (
+  text: string,
+  conversationHistory: Array<{ sender: 'user' | 'bot'; text: string }> = []
+): HaircareResolutionResult | null => {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+
+  const norm = normalizeArabicPhonetic(raw);
+
+  // Check history context helper
+  const getHistoricalArea = (): 'hair' | 'face' | 'eyelash' | null => {
+    if (!conversationHistory || conversationHistory.length === 0) return null;
+    const rev = conversationHistory.slice().reverse();
+    for (const msg of rev) {
+      const hNorm = normalizeArabicPhonetic(msg.text);
+      if (/رموش/i.test(hNorm)) return 'eyelash';
+      if (/شعر|فروة|شامبو|بلسم/i.test(hNorm)) return 'hair';
+      if (/وجه|وش|بشرة/i.test(hNorm)) return 'face';
+    }
+    return null;
+  };
+
+  // Ambiguous: "سيروم" alone without hair/eyelash context
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:سيروم|سيرم|الـ?سيروم)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'eyelash' || /رموش/i.test(norm)) {
+      return { categoryId: 'haircare', subcategoryId: 'EYELASH SERUM', matchType: 'semantic', matchedTerm: 'سيروم رموش' };
+    }
+    if (historical === 'hair') {
+      return { categoryId: 'haircare', subcategoryId: 'serum', matchType: 'semantic', matchedTerm: 'سيروم شعر (بالسياق)' };
+    }
+    return {
+      categoryId: 'haircare',
+      subcategoryId: 'serum',
+      matchType: 'semantic',
+      matchedTerm: 'سيروم',
+      isAmbiguous: true,
+      ambiguousOptions: ['serum', 'EYELASH SERUM'],
+      clarifyingQuestion: 'بتدور على سيروم للشعر ولا للرموش ولا للبشرة؟',
+    };
+  }
+
+  // Ambiguous: "زيت" alone without hair context
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:زيت|الـ?زيت|زيوت)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'hair') {
+      return { categoryId: 'haircare', subcategoryId: 'Oil', matchType: 'semantic', matchedTerm: 'زيت للشعر (بالسياق)' };
+    }
+    return {
+      categoryId: 'haircare',
+      subcategoryId: 'Oil',
+      matchType: 'semantic',
+      matchedTerm: 'زيت',
+      isAmbiguous: true,
+      ambiguousOptions: ['Oil'],
+      clarifyingQuestion: 'بتدور على زيت للشعر ولا للجسم ولا للأظافر؟',
+    };
+  }
+
+  // Ambiguous: "كريم" alone without hair context
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:كريم|الـ?كريم)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'hair') {
+      return { categoryId: 'haircare', subcategoryId: 'Cream', matchType: 'semantic', matchedTerm: 'كريم للشعر (بالسياق)' };
+    }
+    return {
+      categoryId: 'haircare',
+      subcategoryId: 'Cream',
+      matchType: 'semantic',
+      matchedTerm: 'كريم',
+      isAmbiguous: true,
+      ambiguousOptions: ['Cream'],
+      clarifyingQuestion: 'بتدور على كريم للشعر ولا للوجه ولا للجسم؟',
+    };
+  }
+
+  // Ambiguous: "سبراي" alone without hair context
+  if (/^\s*(?:عايز|محتاج|فيه|عندكم|اريد)?\s*(?:سبراي|سبراى|الـ?سبراي|بخاخ|الـ?بخاخ)\s*$/i.test(norm)) {
+    const historical = getHistoricalArea();
+    if (historical === 'hair') {
+      return { categoryId: 'haircare', subcategoryId: 'spray', matchType: 'semantic', matchedTerm: 'سبراي شعر (بالسياق)' };
+    }
+    return {
+      categoryId: 'haircare',
+      subcategoryId: 'spray',
+      matchType: 'semantic',
+      matchedTerm: 'سبراي',
+      isAmbiguous: true,
+      ambiguousOptions: ['spray'],
+      clarifyingQuestion: 'بتدور على سبراي للشعر ولا مزيل عرق سبراي؟',
+    };
+  }
+
+  const phoneticMatch = matchHaircarePhonetic(raw);
+  const semanticMatch = matchHaircareSemantic(raw);
+
+  if (phoneticMatch && semanticMatch) {
+    if (phoneticMatch.subcategoryId === semanticMatch.subcategoryId) {
+      return {
+        categoryId: 'haircare',
+        subcategoryId: phoneticMatch.subcategoryId,
+        matchType: 'both',
+        matchedTerm: `${phoneticMatch.matchedTerm} + ${semanticMatch.matchedTerm}`,
+      };
+    }
+    return {
+      categoryId: 'haircare',
+      subcategoryId: semanticMatch.subcategoryId,
+      matchType: 'semantic',
+      matchedTerm: semanticMatch.matchedTerm,
+    };
+  }
+
+  if (phoneticMatch) {
+    return {
+      categoryId: 'haircare',
+      subcategoryId: phoneticMatch.subcategoryId,
+      matchType: 'phonetic',
+      matchedTerm: phoneticMatch.matchedTerm,
+    };
+  }
+
+  if (semanticMatch) {
+    return {
+      categoryId: 'haircare',
+      subcategoryId: semanticMatch.subcategoryId as HaircareSubcategory,
+      matchType: 'semantic',
+      matchedTerm: semanticMatch.matchedTerm,
+    };
+  }
+
+  // Main category requests: "عناية بالشعر", "منتجات الشعر", "روتين الشعر", "هير كير"
+  if (/عناي[هة]\s*ب(?:ال)?شعر|منتجات\s*(?:ال)?شعر|هير\s*كير|روتين\s*(?:ال)?شعر/i.test(norm)) {
+    const isPhonetic = /هير\s*كير/i.test(norm);
+    return {
+      categoryId: 'haircare',
+      subcategoryId: 'Haircare',
+      matchType: isPhonetic ? 'phonetic' : 'semantic',
+      matchedTerm: isPhonetic ? 'هير كير' : 'عناية بالشعر',
+    };
+  }
+
+  return null;
 };
 
 // ─── IntentSignals type ────────────────────────────────────────────────────
@@ -716,6 +1576,8 @@ export interface IntentSignals {
   isFollowUp: boolean;
   followUpContext: string;
   language: 'ar' | 'en' | 'mixed';
+  skinCareSubcategory?: SubcategoryResolutionResult | null;
+  haircareSubcategory?: HaircareResolutionResult | null;
 }
 
 // ─── extractIntentSignals ─────────────────────────────────────────────────
@@ -797,9 +1659,22 @@ export const extractIntentSignals = (
   // Body area detection — use includes() for Arabic terms, regex for Latin
   const bodyArea: string[] = [];
   if (/\b(hair|shampoo|conditioner|scalp)\b/i.test(text) || /شعر|فروة|شامبو|بلسم/.test(text)) bodyArea.push('hair');
-  if (/\b(face|facial|skin)\b/i.test(text) || /وجه|وش|بشرة/.test(text)) bodyArea.push('face');
+  if (/\b(face|facial|skin)\b/i.test(text) || /وجه|وش|بشرة|بشره/.test(text)) bodyArea.push('face');
   if (/\b(body)\b/i.test(text) || /جسم|جلد/.test(text)) bodyArea.push('body');
-  if (/\b(lip|lips)\b/i.test(text) || /شفايف|شفاه/.test(text)) bodyArea.push('lips');
+  if (/\b(lip|lips)\b/i.test(text) || /شفايف|شفاه|شفاتي/.test(text)) bodyArea.push('lips');
+  if (/\b(eye|eyes|contour)\b/i.test(text) || /عين|عيون|كونتور/.test(text)) bodyArea.push('eyes');
+  if (/\b(hand|hands)\b/i.test(text) || /ايد|يد|ايدين|يدين|كفوف/.test(text)) bodyArea.push('hands');
+  if (/\b(nail|nails)\b/i.test(text) || /أظافر|اظافر|ظوافر|ضوافر/.test(text)) bodyArea.push('nails');
+  if (/\b(bikini|intimate)\b/i.test(text) || /بيكيني|بكيني|حساسة|حساسه/.test(text)) bodyArea.push('bikini');
+  // Deodorant area: signals that the user is asking about deodorant / body-odour control.
+  // Uses Arabic meanings (مزيل عرق, ريحة العرق), Arabizi (ديودرانت, ديودرنت), and subcategory keywords (رول أون, بخاخ+مزيل).
+  if (
+    /\b(deodorant|deo)\b/i.test(text) ||
+    /مزيل عرق|مزيل للعرق|مزيلات العرق|مزيل ريحة العرق|ريحة العرق|ديودر/.test(text) ||
+    /roll[\s-]?on|rollon|رول[ -]?أون|رول[ -]?اون|رولون/i.test(text)
+  ) {
+    bodyArea.push('deodorant');
+  }
 
   // Concern detection — same approach: Latin uses \b, Arabic uses includes-style regex without \b
   const concern: string[] = [];
@@ -815,6 +1690,8 @@ export const extractIntentSignals = (
   if (/\b(curly|curl)\b/i.test(text) || /كيرلي/.test(text)) concern.push('curly');
   if (/moistur|hydrat/i.test(text) || /ترطب|ترطيب|مرطب/.test(text)) concern.push('moisturizing');
   if (/\b(sensitive)\b/i.test(text) || /حساسة|حساس/.test(text)) concern.push('sensitive');
+  if (/\b(sun|sunscreen|sunblock|spf)\b/i.test(text) || /شمس|واقي|حماية/.test(text)) concern.push('sun protection');
+  if (/\b(dark circle|puffiness)\b/i.test(text) || /هالات|انتفاخ/.test(text)) concern.push('eye concern');
 
   // Product concepts via semantic expansion map + literal product-type keywords
   const productConceptsSet = new Set<string>();
@@ -853,6 +1730,47 @@ export const extractIntentSignals = (
     if (text.includes(ar)) productConceptsSet.add(en);
   }
 
+  // Resolve Skin Care subcategory via Two-Path architecture
+  const skinCareSubcategory = resolveSkinCareSubcategory(text, conversationHistory);
+  if (skinCareSubcategory && skinCareSubcategory.subcategoryId) {
+    if (skinCareSubcategory.subcategoryId !== 'Skin Care') {
+      productConceptsSet.add(skinCareSubcategory.subcategoryId.toLowerCase());
+      skinCareSubcategory.subcategoryId.toLowerCase().split(/\s+/).forEach(w => {
+        if (w.length > 2) productConceptsSet.add(w);
+      });
+    }
+    // Infer bodyArea from resolved Skin Care subcategory if not already set
+    if (skinCareSubcategory.subcategoryId === 'eye contour' && !bodyArea.includes('eyes')) bodyArea.push('eyes');
+    if (skinCareSubcategory.subcategoryId === 'Hand cream' && !bodyArea.includes('hands')) bodyArea.push('hands');
+    if (skinCareSubcategory.subcategoryId === 'NAIL OIL' && !bodyArea.includes('nails')) bodyArea.push('nails');
+    if (skinCareSubcategory.subcategoryId === 'bikini' && !bodyArea.includes('bikini')) bodyArea.push('bikini');
+    if ((skinCareSubcategory.subcategoryId === 'body lotion' || skinCareSubcategory.subcategoryId === 'body cream' || skinCareSubcategory.subcategoryId === 'BODY WASH' || skinCareSubcategory.subcategoryId === 'Body Oil' || skinCareSubcategory.subcategoryId === 'body Urea') && !bodyArea.includes('body')) bodyArea.push('body');
+    if ((skinCareSubcategory.subcategoryId === 'Face cleanser' || skinCareSubcategory.subcategoryId === 'Face Creams & Moisturizers' || skinCareSubcategory.subcategoryId === 'Toner' || skinCareSubcategory.subcategoryId === 'Foundation' || skinCareSubcategory.subcategoryId === 'Serum') && !bodyArea.includes('face')) bodyArea.push('face');
+    if ((skinCareSubcategory.subcategoryId === 'LIP PALM' || skinCareSubcategory.subcategoryId === 'LIP GLOSS') && !bodyArea.includes('lips')) bodyArea.push('lips');
+    if ((skinCareSubcategory.subcategoryId === 'Hair Lotion' || skinCareSubcategory.subcategoryId === 'Hair Serum' || skinCareSubcategory.subcategoryId === 'Hair Mask') && !bodyArea.includes('hair')) bodyArea.push('hair');
+  }
+
+  // Resolve Haircare subcategory via Two-Path architecture
+  const haircareSubcategory = resolveHaircareSubcategory(text, conversationHistory);
+  if (haircareSubcategory && haircareSubcategory.subcategoryId) {
+    if (haircareSubcategory.subcategoryId !== 'Haircare' && haircareSubcategory.subcategoryId !== 'fb') {
+      productConceptsSet.add(haircareSubcategory.subcategoryId.toLowerCase());
+      haircareSubcategory.subcategoryId.toLowerCase().split(/\s+/).forEach(w => {
+        if (w.length > 2) productConceptsSet.add(w);
+      });
+    }
+    // Infer bodyArea and concern
+    if (haircareSubcategory.subcategoryId === 'EYELASH SERUM') {
+      if (!bodyArea.includes('eyelashes')) bodyArea.push('eyelashes');
+      if (!concern.includes('eyelash care')) concern.push('eyelash care');
+    } else if (haircareSubcategory.subcategoryId !== 'fb') {
+      if (!bodyArea.includes('hair')) bodyArea.push('hair');
+      if (haircareSubcategory.subcategoryId === 'scalp' && !bodyArea.includes('scalp')) {
+        bodyArea.push('scalp');
+      }
+    }
+  }
+
   return {
     productConcepts: Array.from(productConceptsSet),
     bodyArea,
@@ -863,6 +1781,8 @@ export const extractIntentSignals = (
     isFollowUp,
     followUpContext,
     language,
+    skinCareSubcategory,
+    haircareSubcategory,
   };
 };
 
@@ -892,7 +1812,18 @@ const GENERIC_SEARCH_ALIASES: Record<string, string> = {
   skin: "skin", "بشرة": "skin", "وجه": "skin", face: "skin", "مكياج": "makeup",
   expensive: "expensive", "اغلى": "expensive", "اغلي": "expensive", "غلى": "expensive", "غلي": "expensive",
   "غالي": "expensive", "غالى": "expensive", "غاليه": "expensive", "غالية": "expensive",
-  cheap: "cheap", "ارخص": "cheap", "رخص": "cheap", "رخيص": "cheap", "رخيصة": "cheap", "اقل": "cheap", "أقل": "cheap"
+  cheap: "cheap", "ارخص": "cheap", "رخص": "cheap", "رخيص": "cheap", "رخيصة": "cheap", "اقل": "cheap", "أقل": "cheap",
+  // ── Deodorant aliases ───────────────────────────────────────────────────────────────────────
+  // Normalise Arabic/Arabizi deodorant words to the stored English category/subcategory values.
+  deodorant: "deodorant", deodrnt: "deodorant", deo: "deodorant",
+  "ديودرانت": "deodorant", "ديودرنت": "deodorant", "ديودورانت": "deodorant",
+  "مزيل عرق": "deodorant", "مزيل للعرق": "deodorant", "مزيلات العرق": "deodorant",
+  "مزيل ريحة العرق": "deodorant", "ريحة العرق": "deodorant",
+  "rollon": "roll-on", "roll on": "roll-on",
+  "رول أون": "roll-on", "رول اون": "roll-on", "رول-أون": "roll-on", "رولون": "roll-on",
+  "سبراي": "spray", "سبراى": "spray",
+  "بخاخ": "spray",
+  "ستيك": "stick",
 };
 
 const inferProductTypeHints = (value: string): string[] => {
@@ -950,6 +1881,34 @@ const inferProductTypeHints = (value: string): string[] => {
 
   const matchesLip = /(lip|ليب|شفايف|شفاه|lips)/i.test(normalized);
   if (matchesLip) hints.add("lip");
+
+  // ── Deodorant category and subcategories ───────────────────────────────────────────────
+  // Detect the main Deodorant category intent from Arabic meanings, Arabizi, and phonetic variants.
+  const matchesDeodorantCtx = /(deodorant|deodr|\bdeo\b|مزيل عرق|مزيل للعرق|مزيلات العرق|ريحة العرق|مزيل|ديودر)/i.test(normalized);
+  if (matchesDeodorantCtx) hints.add("deodorant");
+
+  // Roll-On subcategory: Arabic (رول أون and variants), Arabizi (rollon), English (roll-on, roll on)
+  const matchesRollOn = /(roll[\s-]?on|rollon|رول[ -]?أون|رول[ -]?اون|رولون)/i.test(normalized);
+  if (matchesRollOn) { hints.add("roll-on"); hints.add("deodorant"); }
+
+  // Spray subcategory: only add deodorant hint when deodorant context is also present,
+  // to avoid misidentifying hair spray or body spray as a Deodorant product.
+  const matchesSprayWord = /(spray|سبراي|سبراى|بخاخ)/i.test(normalized);
+  if (matchesSprayWord && matchesDeodorantCtx) {
+    hints.add("spray");
+    hints.add("deodorant");
+  } else if (matchesSprayWord) {
+    // Ambiguous: could be hair spray, deodorant spray, or other spray.
+    // Only add "spray" as a raw hint; scoring will determine the best category match.
+    hints.add("spray");
+  }
+
+  // Stick subcategory: only infer deodorant context when deodorant words are also present.
+  const matchesStickWord = /(\bstick\b|ستيك)/i.test(normalized);
+  if (matchesStickWord && matchesDeodorantCtx) {
+    hints.add("stick");
+    hints.add("deodorant");
+  }
 
   return Array.from(hints);
 };
@@ -1094,6 +2053,10 @@ export const searchCatalogProducts = (
   // ── 1. Extract semantic intent signals ──────────────────────────────────
   const intentSignals = extractIntentSignals(trimmedQuery, conversationHistory);
 
+  if (intentSignals.haircareSubcategory?.subcategoryId === 'fb') {
+    return [];
+  }
+
   // ── 2. When this is a follow-up, resolve the context query from history ─
   let effectiveQuery = trimmedQuery;
   if (intentSignals.isFollowUp && intentSignals.followUpContext) {
@@ -1139,7 +2102,12 @@ export const searchCatalogProducts = (
     intentSignals.priceIntent === 'cheap';
   const isPriceIntent = isPriceHighIntent || isPriceLowIntent;
   const isDryHairIntent = /(dry.*hair|hair.*dry|جاف.*شعر|شعر.*جاف|dry.*scalp|damaged.*hair)/.test(normalizedQuery);
-  const genericCategoryTerms = new Set(["shampoo", "conditioner", "serum", "cleanser", "sunscreen", "oil", "balm", "lip", "gloss", "moisturizer", "mask", "cream", "hair", "skin", "leave-in", "treatment", "anti-frizz", "frizz"]);
+  const genericCategoryTerms = new Set([
+    "shampoo", "conditioner", "serum", "cleanser", "sunscreen", "oil", "balm", "lip", "gloss",
+    "moisturizer", "mask", "cream", "hair", "skin", "leave-in", "treatment", "anti-frizz", "frizz",
+    "deodorant", "roll-on", "spray", "stick", "odor", "control",
+    "ampoules", "ampoule", "scalp", "eyelash", "eyelashes", "water", "mist", "lotion", "leave",
+  ]);
   const allGenericQueryTerms = queryTokens.length > 0 && queryTokens.every((token) => genericCategoryTerms.has(token) || token.length <= 2);
 
   // When pure price intent with no product-type scope from semantic expansion,
@@ -1151,7 +2119,7 @@ export const searchCatalogProducts = (
       // Arabic price-related normalized tokens
       "غاليه", "غالي", "رخيص", "رخيصه", "ارخص", "اغلي", "اغلى", "اقل",
       "كويسه", "كويس", "مش", "بس",
-      // "thing/something" tokens (stop-word leakage: حاجة → حاج after normalization)
+      // "thing/something" tokens (stop-word leakage: حاجة → حاج بعد normalization)
       "حاجه", "حاج",
     ]);
     const priceScopeTokens = baseQueryTokens.filter(t => !priceRelatedTokens.has(t));
@@ -1245,6 +2213,10 @@ export const searchCatalogProducts = (
         "leave-in", "leave", "post-shower", "oily", "dandruff", "moisturize", "moisturizer",
         "hydrate", "hydrating", "face", "facial", "skin", "treatment", "curly", "curl",
         "glow", "brightening", "anti-aging", "wrinkles", "pores", "hair loss",
+        // Deodorant category tokens
+        "deodorant", "roll-on", "spray", "stick", "odor", "control",
+        // Haircare tokens
+        "ampoules", "ampoule", "scalp", "eyelash", "eyelashes", "mist", "water", "lotion",
       ]);
 
       // Only penalize for truly unknown tokens when there is NO semantic expansion
@@ -1300,12 +2272,22 @@ export const searchCatalogProducts = (
             return true;
           });
           if (latinBaseTokens.length > 0) {
-            const baseShared = latinBaseTokens.filter(t => combinedTokens.includes(t));
-            const baseFuzzyMatches = latinBaseTokens.filter(t =>
-              combinedTokens.some(c => c !== t && (levenshteinDistance(t, c) <= 1 || c.startsWith(t) || t.startsWith(c)))
+            const isResolvedSubcategoryMatch = Boolean(
+              (intentSignals.skinCareSubcategory &&
+                intentSignals.skinCareSubcategory.subcategoryId &&
+                String(product.subcategory ?? '').toLowerCase() === String(intentSignals.skinCareSubcategory.subcategoryId).toLowerCase()) ||
+              (intentSignals.haircareSubcategory &&
+                intentSignals.haircareSubcategory.subcategoryId &&
+                String(product.subcategory ?? '').toLowerCase() === String(intentSignals.haircareSubcategory.subcategoryId).toLowerCase())
             );
-            if (baseShared.length === 0 && baseFuzzyMatches.length === 0) {
-              score = 0;
+            if (!isResolvedSubcategoryMatch) {
+              const baseShared = latinBaseTokens.filter(t => combinedTokens.includes(t));
+              const baseFuzzyMatches = latinBaseTokens.filter(t =>
+                combinedTokens.some(c => c !== t && (levenshteinDistance(t, c) <= 1 || c.startsWith(t) || t.startsWith(c)))
+              );
+              if (baseShared.length === 0 && baseFuzzyMatches.length === 0) {
+                score = 0;
+              }
             }
           }
         }
@@ -1366,6 +2348,7 @@ export const searchCatalogProducts = (
       if (area === 'face') return ['face', 'skin', 'skincare', 'facial'];
       if (area === 'body') return ['body', 'bath'];
       if (area === 'lips') return ['lip', 'balm'];
+      if (area === 'deodorant') return ['deodorant', 'roll-on', 'spray', 'stick'];
       return [area];
     });
 
@@ -1398,6 +2381,193 @@ export const searchCatalogProducts = (
       return b.score - a.score;
     })
     .map(({ product }) => product);
+
+  // When the user explicitly requests a product format (e.g., Roll-On, Spray, Stick),
+  // search within that format first. If the requested format has no products in the catalog
+  // (e.g. empty Stick subcategory), return empty so the chatbot can report it unavailable.
+  if (inferredProductHints.includes("roll-on")) {
+    const rollOnResults = sortedResults.filter((product) =>
+      normalizeCatalogMatchText(`${product.subcategory ?? ""} ${product.name ?? ""}`).includes("roll")
+    );
+    if (rollOnResults.length > 0) {
+      return rollOnResults.slice(0, 12);
+    }
+  }
+
+  if (
+    inferredProductHints.includes("spray") &&
+    (inferredProductHints.includes("deodorant") || intentSignals.bodyArea.includes("deodorant"))
+  ) {
+    const sprayResults = sortedResults.filter((product) =>
+      normalizeCatalogMatchText(`${product.subcategory ?? ""} ${product.name ?? ""}`).includes("spray")
+    );
+    if (sprayResults.length > 0) {
+      return sprayResults.slice(0, 12);
+    }
+  }
+
+  if (inferredProductHints.includes("stick")) {
+    const stickResults = sortedResults.filter((product) =>
+      normalizeCatalogMatchText(`${product.subcategory ?? ""} ${product.name ?? ""}`).includes("stick")
+    );
+    // If no stick products exist in catalog, return empty so system does not invent any
+    return stickResults.slice(0, 12);
+  }
+
+  // ── Haircare subcategory format-first matching ────────────────────────────
+  const hairSub = intentSignals.haircareSubcategory;
+  if (hairSub && hairSub.subcategoryId && !hairSub.isAmbiguous) {
+    if (hairSub.subcategoryId === 'fb') {
+      // Subcategory fb has 0 products and unknown meaning; never fabricate or invent products
+      return [];
+    }
+
+    if (hairSub.subcategoryId === 'Haircare') {
+      // Main category request: return all Haircare products
+      const mainCatResults = sortedResults.filter((p) => {
+        const cat = String(p.category ?? '').toLowerCase();
+        const sub = String(p.subcategory ?? '').toLowerCase();
+        return cat.includes('hair') || HAIRCARE_SUBCATEGORIES.some(hs => hs.toLowerCase() === sub);
+      });
+      if (mainCatResults.length > 0) return mainCatResults.slice(0, 12);
+      const directMainCat = products.filter((p) => {
+        const cat = String(p.category ?? '').toLowerCase();
+        const sub = String(p.subcategory ?? '').toLowerCase();
+        return cat.includes('hair') || HAIRCARE_SUBCATEGORIES.some(hs => hs.toLowerCase() === sub);
+      });
+      if (directMainCat.length > 0) return directMainCat.slice(0, 12);
+    } else {
+      const targetSub = String(hairSub.subcategoryId).trim().toLowerCase();
+      const matchProductToSub = (product: Product) => {
+        const prodSub = String(product.subcategory ?? '').trim().toLowerCase();
+        const prodSubId = String(product.subcategoryId ?? '').trim().toLowerCase();
+        const prodName = String(product.name ?? '').trim().toLowerCase();
+        const prodCat = String(product.category ?? '').trim().toLowerCase();
+        const isHair = prodCat.includes('hair') || prodSub.includes('hair') || prodName.includes('hair');
+
+        if (prodSub === targetSub || prodSubId === targetSub) {
+          if (targetSub === 'serum' && (prodSub.includes('eyelash') || prodName.includes('eyelash') || !isHair)) return false;
+          if (targetSub === 'cream' && !isHair) return false;
+          if (targetSub === 'oil' && !isHair) return false;
+          if (targetSub === 'mask' && !isHair) return false;
+          if (targetSub === 'hair lotion' && !isHair) return false;
+          return true;
+        }
+
+        if (targetSub === 'eyelash serum') {
+          return prodSub === 'eyelash serum' || prodSub.includes('eyelash') || prodName.includes('eyelash');
+        }
+        if (targetSub === 'serum') {
+          return isHair && (prodSub === 'serum' || prodName.includes('serum')) && !prodSub.includes('eyelash') && !prodName.includes('eyelash');
+        }
+        if (targetSub === 'leave in') {
+          return prodSub === 'leave in' || prodSub.includes('leave in') || prodSub.includes('leave-in') || prodName.includes('leave in') || prodName.includes('leave-in');
+        }
+        if (targetSub === 'shampoo') {
+          return prodSub === 'shampoo' || prodSub.includes('shampoo') || prodName.includes('shampoo');
+        }
+        if (targetSub === 'conditioner') {
+          return prodSub === 'conditioner' || prodSub.includes('conditioner') || prodName.includes('conditioner') || prodName.includes('بلسم');
+        }
+        if (targetSub === 'ampoules') {
+          return prodSub === 'ampoules' || prodSub.includes('ampoule') || prodName.includes('ampoule') || prodName.includes('امبول');
+        }
+        if (targetSub === 'mask') {
+          return isHair && (prodSub === 'mask' || prodSub.includes('mask') || prodName.includes('mask'));
+        }
+        if (targetSub === 'spray') {
+          return (isHair || !prodCat.includes('deodorant')) && (prodSub === 'spray' || prodSub.includes('spray') || prodName.includes('spray'));
+        }
+        if (targetSub === 'hair water') {
+          return prodSub === 'hair water' || (prodSub.includes('water') && isHair);
+        }
+        if (targetSub === 'scalp') {
+          return prodSub === 'scalp' || prodSub.includes('scalp') || prodName.includes('scalp');
+        }
+        if (targetSub === 'hair mist') {
+          return prodSub === 'hair mist' || (prodSub.includes('mist') && isHair);
+        }
+        if (targetSub === 'oil') {
+          return isHair && (prodSub === 'oil' || prodSub.includes('oil') || prodName.includes('oil'));
+        }
+        if (targetSub === 'hair lotion') {
+          return isHair && (prodSub === 'hair lotion' || prodSub.includes('lotion') || prodName.includes('lotion'));
+        }
+        if (targetSub === 'cream') {
+          return isHair && (prodSub === 'cream' || prodSub.includes('cream') || prodName.includes('cream'));
+        }
+
+        return false;
+      };
+
+      const subMatches = sortedResults.filter(matchProductToSub);
+      if (subMatches.length > 0) {
+        return subMatches.slice(0, 12);
+      }
+      const directMatches = products.filter(matchProductToSub);
+      if (directMatches.length > 0) {
+        return directMatches.slice(0, 12);
+      }
+      // If a specific subcategory was explicitly requested and 0 products match in catalog,
+      // return empty so the chatbot does not invent products.
+      return [];
+    }
+  }
+
+  // ── Skin Care subcategory format-first matching ────────────────────────────
+  const skinCareSub = intentSignals.skinCareSubcategory;
+  if (skinCareSub && skinCareSub.subcategoryId && !skinCareSub.isAmbiguous) {
+    if (skinCareSub.subcategoryId === 'Skin Care') {
+      // Main category request: consider all Skin Care products
+      const mainCatResults = sortedResults.filter((p) => {
+        const cat = String(p.category ?? '').toLowerCase();
+        return cat.includes('skin') || cat.includes('face') || cat.includes('body');
+      });
+      if (mainCatResults.length > 0) return mainCatResults.slice(0, 12);
+    } else {
+      const targetSub = String(skinCareSub.subcategoryId).trim().toLowerCase();
+      const ZERO_PRODUCT_SUBCATEGORIES = new Set(["hair lotion", "hair serum", "hair mask"]);
+      if (ZERO_PRODUCT_SUBCATEGORIES.has(targetSub)) {
+        // Zero products exist in catalog; return empty without inventing products
+        return [];
+      }
+
+      const subMatches = sortedResults.filter((product) => {
+        const prodSub = String(product.subcategory ?? '').trim().toLowerCase();
+        const prodSubId = String(product.subcategoryId ?? '').trim().toLowerCase();
+        const prodName = String(product.name ?? '').trim().toLowerCase();
+
+        if (prodSub === targetSub || prodSubId === targetSub) return true;
+        if (targetSub.includes(prodSub) && prodSub.length > 3) return true;
+        if (prodSub.includes(targetSub)) return true;
+
+        // Specific subcategory alias checks
+        if (targetSub === 'lip palm') return prodSub === 'lip palm' || prodSub.includes('balm') || prodName.includes('balm') || prodSub.includes('palm');
+        if (targetSub === 'face cleanser') return prodSub === 'face cleanser' || (prodSub.includes('clean') && !prodSub.includes('body')) || (prodSub.includes('wash') && prodSub.includes('face'));
+        if (targetSub === 'body wash') return prodSub === 'body wash' || (prodSub.includes('wash') && prodSub.includes('body')) || prodSub.includes('shower');
+        if (targetSub === 'face creams & moisturizers') return prodSub === 'face creams & moisturizers' || (prodSub.includes('cream') && !prodSub.includes('body') && !prodSub.includes('hand') && !prodSub.includes('bikini')) || prodSub.includes('moistur');
+        if (targetSub === 'sunscreen') return prodSub === 'sunscreen' || prodSub.includes('sun') || prodSub.includes('spf') || prodSub.includes('block');
+        if (targetSub === 'nail oil') return prodSub === 'nail oil' || prodSub.includes('nail');
+        if (targetSub === 'eye contour') return prodSub === 'eye contour' || prodSub.includes('eye') || prodSub.includes('contour');
+        if (targetSub === 'body urea') return prodSub === 'body urea' || prodSub.includes('urea');
+        if (targetSub === 'body cream') return prodSub === 'body cream' || (prodSub.includes('cream') && prodSub.includes('body'));
+        if (targetSub === 'body lotion') return prodSub === 'body lotion' || (prodSub.includes('lotion') && !prodSub.includes('hair'));
+        if (targetSub === 'body oil') return prodSub === 'body oil' || (prodSub.includes('oil') && prodSub.includes('body'));
+        if (targetSub === 'lip gloss') return prodSub === 'lip gloss' || prodSub.includes('gloss');
+        if (targetSub === 'hand cream') return prodSub === 'hand cream' || prodSub.includes('hand');
+        if (targetSub === 'toner') return prodSub === 'toner' || prodSub.includes('toner');
+        if (targetSub === 'foundation') return prodSub === 'foundation' || prodSub.includes('foundation');
+        if (targetSub === 'bikini') return prodSub === 'bikini' || prodSub.includes('bikini');
+        if (targetSub === 'serum') return prodSub === 'serum' || (prodSub.includes('serum') && !prodSub.includes('hair'));
+
+        return false;
+      });
+
+      if (subMatches.length > 0) {
+        return subMatches.slice(0, 12);
+      }
+    }
+  }
 
   return sortedResults.length > 0 ? sortedResults.slice(0, 12) : [];
 };
@@ -1754,6 +2924,34 @@ export default function ChatWidget({ products = [], catalogLoading = false, cata
     - You may provide general beauty or skincare advice based on your knowledge, but always distinguish it from verified facts about a specific product. Never present general advice as a product fact.
     - When a customer describes a PROBLEM (e.g., frizzy hair, acne, dry skin, oily scalp), recommend relevant available products to address that problem — without making medical claims.
     - Infer product categories from customer descriptions: "تفضل على شعري بعد الشاور" → leave-in conditioner. "شعري هايش" → anti-frizz or smoothing products. "حبوب" → acne cleanser or treatment. "حاجة ترطب وشي" → facial moisturizer. "للشعر الدهني" → oily scalp/hair shampoo. If no exact match, recommend the closest category available.
+    - Deodorant requests: recognise مزيل عرق/ريحة العرق (Arabic meaning), ديودرانت/ديودرنت/ديودورانت (Arabizi), and subcategory terms: رول أون/رولون → Roll-On, سبراي/بخاخ → Spray, ستيك → Stick. Only claim product properties (e.g., alcohol-free, for sensitive skin, 24-hour protection) when the OFFICIAL_DATABASE_DESCRIPTION explicitly supports the claim. If the user asks for Stick and no Stick products exist in the catalog, say so clearly and offer Roll-On or Spray alternatives from the catalog instead.
+    - Spray disambiguation: if a user mentions "سبراي" without deodorant context, ask a short clarifying question (hair spray, deodorant spray, or other?) rather than guessing.
+    - Skin Care requests & subcategories:
+      - Recognize both phonetic transliterations (Path A) and Arabic translations/semantic equivalents (Path B) for all Skin Care subcategories: Face cleanser (غسول الوجه / كلينزر), body lotion (لوشن للجسم / بودي لوشن), Face Creams & Moisturizers (كريم وجه / مرطب وش / فيس كريم), BODY WASH (غسول الجسم / شاور جل), SunSCREEN (واقي شمس / صن سكرين), NAIL OIL (زيت أظافر / نيل اويل), LIP PALM (مرطب شفاه / بلسم شفاه / ليب بالم - note: recognize as lip balm without altering catalog names), Serum (مصل للبشرة / سيروم), eye contour (كريم العين / كونتور العين / آي كونتور), body Urea (يوريا للجسم / بودي يوريا), body cream (كريم جسم / بودي كريم), Toner (تونر للوجه), Foundation (كريم أساس / فاونديشن), Body Oil (زيت جسم / بودي اويل), LIP GLOSS (ملمع شفاه / ليب جلوس), bikini (تفتيح المناطق الحساسة / كريم بكيني), Hand cream (كريم لليدين / هاند كريم).
+      - Ambiguity handling: for isolated terms like "كريم", "زيت", "غسول", "سيروم", use conversation context and history to resolve; if completely ambiguous (e.g., user says only "عايز كريم" or "عندكم زيت؟"), ask ONE concise clarifying question (e.g., "حابب كريم للوجه ولا للجسم ولا لليدين؟") instead of guessing.
+      - Product descriptions as primary truth: answer questions about what a product does, ingredients, SPF, night/day use, or skin suitability strictly from OFFICIAL_DATABASE_DESCRIPTION. Never invent unsupported claims.
+      - Zero-product subcategories (Hair Lotion, Hair Serum, Hair Mask): if requested in Skin Care context, explain clearly that this format is currently unavailable in Skin Care, and suggest relevant existing alternatives instead of fabricating products.
+    - Haircare requests & subcategories:
+      - Recognize both phonetic transliterations (Path A) and Arabic translations/semantic equivalents (Path B) for all 15 Haircare subcategories:
+        1. Shampoo (شامبو / شامپو)
+        2. Conditioner (بلسم / كونديشنر / كنديشنر / ملين للشعر)
+        3. ampoules (أمبولات / امبولات الشعر / أمبول)
+        4. serum (سيروم شعر / سيرم للشعر / مصل للشعر)
+        5. mask (ماسك شعر / حمام كريم)
+        6. leave in (ليف ان / بديل الزيت / كريم يترك على الشعر / منتج بعد الشاور بدون شطف)
+        7. spray (سبراي شعر / بخاخ شعر)
+        8. hair water (هير ووتر / ماء للشعر)
+        9. scalp (عناية بفروة الرأس / سكالپ / منتج للفروة)
+        10. hair mist (هير ميست / معطر شعر)
+        11. EYELASH SERUM (سيروم رموش / مصل للرموش / تكثيف الرموش) - IMPORTANT: this is strictly for eyelashes, NOT hair or scalp!
+        12. Oil (زيت شعر / هير اويل)
+        13. Hair Lotion (هير لوشن / لوشن للشعر)
+        14. Cream (كريم شعر / هير كريم)
+        15. fb (subcat fb: currently has 0 products and unknown meaning; if asked, state clearly that it is unavailable and never invent products or meanings for fb).
+      - Strict distinction between hair serum (serum) and eyelash serum (EYELASH SERUM): queries mentioning eyelashes/رموش map to EYELASH SERUM; queries mentioning hair/شعر or general scalp map to hair serum.
+      - Strict distinction between leave-in products (leave in) and rinse-off products (Conditioner, mask): when a user asks for a leave-in product (e.g. "حاجة تتساب على الشعر من غير شطف" or "ليف ان"), recommend leave-in products; do NOT suggest rinse-off conditioners or masks as leave-ins.
+      - Ambiguity handling: for isolated terms like "كريم", "زيت", "سبراي", "سيروم", use conversation history context to resolve; if no context, ask ONE short clarifying question instead of guessing.
+      - Description grounding: only claim hair benefits (e.g. anti-dandruff, hair growth/anti-loss, curl definition, frizz control, heat protection) if the product's OFFICIAL_DATABASE_DESCRIPTION explicitly states that benefit.
     - If the catalog shows relevant products, ALWAYS recommend from the catalog. Do not say "not available" when catalog items exist.
 
     Tone: warm, polite, and conversational (Egyptian Arabic slang when user message is Arabic).
