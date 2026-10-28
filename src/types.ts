@@ -1,4 +1,4 @@
-export type CategoryIcon = "Sparkles" | "Wind" | "Palette" | "Droplets" | "Star";
+export type CategoryIcon = "Sparkles" | "Wind" | "Palette" | "Droplets" | "Star" | "SprayCan" | "Sun";
 
 export interface CategorySubcategory {
   id: string;

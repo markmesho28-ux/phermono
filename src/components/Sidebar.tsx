@@ -5,6 +5,8 @@ import {
   Palette,
   Droplets,
   Star,
+  SprayCan,
+  Sun,
   Home,
   ChevronRight,
   PlusCircle,
@@ -21,7 +23,7 @@ import { checkIsAdminRole } from "../utils/admin";
 import AdminModal from "./AdminModal";
 import type { Category } from "../types";
 
-const ICONS = { Sparkles, Wind, Palette, Droplets, Star };
+const ICONS = { Sparkles, Wind, Palette, Droplets, Star, SprayCan, Sun };
 
 interface SidebarProps {
   activeCategory: string;
