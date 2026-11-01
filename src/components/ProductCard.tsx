@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ShoppingBag, Heart, Eye, EyeOff, Star, Check, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getBestSellerState, getCurrentStorePriceForPromo, getDiscountedPrice, getPromoDiscountPercent, useData } from "../contexts/DataContext";
+import { getBestSellerState, getCurrentStorePriceForPromo, getPromoDiscountPercent, useData } from "../contexts/DataContext";
 import type { Product } from "../types";
 
 const TAG_STYLES: Record<string, string> = {
@@ -36,13 +36,13 @@ const ProductCard = React.memo(function ProductCard({
   const { user } = useAuth();
   const { actions, siteSettings } = useData();
 
-  const { generalPrice, storePrice, ourPrice, activeDisplayPrice, displayDiscountPercent } = useMemo(() => {
+  const { generalPrice, storePrice, ourPrice, regularDisplayPrice, displayDiscountPercent } = useMemo(() => {
     const general = typeof product.marketPrice === 'number' ? product.marketPrice : (typeof product.originalPrice === 'number' ? product.originalPrice : undefined);
     const store = typeof product.sellingPrice === 'number' ? product.sellingPrice : undefined;
     const our = typeof product.adminCost === 'number' ? product.adminCost : (typeof product.sellingPrice === 'number' ? product.sellingPrice : 0);
     const dynamicDiscountPercent = getPromoDiscountPercent(siteSettings);
     const currentStoreForPromo = getCurrentStorePriceForPromo(general, store);
-    const activeDisplay = currentStoreForPromo > 0 ? getDiscountedPrice(currentStoreForPromo, siteSettings) : 0;
+    const regularDisplay = currentStoreForPromo > 0 ? currentStoreForPromo : (typeof store === 'number' ? store : (typeof general === 'number' ? general : 0));
     const discount = (typeof general === 'number' && typeof store === 'number' && general > 0)
       ? Math.round(((general - store) / general) * 100)
       : null;
@@ -51,7 +51,7 @@ const ProductCard = React.memo(function ProductCard({
       generalPrice: general,
       storePrice: store,
       ourPrice: our,
-      activeDisplayPrice: activeDisplay,
+      regularDisplayPrice: regularDisplay,
       displayDiscountPercent: Math.max(dynamicDiscountPercent, discount ?? 0),
     };
   }, [product.adminCost, product.marketPrice, product.originalPrice, product.sellingPrice, siteSettings]);
@@ -229,7 +229,7 @@ const ProductCard = React.memo(function ProductCard({
               ) : (
                 <div className="flex items-end gap-2">
                   <span className="text-[14px] font-extrabold text-brand-black md:text-[18px]">
-                    EGP {activeDisplayPrice.toFixed(2)}
+                    EGP {regularDisplayPrice.toFixed(2)}
                   </span>
                   {generalPrice !== undefined && (
                     <span className="text-[10px] text-stone-400 line-through md:text-[12px]">

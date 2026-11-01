@@ -8,17 +8,23 @@ jest.mock('../contexts/AuthContext', () => ({
 }));
 
 const mockToggleHero = jest.fn();
+let mockSiteSettings: Record<string, any> = {};
 
 jest.mock('../contexts/DataContext', () => ({
   useData: () => ({
     actions: {
       toggleHero: mockToggleHero,
     },
-    siteSettings: {},
+    siteSettings: mockSiteSettings,
   }),
   getDiscountedPrice: (price: number) => price,
-  getPromoDiscountPercent: () => 0,
+  getPromoDiscountPercent: (settings: Record<string, any> = {}) => Number(settings?.promo_discount_percent ?? 0),
   getBestSellerState: (product: any) => Boolean(product?.hero || product?.isBestSeller || product?.is_best_seller || String(product?.tag || '').toLowerCase() === 'best seller'),
+  getCurrentStorePriceForPromo: (generalPrice?: number | null, currentStorePrice?: number | null) => {
+    if (typeof currentStorePrice === 'number' && currentStorePrice > 0) return currentStorePrice;
+    if (typeof generalPrice === 'number' && generalPrice > 0) return generalPrice;
+    return 0;
+  },
 }));
 
 describe('ProductCard add button responsiveness', () => {
@@ -38,6 +44,7 @@ describe('ProductCard add button responsiveness', () => {
 
   beforeEach(() => {
     mockToggleHero.mockClear();
+    mockSiteSettings = {};
   });
 
   it('fires add-to-cart immediately on the first touch/pointer activation and suppresses duplicate clicks', () => {
@@ -104,5 +111,28 @@ describe('ProductCard add button responsiveness', () => {
 
     expect(screen.getByText('-14%')).toBeInTheDocument();
     expect(screen.queryByText(/save/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the regular product price visible while a global promotion is active', () => {
+    mockSiteSettings = { active_promo: 'percentage_discount', promo_discount_percent: 20 };
+    const discountedProduct = {
+      ...product,
+      sellingPrice: 180,
+      marketPrice: 210,
+    };
+
+    render(
+      <ProductCard
+        product={discountedProduct}
+        onAddToCart={jest.fn()}
+        onQuickView={jest.fn()}
+        onWishlist={jest.fn()}
+        isWishlisted={false}
+      />
+    );
+
+    expect(screen.getByText('EGP 180.00')).toBeInTheDocument();
+    expect(screen.queryByText('EGP 144.00')).not.toBeInTheDocument();
+    expect(screen.getByText('-20%')).toBeInTheDocument();
   });
 });

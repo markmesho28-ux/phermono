@@ -193,17 +193,17 @@ describe('resolveCategoryIdForUpdate', () => {
 });
 
 describe('getOrderDisplayMeta', () => {
-  it('shows Total After Discount for all orders while the store-wide percentage promotion is active', () => {
+  it('shows the dynamically discounted total for all orders while the store-wide percentage promotion is active', () => {
     const order = { total: 90, items: [{ id: 1, name: 'Serum', qty: 1, price: 90, total_price: 90 }] };
     const meta = getOrderDisplayMeta(order, { active_promo: 'percentage_discount', promo_discount_percent: 10 });
 
     expect(meta.label).toBe('Total After Discount');
-    expect(meta.total).toBe(90);
+    expect(meta.total).toBe(81);
     expect(meta.hasDiscount).toBe(true);
-    expect(getOrderDisplayTotal(order, { active_promo: 'percentage_discount', promo_discount_percent: 10 })).toBe(90);
+    expect(getOrderDisplayTotal(order, { active_promo: 'percentage_discount', promo_discount_percent: 10 })).toBe(81);
   });
 
-  it('shows Total for all orders when the promotion is inactive or cancelled', () => {
+  it('shows the original total for all orders when the promotion is inactive or cancelled', () => {
     const order = { total: 100, items: [{ id: 2, name: 'Cream', qty: 1, price: 100, total_price: 100 }] };
 
     expect(getOrderDisplayMeta(order, { active_promo: 'none', promo_discount_percent: 0 }).label).toBe('Total');
@@ -211,14 +211,60 @@ describe('getOrderDisplayMeta', () => {
     expect(getOrderDisplayMeta(order, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(100);
   });
 
-  it('keeps each order total unchanged and relies only on current promotion state for the label', () => {
+  it('uses the current promotion state only for the label and recomputes the displayed amount dynamically', () => {
     const promotedOrder = { total: 90, items: [{ id: 3, name: 'Mask', qty: 1, price: 90, total_price: 90 }] };
     const inactiveOrder = { total: 100, items: [{ id: 4, name: 'Mask', qty: 1, price: 100, total_price: 100 }] };
 
     expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'percentage_discount', promo_discount_percent: 10 }).label).toBe('Total After Discount');
+    expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'percentage_discount', promo_discount_percent: 10 }).total).toBe(81);
     expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'none', promo_discount_percent: 0 }).label).toBe('Total');
     expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(90);
     expect(getOrderDisplayMeta(inactiveOrder, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(100);
+  });
+
+  it('applies the active percentage to the undiscounted subtotal and keeps shipping unchanged', () => {
+    const order = {
+      total: 90,
+      shipping: 10,
+      items: [{ id: 1, name: 'Serum', qty: 1, price: 100, total_price: 100 }],
+    };
+
+    const meta = getOrderDisplayMeta(order, { active_promo: 'percentage_discount', promo_discount_percent: 20 });
+    expect(meta.label).toBe('Total After Discount');
+    expect(meta.originalTotal).toBe(110);
+    expect(meta.discountAmount).toBe(20);
+    expect(meta.finalTotal).toBe(90);
+    expect(meta.total).toBe(90);
+  });
+
+  it('does not double-discount an order whose stored total already reflects the current active promotion', () => {
+    const order = {
+      total: 110,
+      shipping: 10,
+      items: [{ id: 2, name: 'Cream', qty: 1, price: 100, total_price: 100 }],
+    };
+
+    const meta = getOrderDisplayMeta(order, { active_promo: 'percentage_discount', promo_discount_percent: 20 });
+    expect(meta.originalTotal).toBe(110);
+    expect(meta.discountAmount).toBe(20);
+    expect(meta.finalTotal).toBe(90);
+    expect(meta.total).toBe(90);
+  });
+
+  it('restores the original stored total when the global promotion is canceled', () => {
+    const order = {
+      total: 110,
+      shipping: 10,
+      items: [{ id: 3, name: 'Mask', qty: 1, price: 100, total_price: 100 }],
+    };
+
+    const activeMeta = getOrderDisplayMeta(order, { active_promo: 'percentage_discount', promo_discount_percent: 20 });
+    const inactiveMeta = getOrderDisplayMeta(order, { active_promo: 'none', promo_discount_percent: 0 });
+
+    expect(activeMeta.label).toBe('Total After Discount');
+    expect(activeMeta.total).toBe(90);
+    expect(inactiveMeta.label).toBe('Total');
+    expect(inactiveMeta.total).toBe(110);
   });
 });
 
