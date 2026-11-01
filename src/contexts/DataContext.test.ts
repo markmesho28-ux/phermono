@@ -4,6 +4,7 @@ import { resolveCategoryIdForUpdate, isPermissionDeniedOrRlsError, parseSiteProm
 import { AuthProvider, useAuth } from './AuthContext';
 import CategoryView from '../components/CategoryView';
 import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
+import { getOrderDisplayMeta, getOrderDisplayTotal, getOrderPricingSummary } from '../utils/orderPrice';
 
 jest.mock('../lib/supabase', () => {
   const makeQueryChain = () => ({
@@ -188,6 +189,36 @@ describe('resolveCategoryIdForUpdate', () => {
 
     await expect(resolveCategoryIdForRelation('hair-care', [], supabaseClient as any)).resolves.toBe('123e4567-e89b-42d3-a456-426614174000');
     await expect(resolveCategoryIdForRelation('Hair care', [], supabaseClient as any)).resolves.toBe('123e4567-e89b-42d3-a456-426614174000');
+  });
+});
+
+describe('getOrderDisplayMeta', () => {
+  it('shows Total After Discount for all orders while the store-wide percentage promotion is active', () => {
+    const order = { total: 90, items: [{ id: 1, name: 'Serum', qty: 1, price: 90, total_price: 90 }] };
+    const meta = getOrderDisplayMeta(order, { active_promo: 'percentage_discount', promo_discount_percent: 10 });
+
+    expect(meta.label).toBe('Total After Discount');
+    expect(meta.total).toBe(90);
+    expect(meta.hasDiscount).toBe(true);
+    expect(getOrderDisplayTotal(order, { active_promo: 'percentage_discount', promo_discount_percent: 10 })).toBe(90);
+  });
+
+  it('shows Total for all orders when the promotion is inactive or cancelled', () => {
+    const order = { total: 100, items: [{ id: 2, name: 'Cream', qty: 1, price: 100, total_price: 100 }] };
+
+    expect(getOrderDisplayMeta(order, { active_promo: 'none', promo_discount_percent: 0 }).label).toBe('Total');
+    expect(getOrderDisplayMeta(order, { active_promo: 'cancelled', promo_discount_percent: 0 }).label).toBe('Total');
+    expect(getOrderDisplayMeta(order, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(100);
+  });
+
+  it('keeps each order total unchanged and relies only on current promotion state for the label', () => {
+    const promotedOrder = { total: 90, items: [{ id: 3, name: 'Mask', qty: 1, price: 90, total_price: 90 }] };
+    const inactiveOrder = { total: 100, items: [{ id: 4, name: 'Mask', qty: 1, price: 100, total_price: 100 }] };
+
+    expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'percentage_discount', promo_discount_percent: 10 }).label).toBe('Total After Discount');
+    expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'none', promo_discount_percent: 0 }).label).toBe('Total');
+    expect(getOrderDisplayMeta(promotedOrder, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(90);
+    expect(getOrderDisplayMeta(inactiveOrder, { active_promo: 'none', promo_discount_percent: 0 }).total).toBe(100);
   });
 });
 

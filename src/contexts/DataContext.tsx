@@ -1506,12 +1506,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setOrders(ordersData.map((row: any) => {
             const createdAt = row.createdAt ?? row.created_at ?? row.order_date ?? row.date ?? new Date().toISOString();
             const itemsNormalized = normalizeOrderItems(Array.isArray(row.items) ? row.items : [], normalizedProducts.length ? normalizedProducts : productsRef.current);
-            const persistedTotal = Number(row.total) || itemsNormalized.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
+            const total = Number(row.total ?? row.final_total ?? 0) || itemsNormalized.reduce((sum: number, item: any) => sum + Number(item.total_price || 0), 0);
+
             return {
               ...row,
               createdAt,
               items: itemsNormalized,
-              total: persistedTotal,
+              total,
             };
           }) as any);
         }
@@ -3287,9 +3288,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const rawId = (order as any).id ?? Date.now();
     const id = String(rawId);
     const createdAt = (order as any).createdAt || (order as any).created_at || (order as any).date || (order as any).order_date || new Date().toISOString();
-    // Normalize items immediately for local state so UI shows prices right away
+    // Normalize items immediately for local state so UI shows prices right away.
     const itemsNormalizedLocal = normalizeOrderItems(Array.isArray((order as any).items) ? (order as any).items : [], products || []);
-    const o: Order = { ...order, id, createdAt, status: order.status || 'pending', items: itemsNormalizedLocal } as Order;
+    const totalFromItems = itemsNormalizedLocal.reduce((sum: number, item: any) => sum + Number(item.total_price || 0), 0);
+    const orderTotal = Number((order as any).total ?? 0) || totalFromItems;
+    const o: Order = {
+      ...order,
+      id,
+      createdAt,
+      status: order.status || 'pending',
+      items: itemsNormalizedLocal,
+      total: orderTotal,
+    } as Order;
     setOrders(prev => [...prev, o]);
 
     // Persist order to Supabase with proper mapping and error surfacing
@@ -3300,6 +3310,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           const rpcItems = (itemsNormalized || []).map((item: any) => ({
             id: item.id,
             qty: Number(item.qty) || 1,
+            price: Number(item.price ?? item.unit_price ?? 0) || 0,
+            total_price: Number(item.total_price ?? item.totalPrice ?? 0) || 0,
           }));
 
           // Pricing, availability, stock decrement, and order insertion happen
@@ -3334,7 +3346,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return id;
   };
   const updateOrder = (id: number | string, updates: Partial<Order>) => {
-    setOrders(prev => prev.map(o => String(o.id) === String(id) ? { ...o, ...updates } : o));
+    setOrders(prev => prev.map((o) => {
+      if (String(o.id) !== String(id)) return o;
+      const nextOrder = { ...o, ...updates } as Order;
+      const items = Array.isArray(nextOrder.items) ? normalizeOrderItems(nextOrder.items, products || []) : o.items;
+      const nextTotal = Number(nextOrder.total ?? o.total ?? 0) || items.reduce((sum: number, item: any) => sum + Number(item.total_price || 0), 0);
+      return {
+        ...nextOrder,
+        items,
+        total: nextTotal,
+      };
+    }));
     try {
       if (supabase) {
         (async () => {

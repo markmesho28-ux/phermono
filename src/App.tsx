@@ -13,6 +13,7 @@ import { CheckCircle2, MessageCircle, Phone, Instagram, Facebook } from "lucide-
 import ProductCard from "./components/ProductCard";
 import ChatWidget from "./components/ChatWidget";
 import { formatOrderDate, getOrderDisplayId } from "./utils/orderDate";
+import { getOrderDisplayItemPrice, getOrderDisplayMeta } from "./utils/orderPrice";
 import supabase from "./lib/supabase";
 import type { CartItem, OrderInput, Product } from "./types";
 
@@ -141,7 +142,7 @@ export function GlobalFooter() {
 }
 
 function TrackingPage() {
-  const { orders } = useData();
+  const { orders, siteSettings } = useData();
   const { user } = useAuth();
 
   if (!user) return (
@@ -173,15 +174,17 @@ function TrackingPage() {
         <div className="text-sm text-stone-500">You have no orders yet.</div>
       ) : (
         <div className="space-y-4">
-          {userOrders.slice().reverse().map(order => (
-            <div key={order.id} className="border rounded-lg p-4 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Order #{getOrderDisplayId(order.id)}</div>
-                  <div className="text-xs text-stone-400">Placed: {formatOrderDate(order)}</div>
+          {userOrders.slice().reverse().map(order => {
+            const totalMeta = getOrderDisplayMeta(order, siteSettings);
+            return (
+              <div key={order.id} className="border rounded-lg p-4 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Order #{getOrderDisplayId(order.id)}</div>
+                    <div className="text-xs text-stone-400">Placed: {formatOrderDate(order)}</div>
+                  </div>
+                  <div className="text-sm font-medium">{totalMeta.label}: EGP {totalMeta.total.toFixed(2)}</div>
                 </div>
-                <div className="text-sm font-medium">Total: EGP {(Number(order?.total) || 0).toFixed(2)}</div>
-              </div>
 
               <div className="mt-4">
                 <ol className="flex items-center justify-between">
@@ -200,14 +203,19 @@ function TrackingPage() {
                 </ol>
               </div>
 
-              <div className="mt-3 text-sm">
-                <div className="text-xs text-stone-500">Items</div>
-                <ul className="list-disc list-inside mt-1">
-                  {(order.items || []).map(it => <li key={it.id}>{it.name} x{it.qty}</li>)}
-                </ul>
-              </div>
-            </div>
-          ))}
+               <div className="mt-3 text-sm">
+                 <div className="text-xs text-stone-500">Items</div>
+                 <ul className="list-disc list-inside mt-1">
+                   {(order.items || []).map(it => (
+                     <li key={it.id}>
+                       {it.name} x{it.qty} — EGP {getOrderDisplayItemPrice(it).toFixed(2)}
+                     </li>
+                   ))}
+                 </ul>
+               </div>
+             </div>
+           );
+          })}
         </div>
       )}
     </div>
