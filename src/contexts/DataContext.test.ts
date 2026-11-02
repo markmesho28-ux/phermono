@@ -7,25 +7,22 @@ import { looksLikeAdminCommandIntent } from '../components/ChatWidget';
 import { getOrderDisplayMeta, getOrderDisplayTotal, getOrderPricingSummary } from '../utils/orderPrice';
 
 jest.mock('../lib/supabase', () => {
-  const makeQueryChain = () => ({
-    select: jest.fn(() => Promise.resolve({ data: [] })),
-    eq: jest.fn(() => ({
-      select: jest.fn(() => Promise.resolve({ data: [], error: null })),
+  const makeQueryChain = () => {
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
       maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null })),
       limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
       single: jest.fn(() => Promise.resolve({ data: null, error: null })),
-    })),
-    maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null })),
-    limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
-    single: jest.fn(() => Promise.resolve({ data: null, error: null })),
-    order: jest.fn(() => ({
-      limit: jest.fn(() => Promise.resolve({ data: [], error: null })),
-      select: jest.fn(() => Promise.resolve({ data: [], error: null })),
-    })),
-    upsert: jest.fn(() => ({
-      select: jest.fn(() => ({ single: jest.fn(() => Promise.resolve({ data: null, error: null })) })),
-    })),
-  });
+      order: jest.fn(() => chain),
+      upsert: jest.fn(() => ({
+        select: jest.fn(() => ({ single: jest.fn(() => Promise.resolve({ data: null, error: null })) })),
+      })),
+      then: (resolve: (value: any) => any) => resolve({ data: [], error: null }),
+      catch: (onReject: (reason?: any) => any) => Promise.resolve({ data: [], error: null }).catch(onReject),
+    };
+    return chain;
+  };
 
   const makeChannel = () => {
     const channel: any = {

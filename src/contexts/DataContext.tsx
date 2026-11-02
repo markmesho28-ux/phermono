@@ -944,20 +944,6 @@ const logSupabaseProductUpdate = (
   });
 };
 
-const logProductDataReceived = (product: Partial<Product> | Record<string, any> | null, source: 'fetch' | 'realtime' | 'mutation' | 'local') => {
-  if (!product || product.id === undefined || product.id === null) return;
-  const state = describeBestSellerState(product);
-  console.info('PRODUCT DATA RECEIVED', {
-    productId: product.id,
-    timestamp: new Date().toISOString(),
-    hero: state.hero,
-    is_best_seller: state.is_best_seller,
-    isBestSeller: state.isBestSeller,
-    tag: state.tag,
-    source,
-  });
-};
-
 export const resolveBestSellerValue = (row?: Partial<Product> | Record<string, any> | null, fallback = false): boolean => {
   if (!row) return Boolean(fallback);
 
@@ -1232,6 +1218,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const requestId = ++latestCatalogRequestIdRef.current;
     const now = Date.now();
 
+    // Ignore noisy realtime churn: once a refresh has already happened within the last
+    // few seconds, do not kick off another background catalog pull unless the user
+    // explicitly requests a refresh.
+    if (isBackground && productsRef.current.length > 0) {
+      const lastRefreshGapMs = now - lastCatalogRefreshTriggerRef.current;
+      const lastFetchGapMs = now - lastCatalogFetchRef.current;
+      if (lastRefreshGapMs < 5000 || lastFetchGapMs < 4000) {
+        return;
+      }
+    }
+
     if (isBackground && productsRef.current.length > 0 && now - lastCatalogRefreshTriggerRef.current > 60000) {
       return;
     }
@@ -1284,6 +1281,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
         };
 
+        const fetchSiteSettings = async () => {
+          try {
+            const baseQuery = supabase.from('site_settings').select('key, value, updated_at');
+            const eqQuery = typeof (baseQuery as any)?.eq === 'function' ? (baseQuery as any).eq('key', 'site_config') : null;
+            if (eqQuery && typeof (eqQuery as any)?.order === 'function') {
+              return await (eqQuery as any).order('updated_at', { ascending: false }).limit(1);
+            }
+            if (baseQuery && typeof (baseQuery as any)?.limit === 'function') {
+              return await (baseQuery as any).limit(1);
+            }
+            return { data: [] };
+          } catch (_) {
+            return { data: [] };
+          }
+        };
+
         const [
           { data: productsData },
           { data: ordersData },
@@ -1299,7 +1312,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           supabase.from('subcategories').select('*'),
           supabase.from('brands').select('*'),
           safeCategoryBrandSelect(),
-          supabase.from('site_settings').select('*').order('updated_at', { ascending: false }).limit(100),
+          fetchSiteSettings(),
         ]);
 
         if (!mountedRef.current || requestId !== latestCatalogRequestIdRef.current) {
@@ -1472,6 +1485,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        const hasPersistedCatalog = productsRef.current.length > 0;
+        if (Array.isArray(productsData) && productsData.length === 0 && hasPersistedCatalog) {
+          setCatalogError(null);
+          setCatalogLoading(false);
+          isFetchingRef.current = false;
+          inFlightCatalogFetchRef.current = null;
+          return;
+        }
+
         normalizedProducts = mergeBestSellerIntentOverrides(
           normalizedProducts.map((product) => {
             const itemKey = String(product.id);
@@ -1487,17 +1509,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           })
         );
 
-        normalizedProducts.forEach((product) => logProductDataReceived(product, 'fetch'));
-
         setProducts(normalizedProducts);
         productsRef.current = normalizedProducts;
 
-        if (nextCategories.length > 0) {
-          setCategories(nextCategories);
-        } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
-          setCategories([]);
+        const shouldRetainExistingCatalog = Array.isArray(productsData) && productsData.length === 0 && hasPersistedCatalog;
+        if (!shouldRetainExistingCatalog) {
+          if (nextCategories.length > 0) {
+            setCategories(nextCategories);
+          } else if (Array.isArray(categoriesData) && didInitialFetchRef.current) {
+            setCategories([]);
+          }
+          if (!shouldRetainExistingCatalog || (Array.isArray(brandsData) && brandsData.length > 0)) {
+            setBrands(nextBrands);
+          }
         }
-        setBrands(nextBrands);
 
         const detectedBrandsHaveCategory = Array.isArray(brandsData) && (brandsData as any[]).some(b => b && Object.prototype.hasOwnProperty.call(b, 'category_id'));
         setBrandsHaveCategory(detectedBrandsHaveCategory);
@@ -1613,10 +1638,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'products' },
           (payload: any) => {
-            const nextRow = (payload?.new ?? payload?.old ?? null) as Record<string, any> | null;
-            if (nextRow && nextRow.id !== undefined && nextRow.id !== null) {
-              logProductDataReceived(nextRow, 'realtime');
-            }
+            void payload;
             lastCatalogRefreshTriggerRef.current = Date.now();
             scheduleRefetch(100);
           }
@@ -1675,7 +1697,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         scheduledCatalogRefreshRef.current = null;
       }
       if (supabase && channel && realtimeChannelRef.current === channel) {
-        void supabase.removeChannel(channel);
+        try {
+          channel.unsubscribe();
+        } catch (_) {
+          // ignore cleanup failures; the channel removal below is the final safeguard
+        }
+        try {
+          void supabase.removeChannel(channel);
+        } catch (_) {}
         realtimeChannelRef.current = null;
       }
     };
@@ -2993,9 +3022,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setProducts((prev) => {
       const next = applyBestSellerStateToProducts(prev, nextValue);
       productsRef.current = next;
-      next.forEach((product) => {
-        if (Number(product.id) === productId) logProductDataReceived(product, 'local');
-      });
       return next;
     });
     lastLocalCatalogMutationRef.current = Date.now();
@@ -3018,9 +3044,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setProducts((prev) => {
         const next = applyBestSellerStateToProducts(prev, resolvedValue);
         productsRef.current = next;
-        next.forEach((product) => {
-          if (Number(product.id) === productId) logProductDataReceived(product, 'mutation');
-        });
         return next;
       });
     } catch (e: any) {
